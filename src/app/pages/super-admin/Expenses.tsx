@@ -2456,7 +2456,7 @@ export default function Expenses() {
                           className={`h-full ${categoryFilter !== "all" && categoryFilter !== c.id ? "opacity-35" : ""}`}
                           style={{ width: `${(c.total / Math.max(1, total)) * 100}%`, background: PIE_COLORS[i % PIE_COLORS.length] }} />
                       ))}
-                      {rest > 0 && <span className="h-full bg-[#4a4d3d]" style={{ width: `${(rest / Math.max(1, total)) * 100}%` }} />}
+                      {rest > 0 && <span className="h-full bg-rest" style={{ width: `${(rest / Math.max(1, total)) * 100}%` }} />}
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       {segs.map((c, i) => (
@@ -2486,7 +2486,7 @@ export default function Expenses() {
         )}
 
         {focusMissing && (
-          <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
               The record this ledger entry points at is not on this screen — it may have
@@ -2497,11 +2497,11 @@ export default function Expenses() {
 
         {activeTab === "expenses" && (
         <div className="bg-card rounded-2xl border border-border mb-6">
-          <div className="p-6 border-b border-slate-200">
+          <div className="p-6 border-b border-border">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex-1 min-w-[220px] relative">
                 <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70"
                   strokeWidth={1.5}
                 />
                 <input
@@ -2509,13 +2509,13 @@ export default function Expenses() {
                   placeholder="Search description, category, client, vendor…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 />
               </div>
               <ThemedSelect
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-md text-sm"
                 title="Filter by month"
               >
                 <option value="all">All Months</option>
@@ -2526,7 +2526,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="all">All Categories</option>
                 {categories.map((c) => (
@@ -2545,7 +2545,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value as "all" | ExpensePaymentMode)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="all">All Modes</option>
                 <option value="Cash">Cash</option>
@@ -2556,7 +2556,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={expenseByFilter}
                 onChange={(e) => setExpenseByFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-md text-sm"
                 title="Filter by who the expense was incurred by"
               >
                 <option value="all">All Expense By</option>
@@ -2570,7 +2570,7 @@ export default function Expenses() {
 
           {/* Signed Off / Pending / Requests. Signed Off opens first, on the left (asked 2026-10-05). */}
           <div className="px-6 pt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-50">
+            <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/50">
               {([
                 { key: "approved", label: "Signed Off", rows: approvedRows },
                 { key: "pending", label: "Pending", rows: pendingRows },
@@ -2582,12 +2582,12 @@ export default function Expenses() {
                   type="button"
                   onClick={() => { setApprovalView(t.key); setSelectedIds(new Set()); }}
                   className={`px-4 py-1.5 rounded text-sm transition-colors ${
-                    approvalView === t.key ? "bg-white shadow-sm text-slate-900" : "text-slate-600 hover:text-slate-900"
+                    approvalView === t.key ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {t.label}
                   <span className={`ml-2 inline-flex items-center justify-center min-w-[1.5rem] px-1.5 rounded-full text-[11px] ${
-                    t.key === "pending" ? "bg-warning-100 text-warning-800" : t.key === "requests" ? "bg-brand-100 text-brand-800" : "bg-success-100 text-success-800"
+                    t.key === "pending" ? "bg-warning-100 text-warning-700 dark:text-warning-500" : t.key === "requests" ? "bg-brand-100 text-brand-700 dark:text-brand-500" : "bg-success-100 text-success-700 dark:text-success-500"
                   }`}>
                     {t.rows.length}
                   </span>
@@ -2601,7 +2601,7 @@ export default function Expenses() {
                 </Button>
               )
             ) : (
-              <span className="text-xs text-slate-500 tabular-nums">
+              <span className="text-xs text-muted-foreground tabular-nums">
                 PKR {shown.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()} in this view
               </span>
             )}
@@ -2665,7 +2665,7 @@ export default function Expenses() {
                 {approvalView === "pending" && canApproveExpenses && (
                   <input
                     type="checkbox"
-                    className="w-4 h-4 rounded border-slate-300"
+                    className="w-4 h-4 rounded border-border"
                     checked={selectedIds.has(exp.id)}
                     onChange={() => toggleSelected(exp.id)}
                     onClick={(e) => e.stopPropagation()}
@@ -2734,13 +2734,13 @@ export default function Expenses() {
 
           <div className="hidden md:block overflow-auto max-h-[480px]">
             <table className="w-full">
-              <thead className="sticky top-0 z-10 bg-white">
-                <tr className="border-b border-slate-200">
+              <thead className="sticky top-0 z-10 bg-card">
+                <tr className="border-b border-border">
                   {approvalView === "pending" && canApproveExpenses && (
                     <th className="pl-4 py-3 w-8">
                       <input
                         type="checkbox"
-                        className="w-4 h-4 rounded border-slate-300"
+                        className="w-4 h-4 rounded border-border"
                         checked={allShownSelected}
                         ref={(el) => {
                           if (el) el.indeterminate = selectedRows.length > 0 && !allShownSelected;
@@ -2751,24 +2751,24 @@ export default function Expenses() {
                       />
                     </th>
                   )}
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Date</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Category</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Description</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Expense By</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Paid By</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Date</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Category</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Client</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Description</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Amount</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Mode</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Expense By</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Paid By</th>
                   {approvalView === "approved" && (
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Signed Off By</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Signed Off By</th>
                   )}
-                  <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={10} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-6 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
@@ -2776,7 +2776,7 @@ export default function Expenses() {
                 )}
                 {!loading && shown.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={10} className="px-6 py-10 text-center text-muted-foreground text-sm">
                       {approvalView === "pending"
                         ? "Nothing waiting for sign-off."
                         : "No signed-off expenses match the filters."}
@@ -2788,7 +2788,7 @@ export default function Expenses() {
                     <tr
                       key={exp.id}
                       ref={exp.id === focusExpense ? focusExpenseRow : undefined}
-                      className={`hover:bg-slate-50 transition-colors ${
+                      className={`hover:bg-muted/50 transition-colors ${
                         exp.id === focusExpense ? FOCUS_ROW_CLASS : ""
                       } ${selectedIds.has(exp.id) ? "bg-brand-50/60" : ""}`}
                     >
@@ -2796,22 +2796,22 @@ export default function Expenses() {
                         <td className="pl-4 py-3 w-8">
                           <input
                             type="checkbox"
-                            className="w-4 h-4 rounded border-slate-300"
+                            className="w-4 h-4 rounded border-border"
                             checked={selectedIds.has(exp.id)}
                             onChange={() => toggleSelected(exp.id)}
                             aria-label="Select for approval"
                           />
                         </td>
                       )}
-                      <td className="px-4 py-3 text-sm text-slate-600">{formatDate(exp.expense_date)}</td>
-                      <td className="px-4 py-3 text-sm text-slate-900">{exp.category_name ?? "—"}</td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {exp.client_name ?? <span className="text-slate-400 italic">Office</span>}
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(exp.expense_date)}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{exp.category_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">
+                        {exp.client_name ?? <span className="text-muted-foreground/70 italic">Office</span>}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
+                      <td className="px-4 py-3 text-sm text-muted-foreground max-w-xs truncate">
                         {exp.description ?? "—"}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-900">
+                      <td className="px-4 py-3 text-sm text-foreground">
                         PKR {Number(exp.amount).toLocaleString()}
                       </td>
                       <td className="px-4 py-3">
@@ -2850,17 +2850,17 @@ export default function Expenses() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {exp.expense_by_name ?? <span className="text-slate-400">—</span>}
+                      <td className="px-4 py-3 text-sm text-foreground">
+                        {exp.expense_by_name ?? <span className="text-muted-foreground/70">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {expensePaidBy(exp) ?? <span className="text-slate-400">—</span>}
+                      <td className="px-4 py-3 text-sm text-foreground">
+                        {expensePaidBy(exp) ?? <span className="text-muted-foreground/70">—</span>}
                       </td>
                       {approvalView === "approved" && (
                         <td className="px-4 py-3 text-sm">
-                          <span className="text-slate-800">{exp.approved_by_name ?? <span className="text-slate-400">Unknown</span>}</span>
+                          <span className="text-foreground">{exp.approved_by_name ?? <span className="text-muted-foreground/70">Unknown</span>}</span>
                           {exp.approved_at && (
-                            <span className="block text-[11px] text-slate-500">{formatDateTime(exp.approved_at)}</span>
+                            <span className="block text-[11px] text-muted-foreground">{formatDateTime(exp.approved_at)}</span>
                           )}
                         </td>
                       )}
@@ -2914,14 +2914,14 @@ export default function Expenses() {
         {activeTab === "expenses" && (
         <div className="bg-card rounded-2xl border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base text-slate-900">Category Management</h3>
+            <h3 className="text-base text-foreground">Category Management</h3>
             <Button variant="primary" size="sm" onClick={openCatAdd}>
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Add Category
             </Button>
           </div>
           {categories.length === 0 ? (
-            <p className="text-sm text-slate-500">No categories yet. Add one to start categorizing expenses.</p>
+            <p className="text-sm text-muted-foreground">No categories yet. Add one to start categorizing expenses.</p>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {categories.map((category) => {
@@ -2930,13 +2930,13 @@ export default function Expenses() {
                   <div
                     key={category.id}
                     className={`p-3 border rounded-lg flex items-center justify-between ${
-                      locked ? "border-slate-300 bg-slate-50" : "border-slate-200"
+                      locked ? "border-border bg-muted/50" : "border-border"
                     }`}
                   >
                     <div className="min-w-0">
-                      <span className="text-sm text-slate-900 truncate block">{category.name}</span>
+                      <span className="text-sm text-foreground truncate block">{category.name}</span>
                       {locked && (
-                        <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                           System
                         </span>
                       )}
@@ -2967,10 +2967,10 @@ export default function Expenses() {
         )}
 
         {activeTab === "deferred" && (
-          <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-200">
-              <h3 className="text-sm font-medium text-slate-900">Deferred expenses</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+          <div className="bg-card border border-border rounded-md overflow-hidden">
+            <div className="px-4 py-3 border-b border-border">
+              <h3 className="text-sm font-medium text-foreground">Deferred expenses</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Costs that left the bank in full but reach the profit and loss a month at a time.
                 Until they do, the remainder sits on account 1160 Prepaid Expenses. The monthly
                 run releases each month as it arrives.
@@ -2984,42 +2984,42 @@ export default function Expenses() {
             )}
 
             {deferred.length === 0 && !deferredErr ? (
-              <div className="px-4 py-8 text-sm text-slate-500 text-center">
+              <div className="px-4 py-8 text-sm text-muted-foreground text-center">
                 Nothing is deferred. An expense is deferred by choosing a service period or a
                 prepaid coverage window when it is entered.
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+                  <thead className="bg-muted/50 border-b border-border">
                     <tr>
                       {["Expense", "Shape", "Period", "Amount", "Released", "Remaining", "Progress", "Finishes"].map((h) => (
-                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500">{h}</th>
+                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border">
                     {deferred.map((d) => (
                       <tr key={d.expense_id} className={d.is_stale ? "bg-danger-50" : undefined}>
                         <td className="px-4 py-3 text-sm">
-                          <div className="text-slate-900">{d.description ?? "—"}</div>
-                          <div className="text-xs text-slate-500">
+                          <div className="text-foreground">{d.description ?? "—"}</div>
+                          <div className="text-xs text-muted-foreground">
                             {d.category_name ?? "—"} · {formatDate(d.expense_date)}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700">
+                        <td className="px-4 py-3 text-sm text-foreground">
                           {d.shape === "prepaid" ? "Prepaid" : "Service period"}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
                           {formatDate(d.period_start)} – {formatDate(d.period_end)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-900">PKR {d.amount.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700">PKR {d.released.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-sm text-slate-900">PKR {d.remaining.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                        <td className="px-4 py-3 text-sm text-foreground">PKR {d.amount.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-foreground">PKR {d.released.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-foreground">PKR {d.remaining.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
                           {d.months_released} of {d.months_total} months
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
                           {monthLabel(d.final_month.slice(0, 7))}
                           {/* THE ONE ROW-LEVEL ALARM. no_stale_prepaid_balance
                               goes red for the company; this says WHICH expense,
@@ -3034,15 +3034,15 @@ export default function Expenses() {
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                  <tfoot className="bg-muted/50 border-t border-border">
                     {/* Folded from the rows above, not fetched. A footer that
                         can contradict the table it sits under is worse than the
                         duplication — see CLAUDE.md, the stated exception. */}
                     <tr>
-                      <td colSpan={5} className="px-4 py-2 text-sm text-slate-600 text-right">
+                      <td colSpan={5} className="px-4 py-2 text-sm text-muted-foreground text-right">
                         Still on 1160 for the rows shown
                       </td>
-                      <td colSpan={3} className="px-4 py-2 text-sm font-medium text-slate-900">
+                      <td colSpan={3} className="px-4 py-2 text-sm font-medium text-foreground">
                         PKR {deferred.reduce((a, d) => a + d.remaining, 0).toLocaleString()}
                       </td>
                     </tr>
@@ -3057,19 +3057,19 @@ export default function Expenses() {
           <div className="space-y-6">
             {/* ---- This month's raised instances ---- */}
             <div className="bg-card rounded-2xl border border-border">
-              <div className="p-6 border-b border-slate-200 flex flex-wrap items-end justify-between gap-3">
+              <div className="p-6 border-b border-border flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-lg text-slate-900 mb-1">{monthLabel(fixedMonth)}</h3>
-                  <p className="text-sm text-slate-500">
+                  <h3 className="text-lg text-foreground mb-1">{monthLabel(fixedMonth)}</h3>
+                  <p className="text-sm text-muted-foreground">
                     Raised automatically on the 1st. Nothing here has been spent until it is approved.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-sm text-slate-600">Month:</label>
+                  <label className="text-sm text-muted-foreground">Month:</label>
                   <ThemedSelect
                     value={fixedMonth}
                     onChange={(e) => setFixedMonth(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     {fixedMonthOptions.map((m) => (
                       <option key={m} value={m}>{monthLabel(m)}</option>
@@ -3078,7 +3078,7 @@ export default function Expenses() {
                   <ThemedSelect
                     value={fixedPaidByFilter}
                     onChange={(e) => setFixedPaidByFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                     title="Filter templates by their default payer"
                   >
                     <option value="all">All Paid By</option>
@@ -3094,7 +3094,7 @@ export default function Expenses() {
                 </div>
               </div>
 
-              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b border-slate-200">
+              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b border-border">
                 <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                   <p className="lbl mb-1">Awaiting Decision</p>
                   <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{fixedTotals.pending.toLocaleString()}</p>
@@ -3105,27 +3105,27 @@ export default function Expenses() {
                 </div>
                 <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                   <p className="lbl mb-1">Denied</p>
-                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700"><span className="cur">PKR</span>{fixedTotals.denied.toLocaleString()}</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground"><span className="cur">PKR</span>{fixedTotals.denied.toLocaleString()}</p>
                 </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Description</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Vendor</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Mode</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Amount</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Description</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client / Vendor</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Mode</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Amount</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {fixedInstances.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                           {fixedExpenses.filter((f) => f.is_active).length === 0
                             ? "No fixed expenses set up yet. Add one and it will appear here on the 1st of every month."
                             : `Nothing raised for ${monthLabel(fixedMonth)} — the active templates all start later or have ended.`}
@@ -3133,19 +3133,19 @@ export default function Expenses() {
                       </tr>
                     )}
                     {fixedInstances.map((row) => (
-                      <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 text-sm text-slate-900">
-                          {row.description || <span className="text-slate-400">—</span>}
+                      <tr key={row.id} className="hover:bg-muted/50 transition-colors">
+                        <td className="px-6 py-4 text-sm text-foreground">
+                          {row.description || <span className="text-muted-foreground/70">—</span>}
                           {row.due_date && (
-                            <div className="text-xs text-slate-500">Due {formatDate(row.due_date)}</div>
+                            <div className="text-xs text-muted-foreground">Due {formatDate(row.due_date)}</div>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{row.category?.name ?? "—"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {row.client?.name ?? row.vendor?.name ?? <span className="text-slate-400">Office</span>}
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{row.category?.name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
+                          {row.client?.name ?? row.vendor?.name ?? <span className="text-muted-foreground/70">Office</span>}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{row.payment_mode}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-900">
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{row.payment_mode}</td>
+                        <td className="px-6 py-4 text-sm text-right text-foreground">
                           PKR {Number(row.amount).toLocaleString()}
                         </td>
                         <td className="px-6 py-4">
@@ -3154,14 +3154,14 @@ export default function Expenses() {
                               row.status === "approved"
                                 ? "bg-success-50 text-success-700 border-success-200"
                                 : row.status === "denied"
-                                  ? "bg-slate-100 text-slate-600 border-slate-200"
-                                  : "bg-warning-50 text-warning-800 border-warning-200"
+                                  ? "bg-muted text-muted-foreground border-border"
+                                  : "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
                             }`}
                           >
                             {row.status === "approved" ? "Approved" : row.status === "denied" ? "Denied" : "Pending"}
                           </span>
                           {row.decision_note && (
-                            <div className="text-xs text-slate-500 mt-1 max-w-[220px]">{row.decision_note}</div>
+                            <div className="text-xs text-muted-foreground mt-1 max-w-[220px]">{row.decision_note}</div>
                           )}
                         </td>
                         <td className="px-6 py-4">
@@ -3169,7 +3169,7 @@ export default function Expenses() {
                             {row.status === "pending" && (
                               <>
                                 <button
-                                  className="text-sm text-slate-600 hover:text-slate-900"
+                                  className="text-sm text-muted-foreground hover:text-foreground"
                                   onClick={() => openInstanceEdit(row)}
                                   title="Edit this month's amount or description"
                                 >
@@ -3189,7 +3189,7 @@ export default function Expenses() {
                               </Button>
                             )}
                             {row.status === "approved" && (
-                              <span className="text-xs text-slate-500">Posted to Expenses</span>
+                              <span className="text-xs text-muted-foreground">Posted to Expenses</span>
                             )}
                           </div>
                         </td>
@@ -3202,9 +3202,9 @@ export default function Expenses() {
 
             {/* ---- The templates themselves ---- */}
             <div className="bg-card rounded-2xl border border-border">
-              <div className="p-6 border-b border-slate-200">
-                <h3 className="text-lg text-slate-900 mb-1">Recurring Definitions</h3>
-                <p className="text-sm text-slate-500">
+              <div className="p-6 border-b border-border">
+                <h3 className="text-lg text-foreground mb-1">Recurring Definitions</h3>
+                <p className="text-sm text-muted-foreground">
                   Each of these raises one entry per month between its start and end.
                   Deactivating stops future months; months already raised keep whatever was decided.
                 </p>
@@ -3212,21 +3212,21 @@ export default function Expenses() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Description</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Vendor</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Mode</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Paid By</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Amount</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Runs</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Description</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client / Vendor</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Mode</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Paid By</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Amount</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Runs</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {filteredFixedExpenses.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground text-sm">
                           {fixedExpenses.length === 0
                             ? "No fixed expenses yet."
                             : "No fixed expenses match the current Paid By filter."}
@@ -3234,32 +3234,32 @@ export default function Expenses() {
                       </tr>
                     )}
                     {filteredFixedExpenses.map((f) => (
-                      <tr key={f.id} className={`hover:bg-slate-50 transition-colors ${f.is_active ? "" : "opacity-60"}`}>
-                        <td className="px-6 py-4 text-sm text-slate-900">
-                          {f.description || <span className="text-slate-400">—</span>}
-                          {!f.is_active && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}
+                      <tr key={f.id} className={`hover:bg-muted/50 transition-colors ${f.is_active ? "" : "opacity-60"}`}>
+                        <td className="px-6 py-4 text-sm text-foreground">
+                          {f.description || <span className="text-muted-foreground/70">—</span>}
+                          {!f.is_active && <span className="ml-2 text-xs text-muted-foreground">(inactive)</span>}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{f.category?.name ?? "—"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {f.client?.name ?? f.vendor?.name ?? <span className="text-slate-400">Office</span>}
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{f.category?.name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
+                          {f.client?.name ?? f.vendor?.name ?? <span className="text-muted-foreground/70">Office</span>}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{f.payment_mode}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{f.payment_mode}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
                           {custodianNameByLocation.get(f.custodian_location_id ?? "") ?? (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-muted-foreground/70">—</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-900">
+                        <td className="px-6 py-4 text-sm text-right text-foreground">
                           PKR {Number(f.amount).toLocaleString()}
                         </td>
-                        <td className="px-6 py-4 text-xs text-slate-600">
+                        <td className="px-6 py-4 text-xs text-muted-foreground">
                           {monthLabel(f.start_month.slice(0, 7))} →{" "}
                           {f.end_month ? monthLabel(f.end_month.slice(0, 7)) : "ongoing"}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
                             <button
-                              className="text-sm text-slate-600 hover:text-slate-900"
+                              className="text-sm text-muted-foreground hover:text-foreground"
                               onClick={() => openFixedEdit(f)}
                               title="Edit"
                             >
@@ -3288,11 +3288,11 @@ export default function Expenses() {
 
         {activeTab === "advances" && (
           <div className="bg-card rounded-2xl border border-border">
-            <div className="p-6 border-b border-slate-200">
+            <div className="p-6 border-b border-border">
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex-1 min-w-[220px] relative">
                   <Search
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70"
                     strokeWidth={1.5}
                   />
                   <input
@@ -3300,13 +3300,13 @@ export default function Expenses() {
                     placeholder="Search employee, code, client, notes…"
                     value={advSearch}
                     onChange={(e) => setAdvSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                 </div>
                 <ThemedSelect
                   value={advMonthFilter}
                   onChange={(e) => setAdvMonthFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-md text-sm"
                   title="Filter by month"
                 >
                   <option value="all">All Months</option>
@@ -3317,7 +3317,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advClientFilter}
                   onChange={(e) => setAdvClientFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Clients</option>
                   <option value="none">No Client</option>
@@ -3330,7 +3330,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advBranchFilter}
                   onChange={(e) => setAdvBranchFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Branches</option>
                   {branches.map((b) => (
@@ -3340,7 +3340,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advModeFilter}
                   onChange={(e) => setAdvModeFilter(e.target.value as "all" | "Cash" | "Bank" | "Cheque")}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Modes</option>
                   <option value="Cash">Cash</option>
@@ -3350,7 +3350,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advPaidByFilter}
                   onChange={(e) => setAdvPaidByFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-md text-sm"
                   title="Filter by who paid the cash"
                 >
                   <option value="all">All Paid By</option>
@@ -3359,7 +3359,7 @@ export default function Expenses() {
                     <option key={c.employeeId} value={c.employeeId}>{c.fullName}</option>
                   ))}
                 </ThemedSelect>
-                <div className="ml-auto text-xs text-slate-500">
+                <div className="ml-auto text-xs text-muted-foreground">
                   {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} · PKR {advTotals.total.toLocaleString()}
                 </div>
               </div>
@@ -3425,21 +3425,21 @@ export default function Expenses() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Date</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500">Amount</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Paid By</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Notes</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Date</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Employee</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Client</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground">Amount</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Mode</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Paid By</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Notes</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {loading && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -3447,7 +3447,7 @@ export default function Expenses() {
                   )}
                   {!loading && filteredAdvances.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         No advances yet. Click "Add Advance" to record one.
                       </td>
                     </tr>
@@ -3457,19 +3457,19 @@ export default function Expenses() {
                       <tr
                         key={adv.id}
                         ref={adv.id === focusAdvance ? focusAdvanceRow : undefined}
-                        className={`hover:bg-slate-50 transition-colors ${
+                        className={`hover:bg-muted/50 transition-colors ${
                           adv.id === focusAdvance ? FOCUS_ROW_CLASS : ""
                         }`}
                       >
-                        <td className="px-4 py-3 text-sm text-slate-600">{adv.advance_date}</td>
-                        <td className="px-4 py-3 text-sm text-slate-900">
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{adv.advance_date}</td>
+                        <td className="px-4 py-3 text-sm text-foreground">
                           <div>{adv.employee_name}</div>
-                          <div className="text-xs text-slate-500 font-mono">{adv.employee_code}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{adv.employee_code}</div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700">
-                          {adv.client_name ?? <span className="text-slate-400 italic">—</span>}
+                        <td className="px-4 py-3 text-sm text-foreground">
+                          {adv.client_name ?? <span className="text-muted-foreground/70 italic">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-sm text-right text-slate-900">
+                        <td className="px-4 py-3 text-sm text-right text-foreground">
                           PKR {Number(adv.amount).toLocaleString()}
                         </td>
                         <td className="px-4 py-3 text-sm">
@@ -3484,12 +3484,12 @@ export default function Expenses() {
                             {adv.bank_name ? ` · ${adv.bank_name}` : ""}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700">
+                        <td className="px-4 py-3 text-sm text-foreground">
                           {custodianNameByLocation.get(adv.custodian_location_id ?? "") ?? (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-muted-foreground/70">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
+                        <td className="px-4 py-3 text-sm text-muted-foreground max-w-xs truncate">
                           {adv.notes ?? "—"}
                         </td>
                         <td className="px-4 py-3 flex gap-1">
@@ -3535,12 +3535,12 @@ export default function Expenses() {
         <form className="space-y-4" onSubmit={handleAddAdvance}>
           {renderAdvanceFields(advForm, setAdvForm, advEmpSearch, setAdvEmpSearch, addAdvEmployeeOptions)}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Screenshot / receipt (optional)</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Screenshot / receipt (optional)</label>
             <input
               type="file"
               accept="image/*,application/pdf"
               onChange={(e) => setAdvFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-muted"
             />
           </div>
           <div className="flex items-center gap-3 pt-4">
@@ -3567,7 +3567,7 @@ export default function Expenses() {
           <form className="space-y-4" onSubmit={handleEditAdvance}>
             {renderAdvanceFields(advEditForm, setAdvEditForm, advEditEmpSearch, setAdvEditEmpSearch, editAdvEmployeeOptions)}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Screenshot / receipt {advEditing.drive_view_url ? "(replace)" : "(optional)"}
               </label>
               {advEditing.drive_view_url && (
@@ -3584,7 +3584,7 @@ export default function Expenses() {
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={(e) => setAdvEditFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
+                className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-muted"
               />
             </div>
             <div className="flex items-center gap-3 pt-4">
@@ -3710,36 +3710,36 @@ export default function Expenses() {
         }
       >
         <div className="space-y-3">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             Signed-off expenses are locked against editing and deletion. They will be recorded as signed off by{" "}
-            <span className="text-slate-900">{profile?.full_name || profile?.email || "your account"}</span>.
+            <span className="text-foreground">{profile?.full_name || profile?.email || "your account"}</span>.
           </p>
           {(() => {
             const noReceipt = selectedRows.filter((e) => !(e.drive_view_url || (e as { receipt_path?: string | null }).receipt_path)).length;
             return noReceipt > 0 ? (
-              <p className="flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
+              <p className="flex items-start gap-2 text-xs text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {noReceipt} of these {noReceipt === 1 ? "has" : "have"} no receipt attached.
               </p>
             ) : null;
           })()}
-          <div className="max-h-[320px] overflow-auto border border-slate-200 rounded-md">
+          <div className="max-h-[320px] overflow-auto border border-border rounded-md">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-slate-50">
-                <tr className="text-xs text-slate-500">
+              <thead className="sticky top-0 bg-muted/50">
+                <tr className="text-xs text-muted-foreground">
                   <th className="text-left px-3 py-2 font-normal">Date</th>
                   <th className="text-left px-3 py-2 font-normal">Category</th>
                   <th className="text-left px-3 py-2 font-normal">Description</th>
                   <th className="text-right px-3 py-2 font-normal">Amount</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {selectedRows.map((e) => (
                   <tr key={e.id}>
-                    <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{formatDate(e.expense_date)}</td>
-                    <td className="px-3 py-1.5 text-slate-800">{e.category_name ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-slate-600 max-w-[220px] truncate">{e.description ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-900">PKR {Number(e.amount).toLocaleString()}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">{formatDate(e.expense_date)}</td>
+                    <td className="px-3 py-1.5 text-foreground">{e.category_name ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground max-w-[220px] truncate">{e.description ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-foreground">PKR {Number(e.amount).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3761,14 +3761,14 @@ export default function Expenses() {
               {fixedError}
             </div>
           )}
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             This describes what recurs. One entry is raised from it on the 1st of every month between
             the start and end months, and nothing is spent until that entry is approved.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Category *</label>
+              <label className="block text-sm text-foreground mb-1">Category *</label>
               <CategoryPicker
                 categories={categories}
                 value={fixedForm.category_id}
@@ -3776,63 +3776,63 @@ export default function Expenses() {
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">P&amp;L Treatment *</label>
+              <label className="block text-sm text-foreground mb-1">P&amp;L Treatment *</label>
               <ThemedSelect
                 value={fixedForm.pl_category}
                 disabled
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-muted/50 text-muted-foreground cursor-not-allowed"
               >
                 <option value="operating_expense">Operating Expense</option>
                 <option value="cost_of_services">Cost of Services</option>
               </ThemedSelect>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Set from the Client below: a client → Cost of Services, Office → Operating Expense.
               </p>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Description</label>
+            <label className="block text-sm text-foreground mb-1">Description</label>
             <input
               type="text"
               value={fixedForm.description}
               onChange={(e) => setFixedForm({ ...fixedForm, description: e.target.value })}
               placeholder="Head office rent"
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={fixedForm.amount}
                 onChange={(e) => setFixedForm({ ...fixedForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 required
               />
               <AmountInWords value={fixedForm.amount} />
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 The default each month. Any month's entry can be edited before it is approved.
               </p>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+              <label className="block text-sm text-foreground mb-1">Payment Mode *</label>
               <ThemedSelect
                 value={fixedForm.payment_mode}
                 onChange={(e) =>
                   setFixedForm({ ...fixedForm, payment_mode: e.target.value as FixedPaymentMode })
                 }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="Bank">Bank</option>
                 <option value="Cash">Cash</option>
                 <option value="Payable">Payable</option>
               </ThemedSelect>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Cheque is not offered — a cheque expense must name one specific pending cheque,
                 which cannot be known months ahead.
               </p>
@@ -3841,11 +3841,11 @@ export default function Expenses() {
 
           {fixedForm.payment_mode === "Cash" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff)</label>
+              <label className="block text-sm text-foreground mb-1">Paid By (Office Staff)</label>
               <ThemedSelect
                 value={fixedForm.paid_by_employee_id}
                 onChange={(e) => setFixedForm({ ...fixedForm, paid_by_employee_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">No default — choose at approval</option>
                 {custodians.map((c) => (
@@ -3854,7 +3854,7 @@ export default function Expenses() {
                   </option>
                 ))}
               </ThemedSelect>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Who normally pays this. It prefills the approval each month; the money only moves,
                 and only lands against a custodian, when that month's entry is approved.
               </p>
@@ -3863,11 +3863,11 @@ export default function Expenses() {
 
           {fixedForm.payment_mode === "Bank" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <label className="block text-sm text-foreground mb-1">Bank Account *</label>
               <ThemedSelect
                 value={fixedForm.bank_account_id}
                 onChange={(e) => setFixedForm({ ...fixedForm, bank_account_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
@@ -3882,11 +3882,11 @@ export default function Expenses() {
           {fixedForm.payment_mode === "Payable" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Vendor *</label>
+                <label className="block text-sm text-foreground mb-1">Vendor *</label>
                 <ThemedSelect
                   value={fixedForm.vendor_id}
                   onChange={(e) => setFixedForm({ ...fixedForm, vendor_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="">Select vendor</option>
                   {vendors.map((v) => (
@@ -3895,23 +3895,23 @@ export default function Expenses() {
                 </ThemedSelect>
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Due on day of month</label>
+                <label className="block text-sm text-foreground mb-1">Due on day of month</label>
                 <input
                   type="number"
                   min="1"
                   max="28"
                   value={fixedForm.due_day}
                   onChange={(e) => setFixedForm({ ...fixedForm, due_day: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">1–28, so every month has the day.</p>
+                <p className="text-[11px] text-muted-foreground mt-1">1–28, so every month has the day.</p>
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
+              <label className="block text-sm text-foreground mb-1">Client (optional)</label>
               <ClientFilterSelect
                 clients={clients}
                 value={fixedForm.client_id}
@@ -3931,11 +3931,11 @@ export default function Expenses() {
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Region</label>
+              <label className="block text-sm text-foreground mb-1">Region</label>
               <ThemedSelect
                 value={fixedForm.branch_id}
                 onChange={(e) => setFixedForm({ ...fixedForm, branch_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">Auto (client's region, else head office)</option>
                 {branches.map((b) => (
@@ -3947,41 +3947,41 @@ export default function Expenses() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">First month *</label>
+              <label className="block text-sm text-foreground mb-1">First month *</label>
               <input
                 type="month"
                 value={fixedForm.start_month}
                 onChange={(e) => setFixedForm({ ...fixedForm, start_month: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 required
               />
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Nothing is raised before this, so a new template cannot conjure past months.
               </p>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Last month (optional)</label>
+              <label className="block text-sm text-foreground mb-1">Last month (optional)</label>
               <input
                 type="month"
                 value={fixedForm.end_month}
                 onChange={(e) => setFixedForm({ ...fixedForm, end_month: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
-              <p className="text-[11px] text-slate-500 mt-1">Leave blank to run indefinitely.</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Leave blank to run indefinitely.</p>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <label className="block text-sm text-foreground mb-1">Notes</label>
             <textarea
               value={fixedForm.notes}
               onChange={(e) => setFixedForm({ ...fixedForm, notes: e.target.value })}
               rows={2}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+          <div className="flex items-center gap-3 pt-4 border-t border-border">
             <Button type="submit" variant="primary" size="md" className="flex-1" disabled={fixedSubmitting}>
               {fixedSubmitting ? "Saving…" : fixedEditingId ? "Save changes" : "Add fixed expense"}
             </Button>
@@ -4001,53 +4001,53 @@ export default function Expenses() {
       >
         {instanceEditing && (
           <form onSubmit={handleSaveInstance} className="space-y-4">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               This changes {monthLabel(fixedMonth)} only. The recurring definition, and every other
               month, are untouched.
             </p>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={instanceForm.amount}
                 onChange={(e) => setInstanceForm({ ...instanceForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 required
               />
               <AmountInWords value={instanceForm.amount} />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Description</label>
+              <label className="block text-sm text-foreground mb-1">Description</label>
               <input
                 type="text"
                 value={instanceForm.description}
                 onChange={(e) => setInstanceForm({ ...instanceForm, description: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
             {instanceEditing.payment_mode === "Payable" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Due date</label>
+                <label className="block text-sm text-foreground mb-1">Due date</label>
                 <input
                   type="date"
                   value={instanceForm.due_date}
                   onChange={(e) => setInstanceForm({ ...instanceForm, due_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 />
               </div>
             )}
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <label className="block text-sm text-foreground mb-1">Notes</label>
               <textarea
                 value={instanceForm.notes}
                 onChange={(e) => setInstanceForm({ ...instanceForm, notes: e.target.value })}
                 rows={2}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button type="submit" variant="primary" size="md" className="flex-1">
                 Save
               </Button>
@@ -4073,20 +4073,20 @@ export default function Expenses() {
                 {fixedError}
               </div>
             )}
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50">
-              <p className="text-sm text-slate-900">
+            <div className="p-3 rounded-lg border border-border bg-muted/50">
+              <p className="text-sm text-foreground">
                 {decisionTarget.row.description || decisionTarget.row.category?.name || "Fixed expense"}
               </p>
-              <p className="text-lg text-slate-900 mt-1">
+              <p className="text-lg text-foreground mt-1">
                 PKR {Number(decisionTarget.row.amount).toLocaleString()}
               </p>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {monthLabel(fixedMonth)} · {decisionTarget.row.payment_mode}
                 {decisionTarget.row.client?.name ? ` · ${decisionTarget.row.client.name}` : " · Office"}
               </p>
             </div>
 
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {decisionTarget.action === "approve"
                 ? `Approving records a real expense dated ${formatDate(decisionTarget.row.period_month)} and moves the money, exactly as adding it by hand would.`
                 : "Denying records the decision and nothing else — no expense, no money moved. It can be reopened later."}
@@ -4094,11 +4094,11 @@ export default function Expenses() {
 
             {decisionTarget.action === "approve" && decisionTarget.row.payment_mode === "Cash" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+                <label className="block text-sm text-foreground mb-1">Paid By (Office Staff) *</label>
                 <ThemedSelect
                   value={decisionCustodianId}
                   onChange={(e) => setDecisionCustodianId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="">Select who paid</option>
                   {custodians.map((c) => (
@@ -4111,18 +4111,18 @@ export default function Expenses() {
             )}
 
             <div>
-              <label className="block text-sm text-slate-700 mb-1">
+              <label className="block text-sm text-foreground mb-1">
                 Note {decisionTarget.action === "deny" ? "(why it was denied)" : "(optional)"}
               </label>
               <textarea
                 value={decisionNote}
                 onChange={(e) => setDecisionNote(e.target.value)}
                 rows={2}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
 
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button
                 variant={decisionTarget.action === "approve" ? "primary" : "danger"}
                 size="md"
@@ -4149,41 +4149,41 @@ export default function Expenses() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-slate-500 mb-1">Date</p>
-                <p className="text-slate-900">{formatDate(selected.expense_date)}</p>
+                <p className="text-muted-foreground mb-1">Date</p>
+                <p className="text-foreground">{formatDate(selected.expense_date)}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Category</p>
-                <p className="text-slate-900">{selectedCatName}</p>
+                <p className="text-muted-foreground mb-1">Category</p>
+                <p className="text-foreground">{selectedCatName}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Amount</p>
-                <p className="text-slate-900">PKR {Number(selected.amount).toLocaleString()}</p>
+                <p className="text-muted-foreground mb-1">Amount</p>
+                <p className="text-foreground">PKR {Number(selected.amount).toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Client</p>
-                <p className="text-slate-900">
-                  {selected.client_name ?? <span className="text-slate-400 italic">Office</span>}
+                <p className="text-muted-foreground mb-1">Client</p>
+                <p className="text-foreground">
+                  {selected.client_name ?? <span className="text-muted-foreground/70 italic">Office</span>}
                 </p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Payment Mode</p>
-                <p className="text-slate-900">{selected.payment_mode}</p>
+                <p className="text-muted-foreground mb-1">Payment Mode</p>
+                <p className="text-foreground">{selected.payment_mode}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Expense By</p>
-                <p className="text-slate-900">{selected.expense_by_name ?? "—"}</p>
+                <p className="text-muted-foreground mb-1">Expense By</p>
+                <p className="text-foreground">{selected.expense_by_name ?? "—"}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Paid By</p>
-                <p className="text-slate-900">{expensePaidBy(selected) ?? "—"}</p>
+                <p className="text-muted-foreground mb-1">Paid By</p>
+                <p className="text-foreground">{expensePaidBy(selected) ?? "—"}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Approval</p>
+                <p className="text-muted-foreground mb-1">Approval</p>
                 {selected.approved_at ? (
                   <p className="text-success-700">
                     Signed off by {selected.approved_by_name ?? "unknown"}
-                    <span className="block text-xs text-slate-500">{formatDateTime(selected.approved_at)}</span>
+                    <span className="block text-xs text-muted-foreground">{formatDateTime(selected.approved_at)}</span>
                   </p>
                 ) : (
                   <p className="text-warning-700">Pending sign-off</p>
@@ -4197,10 +4197,10 @@ export default function Expenses() {
                 if (!d) return null;
                 return (
                   <div className="sm:col-span-2">
-                    <p className="text-slate-500 mb-1">
+                    <p className="text-muted-foreground mb-1">
                       {d.shape === "prepaid" ? "Prepaid — spread over the months it covers" : "Service period — split across the months it covers"}
                     </p>
-                    <p className="text-slate-900">
+                    <p className="text-foreground">
                       {formatDate(d.period_start)} – {formatDate(d.period_end)} · {d.months_released} of{" "}
                       {d.months_total} months released · PKR {d.released.toLocaleString()} of{" "}
                       {d.amount.toLocaleString()}, PKR {d.remaining.toLocaleString()} still on 1160 ·
@@ -4212,58 +4212,58 @@ export default function Expenses() {
               })()}
               {selected.payment_mode === "Bank" && (
                 <div>
-                  <p className="text-slate-500 mb-1">Bank Account</p>
-                  <p className="text-slate-900">{selected.bank_name ?? "—"}</p>
+                  <p className="text-muted-foreground mb-1">Bank Account</p>
+                  <p className="text-foreground">{selected.bank_name ?? "—"}</p>
                 </div>
               )}
               {selected.payment_mode === "Payable" && (
                 <>
                   <div>
-                    <p className="text-slate-500 mb-1">Vendor</p>
-                    <p className="text-slate-900">{selected.vendor_name ?? "—"}</p>
+                    <p className="text-muted-foreground mb-1">Vendor</p>
+                    <p className="text-foreground">{selected.vendor_name ?? "—"}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1">Due Date</p>
-                    <p className="text-slate-900">{selected.due_date ? formatDate(selected.due_date) : "—"}</p>
+                    <p className="text-muted-foreground mb-1">Due Date</p>
+                    <p className="text-foreground">{selected.due_date ? formatDate(selected.due_date) : "—"}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1">Status</p>
-                    <p className="text-slate-900">{selected.payable_status ?? "—"}</p>
+                    <p className="text-muted-foreground mb-1">Status</p>
+                    <p className="text-foreground">{selected.payable_status ?? "—"}</p>
                   </div>
                   {selected.payable_status === "Paid" && (
                     <div>
-                      <p className="text-slate-500 mb-1">Paid Via</p>
-                      <p className="text-slate-900">{selected.paid_via ?? "—"}</p>
+                      <p className="text-muted-foreground mb-1">Paid Via</p>
+                      <p className="text-foreground">{selected.paid_via ?? "—"}</p>
                     </div>
                   )}
                 </>
               )}
             </div>
             {selected.description && (
-              <div className="pt-3 border-t border-slate-200">
-                <p className="text-slate-500 mb-1 text-sm">Description</p>
-                <p className="text-sm text-slate-900">{selected.description}</p>
+              <div className="pt-3 border-t border-border">
+                <p className="text-muted-foreground mb-1 text-sm">Description</p>
+                <p className="text-sm text-foreground">{selected.description}</p>
               </div>
             )}
             {selected.notes && (
-              <div className="pt-3 border-t border-slate-200">
-                <p className="text-slate-500 mb-1 text-sm">Notes</p>
-                <p className="text-sm text-slate-900">{selected.notes}</p>
+              <div className="pt-3 border-t border-border">
+                <p className="text-muted-foreground mb-1 text-sm">Notes</p>
+                <p className="text-sm text-foreground">{selected.notes}</p>
               </div>
             )}
-            <div className="pt-3 border-t border-slate-200">
-              <p className="text-slate-500 mb-2 text-sm">Receipt(s)</p>
+            <div className="pt-3 border-t border-border">
+              <p className="text-muted-foreground mb-2 text-sm">Receipt(s)</p>
               {viewReceipts.length > 0 ? (
                 <div className="space-y-2">
                   {viewReceipts.map((r) => (
-                    <div key={r.id} className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3">
-                      <span className="text-sm text-slate-700 truncate flex-1">{r.file_name ?? "Receipt"}</span>
+                    <div key={r.id} className="border border-border rounded-lg p-3 flex items-center justify-between gap-3">
+                      <span className="text-sm text-foreground truncate flex-1">{r.file_name ?? "Receipt"}</span>
                       {r.drive_view_url && (
                         <a
                           href={r.drive_view_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900 underline shrink-0"
+                          className="inline-flex items-center gap-1 text-sm text-foreground hover:text-foreground underline shrink-0"
                         >
                           <Download className="w-4 h-4" strokeWidth={1.5} />
                           View / Download
@@ -4273,27 +4273,27 @@ export default function Expenses() {
                   ))}
                 </div>
               ) : (selected.drive_view_url || selected.receipt_path) ? (
-                <div className="border border-slate-200 rounded-lg p-3 flex items-center justify-between">
-                  <span className="text-sm text-slate-700 truncate">
+                <div className="border border-border rounded-lg p-3 flex items-center justify-between">
+                  <span className="text-sm text-foreground truncate">
                     {selected.receipt_file_name ?? selected.receipt_path?.split("/").pop() ?? "Receipt"}
                   </span>
                   <div className="flex gap-2">
                     {getReceiptUrl(selected) && (
-                      <a href={getReceiptUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-slate-700 hover:text-slate-900 underline">
+                      <a href={getReceiptUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-foreground hover:text-foreground underline">
                         View
                       </a>
                     )}
-                    <button onClick={() => downloadReceipt(selected)} className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900">
+                    <button onClick={() => downloadReceipt(selected)} className="inline-flex items-center gap-1 text-sm text-foreground hover:text-foreground">
                       <Download className="w-4 h-4" strokeWidth={1.5} />
                       Download
                     </button>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">No receipt attached.</p>
+                <p className="text-sm text-muted-foreground">No receipt attached.</p>
               )}
             </div>
-            <div className="pt-4 border-t border-slate-200 flex gap-3">
+            <div className="pt-4 border-t border-border flex gap-3">
               <Button
                 variant="primary"
                 size="md"
@@ -4324,60 +4324,60 @@ export default function Expenses() {
         <div className="space-y-4">
           <div className="space-y-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">
+              <label className="block text-sm text-foreground mb-1">
                 {vendorMode === "add" ? "New Vendor Name *" : "Vendor Name *"}
               </label>
               <input
                 type="text"
                 value={vendorName}
                 onChange={(e) => setVendorName(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 placeholder="e.g., Acme Supplies"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+                <label className="block text-sm text-foreground mb-1">Bank Name</label>
                 <input
                   type="text"
                   value={vendorBankName}
                   onChange={(e) => setVendorBankName(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   placeholder="e.g., Meezan Bank"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
+                <label className="block text-sm text-foreground mb-1">Branch Code</label>
                 <input
                   type="text"
                   value={vendorBranchCode}
                   onChange={(e) => setVendorBranchCode(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   placeholder="e.g., 0214"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Account Title</label>
+                <label className="block text-sm text-foreground mb-1">Account Title</label>
                 <input
                   type="text"
                   value={vendorAccountTitle}
                   onChange={(e) => setVendorAccountTitle(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   placeholder="Name on the account"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Account Number</label>
+                <label className="block text-sm text-foreground mb-1">Account Number</label>
                 <input
                   type="text"
                   value={vendorAccountNumber}
                   onChange={(e) => setVendorAccountNumber(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   placeholder="Account number / IBAN"
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-500 -mt-1">
+            <p className="text-xs text-muted-foreground -mt-1">
               Shown on Accounts Payable when you pay this vendor.
             </p>
             <div className="flex gap-2">
@@ -4392,21 +4392,21 @@ export default function Expenses() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-200">
-            <p className="text-xs text-slate-500 mb-2">Existing Vendors</p>
+          <div className="pt-3 border-t border-border">
+            <p className="text-xs text-muted-foreground mb-2">Existing Vendors</p>
             {vendors.length === 0 ? (
-              <p className="text-sm text-slate-500">No vendors yet.</p>
+              <p className="text-sm text-muted-foreground">No vendors yet.</p>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {vendors.map((v) => (
                   <div
                     key={v.id}
-                    className="flex items-center justify-between p-2.5 border border-slate-200 rounded-md"
+                    className="flex items-center justify-between p-2.5 border border-border rounded-md"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm text-slate-900 truncate">{v.name}</p>
+                      <p className="text-sm text-foreground truncate">{v.name}</p>
                       {(v.bank_name || v.account_title || v.account_number || v.branch_code) && (
-                        <p className="text-xs text-slate-500 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           {[v.bank_name, v.account_title, v.account_number, v.branch_code && `Branch ${v.branch_code}`]
                             .filter(Boolean)
                             .join(" · ")}
@@ -4444,13 +4444,13 @@ export default function Expenses() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Category Name</label>
+            <label className="block text-sm text-foreground mb-1">Category Name</label>
             <input
               type="text"
               autoFocus
               value={catInput}
               onChange={(e) => setCatInput(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             />
           </div>
           <div className="flex items-center gap-3 pt-4">
@@ -4486,7 +4486,7 @@ export default function Expenses() {
           </div>
         )}
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
+          <label className="block text-sm text-foreground mb-1">Client (optional)</label>
           <ThemedSelect
             value={state.client_id}
             onChange={(e) => {
@@ -4500,7 +4500,7 @@ export default function Expenses() {
               });
               if (!keep) setEmpQuery("");
             }}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm"
           >
             <option value="">No client (direct)</option>
             {clients.map((c) => (
@@ -4509,17 +4509,17 @@ export default function Expenses() {
               </option>
             ))}
           </ThemedSelect>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             When set, the employee list below is filtered to that client's employees.
           </p>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Employee *</label>
+          <label className="block text-sm text-foreground mb-1">Employee *</label>
           {selectedEmp ? (
-            <div className="flex items-center justify-between px-3 py-2 border border-slate-200 rounded-md bg-slate-50">
+            <div className="flex items-center justify-between px-3 py-2 border border-border rounded-md bg-muted/50">
               <div className="text-sm">
-                <div className="text-slate-900">{selectedEmp.full_name}</div>
-                <div className="text-xs text-slate-500 font-mono">
+                <div className="text-foreground">{selectedEmp.full_name}</div>
+                <div className="text-xs text-muted-foreground font-mono">
                   {empCode(selectedEmp)}
                   {selectedEmp.phone ? ` · ${selectedEmp.phone}` : ""}
                 </div>
@@ -4527,7 +4527,7 @@ export default function Expenses() {
               <button
                 type="button"
                 onClick={() => setState({ ...state, employee_id: "" })}
-                className="text-xs text-slate-500 hover:text-slate-900"
+                className="text-xs text-muted-foreground hover:text-foreground"
               >
                 Change
               </button>
@@ -4535,18 +4535,18 @@ export default function Expenses() {
           ) : (
             <>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
                 <input
                   type="text"
                   placeholder="Search by name, code, or phone…"
                   value={empQuery}
                   onChange={(e) => setEmpQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 />
               </div>
-              <div className="mt-2 max-h-40 overflow-y-auto border border-slate-200 rounded-md">
+              <div className="mt-2 max-h-40 overflow-y-auto border border-border rounded-md">
                 {empOptions.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-slate-500">No employees match.</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">No employees match.</div>
                 ) : (
                   empOptions.map((emp) => (
                     <button
@@ -4560,10 +4560,10 @@ export default function Expenses() {
                         });
                         setEmpQuery("");
                       }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 border-b border-border last:border-b-0"
                     >
-                      <div className="text-slate-900">{emp.full_name}</div>
-                      <div className="text-xs text-slate-500 font-mono">
+                      <div className="text-foreground">{emp.full_name}</div>
+                      <div className="text-xs text-muted-foreground font-mono">
                         {empCode(emp)}
                         {emp.phone ? ` · ${emp.phone}` : ""}
                       </div>
@@ -4576,7 +4576,7 @@ export default function Expenses() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+            <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
             <input
               required
               type="number"
@@ -4584,31 +4584,31 @@ export default function Expenses() {
               step="0.01"
               value={state.amount}
               onChange={(e) => setState({ ...state, amount: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             />
             <AmountInWords value={state.amount} />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Date *</label>
+            <label className="block text-sm text-foreground mb-1">Date *</label>
             <input
               required
               type="date"
               value={state.advance_date}
               onChange={(e) => setState({ ...state, advance_date: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             />
           </div>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+          <label className="block text-sm text-foreground mb-1">Payment Mode *</label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {(["Cash", "Bank", "Cheque"] as const).map((m) => (
               <label
                 key={m}
                 className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
                   state.payment_mode === m
-                    ? "border-slate-900 bg-slate-50"
-                    : "border-slate-200 hover:border-slate-300"
+                    ? "border-foreground bg-muted/50"
+                    : "border-border hover:border-border"
                 }`}
               >
                 <input
@@ -4633,12 +4633,12 @@ export default function Expenses() {
             Cash in Hand attributed to nobody. */}
         {state.payment_mode === "Cash" && (
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+            <label className="block text-sm text-foreground mb-1">Paid By (Office Staff) *</label>
             <ThemedSelect
               required
               value={state.paid_by_employee_id}
               onChange={(e) => setState({ ...state, paid_by_employee_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             >
               <option value="">Select who paid the cash…</option>
               {custodians.map((c) => (
@@ -4660,12 +4660,12 @@ export default function Expenses() {
         )}
         {state.payment_mode === "Bank" && (
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+            <label className="block text-sm text-foreground mb-1">Bank Account *</label>
             <ThemedSelect
               required
               value={state.bank_account_id}
               onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             >
               <option value="">Select bank account</option>
               {banks.map((b) => (
@@ -4678,12 +4678,12 @@ export default function Expenses() {
         )}
         {state.payment_mode === "Cheque" && (
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Cheque *</label>
+            <label className="block text-sm text-foreground mb-1">Cheque *</label>
             <ThemedSelect
               required
               value={state.cheque_id}
               onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             >
               <option value="">Select a pending cheque</option>
               {cheques
@@ -4698,18 +4698,18 @@ export default function Expenses() {
                   );
                 })}
             </ThemedSelect>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Cashflow recognises this advance only when the cheque is marked Cleared.
             </p>
           </div>
         )}
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Notes</label>
+          <label className="block text-sm text-foreground mb-1">Notes</label>
           <textarea
             value={state.notes}
             onChange={(e) => setState({ ...state, notes: e.target.value })}
             rows={2}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm"
           />
         </div>
       </>
@@ -4742,7 +4742,7 @@ export default function Expenses() {
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
+            <label className="block text-sm text-foreground mb-1">Client (optional)</label>
             <ClientFilterSelect
               clients={clients}
               value={state.client_id}
@@ -4763,14 +4763,14 @@ export default function Expenses() {
                 });
               }}
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {state.branch_id
                 ? "Showing clients in the selected branch only."
                 : "Leave empty to log as an Office expense (Head Office)."}
             </p>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
+            <label className="block text-sm text-foreground mb-1">Branch (optional)</label>
             <ThemedSelect
               value={state.branch_id}
               onChange={(e) => {
@@ -4786,7 +4786,7 @@ export default function Expenses() {
                   pl_category: keepClient ? state.pl_category : "operating_expense",
                 });
               }}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             >
               <option value="">Head Office (default)</option>
               {branches.map((b) => (
@@ -4795,7 +4795,7 @@ export default function Expenses() {
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Category *</label>
+            <label className="block text-sm text-foreground mb-1">Category *</label>
             <CategoryPicker
               categories={categories}
               value={state.category_id}
@@ -4803,7 +4803,7 @@ export default function Expenses() {
             />
           </div>
           <div className="col-span-full">
-            <label className="block text-sm text-slate-700 mb-1">P&amp;L Category *</label>
+            <label className="block text-sm text-foreground mb-1">P&amp;L Category *</label>
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
@@ -4818,7 +4818,7 @@ export default function Expenses() {
                     key={opt.value}
                     aria-disabled="true"
                     className={`flex flex-col items-start gap-1 px-3 py-2 border rounded-md text-sm cursor-not-allowed ${
-                      active ? "border-slate-900 bg-slate-50" : "border-slate-200 opacity-60"
+                      active ? "border-foreground bg-muted/50" : "border-border opacity-60"
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -4831,17 +4831,17 @@ export default function Expenses() {
                       />
                       <span>{opt.label}</span>
                     </div>
-                    <span className="text-xs text-slate-500 ml-6">{opt.hint}</span>
+                    <span className="text-xs text-muted-foreground ml-6">{opt.hint}</span>
                   </div>
                 );
               })}
             </div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Set automatically from the Client: a client → Cost of Services, Office → Operating Expense. Not editable.
             </p>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+            <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
             <input
               required
               type="number"
@@ -4849,18 +4849,18 @@ export default function Expenses() {
               step="0.01"
               value={state.amount}
               onChange={(e) => setState({ ...state, amount: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             />
             <AmountInWords value={state.amount} />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Date *</label>
+            <label className="block text-sm text-foreground mb-1">Date *</label>
             <input
               required
               type="date"
               value={state.expense_date}
               onChange={(e) => setState({ ...state, expense_date: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             />
           </div>
 
@@ -4887,11 +4887,11 @@ export default function Expenses() {
               IESSI pay a liability; the database refuses a period on them
               (refuse_statutory_period), so the choice is not offered. */}
           {statutorySchemeOf(state.category_id) ? (
-            <div className="col-span-2 border border-brand-200 rounded-md p-3 bg-brand-50 text-sm text-slate-700">
-              <div className="font-medium text-slate-800">
+            <div className="col-span-2 border border-brand-200 rounded-md p-3 bg-brand-50 text-sm text-foreground">
+              <div className="font-medium text-foreground">
                 {STATUTORY_SCHEME_LABEL[statutorySchemeOf(state.category_id)!]} is paid against what payroll owes, not added as an expense.
               </div>
-              <p className="text-[11px] text-slate-600 mt-0.5">
+              <p className="text-[11px] text-muted-foreground mt-0.5">
                 What was withheld from pay for the month clears its payable; only the part payroll did not accrue becomes
                 cost. Booking it here would count the withheld part as cost a second time and leave the payable owing.
               </p>
@@ -4916,13 +4916,13 @@ export default function Expenses() {
                 </Button>
               )}
               {!edit && !canRemitStatutory && (
-                <p className="text-[11px] text-slate-600 mt-2">Recording it needs the accounting edit permission. Ask someone who has it.</p>
+                <p className="text-[11px] text-muted-foreground mt-2">Recording it needs the accounting edit permission. Ask someone who has it.</p>
               )}
             </div>
           ) : (
-          <div className="col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50">
-            <div className="text-sm font-medium text-slate-800">Which months does this cost belong to?</div>
-            <p className="text-[11px] text-slate-500 mt-0.5 mb-2">
+          <div className="col-span-2 border border-border rounded-md p-3 bg-muted/50">
+            <div className="text-sm font-medium text-foreground">Which months does this cost belong to?</div>
+            <p className="text-[11px] text-muted-foreground mt-0.5 mb-2">
               Almost every expense belongs entirely to the month it was paid. Two do not: a bill
               that pays for a stretch of service, and a cost paid a long way ahead. In both, the
               full amount still leaves the bank today and the cash flow shows that — only the
@@ -4969,10 +4969,10 @@ export default function Expenses() {
                     <label
                       key={o.key}
                       className={`block border rounded-md px-3 py-2 ${
-                        mode === o.key ? "border-slate-900 bg-white" : "border-slate-200"
+                        mode === o.key ? "border-foreground bg-card" : "border-border"
                       } ${o.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                     >
-                      <div className="flex items-center gap-2 text-sm text-slate-800">
+                      <div className="flex items-center gap-2 text-sm text-foreground">
                         <input
                           type="radio"
                           name={`spread_${submitLabel}`}
@@ -4982,7 +4982,7 @@ export default function Expenses() {
                         />
                         <span>{o.label}</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 ml-6 mt-0.5">{o.hint}</p>
+                      <p className="text-[11px] text-muted-foreground ml-6 mt-0.5">{o.hint}</p>
                     </label>
                   ))}
 
@@ -4999,27 +4999,27 @@ export default function Expenses() {
                   {mode === "service" && (
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <div>
-                        <label className="block text-xs text-slate-600 mb-1">Service from *</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Service from *</label>
                         <input
                           type="date"
                           required
                           value={state.service_start}
                           onChange={(e) => setState({ ...state, service_start: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-600 mb-1">Service to *</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Service to *</label>
                         <input
                           type="date"
                           required
                           min={state.service_start}
                           value={state.service_end}
                           onChange={(e) => setState({ ...state, service_end: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
                         />
                       </div>
-                      <div className="col-span-2 text-[11px] text-slate-600">
+                      <div className="col-span-2 text-[11px] text-muted-foreground">
                         {(() => {
                           const parts = serviceSplit(state.service_start, state.service_end, Number(state.amount) || 0);
                           if (parts.length === 0) return "The end of the period cannot be before its start.";
@@ -5037,28 +5037,28 @@ export default function Expenses() {
                   {mode === "prepaid" && !belowThreshold && (
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <div>
-                        <label className="block text-xs text-slate-600 mb-1">First month covered *</label>
+                        <label className="block text-xs text-muted-foreground mb-1">First month covered *</label>
                         <input
                           type="month"
                           required
                           value={state.coverage_start}
                           onChange={(e) => setState({ ...state, coverage_start: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-600 mb-1">Last month covered *</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Last month covered *</label>
                         <input
                           type="month"
                           required
                           min={state.coverage_start}
                           value={state.coverage_end}
                           onChange={(e) => setState({ ...state, coverage_end: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
                         />
                       </div>
                       {state.coverage_end >= state.coverage_start && (
-                        <p className="col-span-2 text-[11px] text-slate-600">
+                        <p className="col-span-2 text-[11px] text-muted-foreground">
                           {(() => {
                             const n = prepaidMonths(state.coverage_start, state.coverage_end);
                             const amt = Number(state.amount) || 0;
@@ -5079,15 +5079,15 @@ export default function Expenses() {
           </div>
           )}
           <div className="col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+            <label className="block text-sm text-foreground mb-1">Payment Mode *</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(["Cash", "Bank", "Cheque", "Payable"] as const).map((m) => (
                 <label
                   key={m}
                   className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
                     state.payment_mode === m
-                      ? "border-slate-900 bg-slate-50"
-                      : "border-slate-200 hover:border-slate-300"
+                      ? "border-foreground bg-muted/50"
+                      : "border-border hover:border-border"
                   }`}
                 >
                   <input
@@ -5103,12 +5103,12 @@ export default function Expenses() {
           </div>
           {state.payment_mode === "Cash" && (
             <div className="col-span-2">
-              <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+              <label className="block text-sm text-foreground mb-1">Paid By (Office Staff) *</label>
               <ThemedSelect
                 required
                 value={expenseCustodianId}
                 onChange={(e) => setExpenseCustodianId(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">Select who paid the cash…</option>
                 {custodians.map((c) => (
@@ -5129,11 +5129,11 @@ export default function Expenses() {
             </div>
           )}
           <div className="col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Expense By (Office Staff)</label>
+            <label className="block text-sm text-foreground mb-1">Expense By (Office Staff)</label>
             <ThemedSelect
               value={state.expense_by}
               onChange={(e) => setState({ ...state, expense_by: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             >
               <option value="">Select who the expense is by…</option>
               {/* Editing an older expense keeps whoever it already names, even if
@@ -5154,12 +5154,12 @@ export default function Expenses() {
           </div>
           {state.payment_mode === "Bank" && (
             <div className="col-span-2">
-              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <label className="block text-sm text-foreground mb-1">Bank Account *</label>
               <ThemedSelect
                 required
                 value={state.bank_account_id}
                 onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
@@ -5172,12 +5172,12 @@ export default function Expenses() {
           )}
           {state.payment_mode === "Cheque" && (
             <div className="col-span-2">
-              <label className="block text-sm text-slate-700 mb-1">Cheque *</label>
+              <label className="block text-sm text-foreground mb-1">Cheque *</label>
               <ThemedSelect
                 required
                 value={state.cheque_id}
                 onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">Select a pending cheque</option>
                 {cheques
@@ -5191,7 +5191,7 @@ export default function Expenses() {
                     );
                   })}
               </ThemedSelect>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Cashflow recognises this expense only when the cheque is marked Cleared in Bank Accounts → Cheques.
               </p>
             </div>
@@ -5199,12 +5199,12 @@ export default function Expenses() {
           {state.payment_mode === "Payable" && (
             <>
               <div className="col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">Vendor *</label>
+                <label className="block text-sm text-foreground mb-1">Vendor *</label>
                 <ThemedSelect
                   required
                   value={state.vendor_id}
                   onChange={(e) => setState({ ...state, vendor_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="">Select vendor</option>
                   {vendors.map((v) => (
@@ -5214,49 +5214,49 @@ export default function Expenses() {
                   ))}
                 </ThemedSelect>
                 {vendors.length === 0 && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     No vendors yet. Add one via the <span className="font-medium">Manage Vendors</span> button.
                   </p>
                 )}
               </div>
               <div className="col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">Due Date *</label>
+                <label className="block text-sm text-foreground mb-1">Due Date *</label>
                 <input
                   required
                   type="date"
                   value={state.due_date}
                   onChange={(e) => setState({ ...state, due_date: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   This expense will appear in Accounting → Accounts Payable until it is marked Paid.
                 </p>
               </div>
             </>
           )}
           <div className="col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Description</label>
+            <label className="block text-sm text-foreground mb-1">Description</label>
             <textarea
               value={state.description}
               onChange={(e) => setState({ ...state, description: e.target.value })}
               rows={2}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <label className="block text-sm text-foreground mb-1">Notes</label>
             <textarea
               value={state.notes}
               onChange={(e) => setState({ ...state, notes: e.target.value })}
               rows={2}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Receipt(s)</label>
+            <label className="block text-sm text-foreground mb-1">Receipt(s)</label>
             {edit?.existingReceipt && !edit.replaceReceipt ? (
-              <div className="flex items-center justify-between p-3 border border-slate-200 rounded-md">
-                <span className="text-sm text-slate-700 truncate">
+              <div className="flex items-center justify-between p-3 border border-border rounded-md">
+                <span className="text-sm text-foreground truncate">
                   {edit.existingReceipt.split("/").pop()}
                 </span>
                 <Button
@@ -5272,9 +5272,9 @@ export default function Expenses() {
               </div>
             ) : (
               <div className="space-y-2">
-                <label className="flex items-center gap-3 cursor-pointer px-4 py-2 border border-slate-200 border-dashed rounded-md hover:bg-slate-50 transition-colors">
-                  <Upload className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={1.5} />
-                  <span className="text-sm text-slate-500 flex-1">
+                <label className="flex items-center gap-3 cursor-pointer px-4 py-2 border border-border border-dashed rounded-md hover:bg-muted/50 transition-colors">
+                  <Upload className="w-4 h-4 text-muted-foreground/70 shrink-0" strokeWidth={1.5} />
+                  <span className="text-sm text-muted-foreground flex-1">
                     {state.receipts?.length
                       ? `${state.receipts.length} file(s) selected`
                       : "Click to choose file(s)…"}
@@ -5289,12 +5289,12 @@ export default function Expenses() {
                 {state.receipts && state.receipts.length > 0 && (
                   <ul className="space-y-1">
                     {state.receipts.map((f, i) => (
-                      <li key={i} className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded">
+                      <li key={i} className="flex items-center justify-between text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded">
                         <span className="truncate">{f.name}</span>
                         <button
                           type="button"
                           onClick={() => setState({ ...state, receipts: state.receipts?.filter((_, j) => j !== i) })}
-                          className="ml-2 text-slate-400 hover:text-slate-700"
+                          className="ml-2 text-muted-foreground/70 hover:text-foreground"
                         >
                           <X className="w-3 h-3" />
                         </button>

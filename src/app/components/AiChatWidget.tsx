@@ -143,7 +143,7 @@ export default function AiChatWidget() {
         // Lifted clear of the home indicator / gesture bar, which a plain
         // bottom-6 sits underneath on a modern phone.
         style={{ bottom: "calc(var(--safe-bottom, 0px) + 1.5rem)" }}
-        className={`fixed right-6 z-40 flex items-center justify-center w-14 h-14 rounded-full bg-brand-600 text-[#fff] shadow-lg hover:bg-brand-700 transition-all duration-200 ease-out ${
+        className={`fixed right-6 z-40 flex items-center justify-center w-14 h-14 rounded-full bg-brand-600 text-on-fill shadow-lg hover:bg-brand-700 transition-all duration-200 ease-out ${
           open
             ? "opacity-0 scale-90 pointer-events-none"
             : "opacity-100 scale-100"
@@ -161,18 +161,18 @@ export default function AiChatWidget() {
         // than vh so the panel shrinks with the keyboard instead of extending
         // past the bottom of the screen.
         style={{ bottom: "calc(var(--safe-bottom, 0px) + 1.5rem)" }}
-        className={`fixed right-6 z-40 w-[min(420px,calc(100vw-2rem))] h-[min(620px,calc(100dvh-3rem-var(--safe-bottom,0px)-var(--safe-top,0px)))] bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-200 ease-out ${
+        className={`fixed right-6 z-40 w-[min(420px,calc(100vw-2rem))] h-[min(620px,calc(100dvh-3rem-var(--safe-bottom,0px)-var(--safe-top,0px)))] bg-card border border-border rounded-xl shadow-xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-200 ease-out ${
           open
             ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
             : "opacity-0 scale-95 translate-y-2 pointer-events-none"
         }`}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center">
-              <Bot className="w-4 h-4 text-[#fff]" strokeWidth={1.5} />
+              <Bot className="w-4 h-4 text-on-fill" strokeWidth={1.5} />
             </div>
-            <p className="text-sm font-medium text-slate-900">Assistant</p>
+            <p className="text-sm font-medium text-foreground">Assistant</p>
           </div>
           <div className="flex items-center gap-1">
             {messages.length > 0 && (
@@ -181,7 +181,7 @@ export default function AiChatWidget() {
                   type="button"
                   onClick={copyConversation}
                   title="Copy conversation as markdown"
-                  className="p-1.5 rounded hover:bg-slate-200 text-slate-600"
+                  className="p-1.5 rounded hover:bg-border text-muted-foreground"
                 >
                   {copied ? (
                     <Check className="w-4 h-4 text-success-600" strokeWidth={1.5} />
@@ -193,7 +193,7 @@ export default function AiChatWidget() {
                   type="button"
                   onClick={clearChat}
                   title="New conversation"
-                  className="p-1.5 rounded hover:bg-slate-200 text-slate-600"
+                  className="p-1.5 rounded hover:bg-border text-muted-foreground"
                 >
                   <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                 </button>
@@ -203,7 +203,7 @@ export default function AiChatWidget() {
               type="button"
               onClick={() => setOpen(false)}
               title="Close"
-              className="p-1.5 rounded hover:bg-slate-200 text-slate-600"
+              className="p-1.5 rounded hover:bg-border text-muted-foreground"
             >
               <X className="w-4 h-4" strokeWidth={1.5} />
             </button>
@@ -224,7 +224,7 @@ export default function AiChatWidget() {
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-slate-200 p-3 bg-white">
+        <form onSubmit={handleSubmit} className="border-t border-border p-3 bg-card">
           <div className="flex items-end gap-2">
             <textarea
               ref={inputRef}
@@ -234,12 +234,12 @@ export default function AiChatWidget() {
               disabled={sending}
               rows={1}
               placeholder="Type a message…"
-              className="flex-1 resize-none px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:bg-slate-50 min-h-[40px] max-h-32"
+              className="flex-1 resize-none px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:bg-muted/50 min-h-[40px] max-h-32"
             />
             <button
               type="submit"
               disabled={sending || !input.trim()}
-              className="flex items-center justify-center w-10 h-10 rounded-md bg-brand-600 text-[#fff] hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center justify-center w-10 h-10 rounded-md bg-brand-600 text-on-fill hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
               title="Send"
             >
               {sending ? (
@@ -262,7 +262,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     // pipe characters they typed survive verbatim.
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] px-3 py-2 rounded-lg bg-brand-600 text-[#fff] text-sm whitespace-pre-wrap break-words">
+        <div className="max-w-[85%] px-3 py-2 rounded-lg bg-brand-600 text-on-fill text-sm whitespace-pre-wrap break-words">
           {message.content}
         </div>
       </div>
@@ -270,7 +270,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   }
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%] px-3 py-2 rounded-lg bg-slate-100 text-slate-900 text-sm break-words ai-md">
+      <div className="max-w-[85%] px-3 py-2 rounded-lg bg-muted text-foreground text-sm break-words ai-md">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           // Override the default tag rendering with classnames tuned for a
@@ -279,7 +279,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           // inside a 400px-wide bubble rather than a full document.
           components={{
             p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-            strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
             em: ({ children }) => <em className="italic">{children}</em>,
             ul: ({ children }) => <ul className="list-disc pl-5 mb-2 last:mb-0 space-y-0.5">{children}</ul>,
             ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 last:mb-0 space-y-0.5">{children}</ol>,
@@ -288,22 +288,22 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             h2: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h3>,
             h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h3>,
             code: ({ children }) => (
-              <code className="px-1 py-0.5 rounded bg-slate-200 text-slate-800 text-[12px] font-mono">
+              <code className="px-1 py-0.5 rounded bg-border text-foreground text-[12px] font-mono">
                 {children}
               </code>
             ),
             pre: ({ children }) => (
-              <pre className="my-2 p-2 rounded bg-slate-200 text-slate-800 text-[12px] font-mono overflow-x-auto">
+              <pre className="my-2 p-2 rounded bg-border text-foreground text-[12px] font-mono overflow-x-auto">
                 {children}
               </pre>
             ),
             blockquote: ({ children }) => (
-              <blockquote className="border-l-2 border-slate-300 pl-2 my-2 text-slate-600">
+              <blockquote className="border-l-2 border-border pl-2 my-2 text-muted-foreground">
                 {children}
               </blockquote>
             ),
             a: ({ href, children }) => (
-              <a href={href} target="_blank" rel="noreferrer" className="text-brand-700 underline hover:text-brand-800">
+              <a href={href} target="_blank" rel="noreferrer" className="text-brand-700 underline hover:text-brand-700">
                 {children}
               </a>
             ),
@@ -315,16 +315,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                 <table className="w-full border-collapse text-[12px]">{children}</table>
               </div>
             ),
-            thead: ({ children }) => <thead className="bg-slate-200/60">{children}</thead>,
+            thead: ({ children }) => <thead className="bg-border/60">{children}</thead>,
             th: ({ children }) => (
-              <th className="px-2 py-1.5 text-left font-medium text-slate-700 border-b border-slate-300">
+              <th className="px-2 py-1.5 text-left font-medium text-foreground border-b border-border">
                 {children}
               </th>
             ),
             td: ({ children }) => (
-              <td className="px-2 py-1.5 border-b border-slate-200 align-top">{children}</td>
+              <td className="px-2 py-1.5 border-b border-border align-top">{children}</td>
             ),
-            hr: () => <hr className="my-2 border-slate-200" />,
+            hr: () => <hr className="my-2 border-border" />,
           }}
         >
           {message.content}
@@ -339,17 +339,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 function TypingIndicator() {
   return (
     <div className="flex justify-start">
-      <div className="px-3 py-2.5 rounded-lg bg-slate-100 flex items-center gap-1.5">
+      <div className="px-3 py-2.5 rounded-lg bg-muted flex items-center gap-1.5">
         <span
-          className="ai-chat-dot inline-block w-1.5 h-1.5 rounded-full bg-slate-500"
+          className="ai-chat-dot inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40"
           style={{ animationDelay: "0ms" }}
         />
         <span
-          className="ai-chat-dot inline-block w-1.5 h-1.5 rounded-full bg-slate-500"
+          className="ai-chat-dot inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40"
           style={{ animationDelay: "200ms" }}
         />
         <span
-          className="ai-chat-dot inline-block w-1.5 h-1.5 rounded-full bg-slate-500"
+          className="ai-chat-dot inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40"
           style={{ animationDelay: "400ms" }}
         />
       </div>

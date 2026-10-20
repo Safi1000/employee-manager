@@ -160,9 +160,9 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
     if (s.marked === 0) return "bg-muted text-muted-foreground border border-border bg-[repeating-linear-gradient(135deg,transparent_0_7px,color-mix(in_srgb,var(--border)_70%,transparent)_7px_9px)]";
     if (s.contracted === 0) return "bg-card text-foreground border border-dashed border-border";
     const gap = s.contracted - s.onPost;
-    if (gap <= 0) return "bg-[#3d4a2b] text-[#f3eee2]";
-    if (gap === 1) return "bg-brand-500 text-[#241a06]";
-    return "bg-[#a3392a] text-[#ffffff]";
+    if (gap <= 0) return "bg-settled text-ink-foreground";
+    if (gap === 1) return "bg-brand-500 text-on-brand";
+    return "bg-danger-700 text-on-fill";
   };
 
   return (
@@ -206,7 +206,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   {sites ? fmt(onPost) : `${d.attendanceTodayPct}%`}
                   {sites && <span className="text-2xl text-muted-foreground font-semibold"> / {fmt(contracted)}</span>}
                 </span>
-                <span className="text-[13px] text-[#f6d79b]">{sites ? (shortHeads > 0 ? `${shortHeads} posts uncovered across ${short.length} clients — tap for the list` : "Every marked post is covered") : `Yesterday ${d.attendanceYesterdayPct}%`}</span>
+                <span className="text-[13px] text-heed">{sites ? (shortHeads > 0 ? `${shortHeads} posts uncovered across ${short.length} clients — tap for the list` : "Every marked post is covered") : `Yesterday ${d.attendanceYesterdayPct}%`}</span>
                 {unmarked.length > 0 && <span className="text-xs text-muted-foreground">{unmarked.length} client{unmarked.length > 1 ? "s" : ""} not marked yet — left out of the figure</span>}
               </span>
             </Hit>
@@ -227,7 +227,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             <span className="lbl mr-1">Needs attention</span>
             {attention.map((a) => (
               <Link key={a.text} to={a.to} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border text-[13px] text-foreground hover:border-brand-500 min-h-9">
-                <span className="font-ledger font-semibold text-[#f0a99a]">{a.n}</span>{a.text}
+                <span className="font-ledger font-semibold text-down">{a.n}</span>{a.text}
               </Link>
             ))}
           </div>
@@ -333,7 +333,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                 <span className="relative h-[18px] rounded bg-muted/70">
                   <span className="absolute inset-y-0 rounded" style={{ left: `${f.left}%`, width: `${f.width}%`, background: f.kind ? "var(--foreground)" : f.v >= 0 ? "#2f5d8a" : "#e9a73c" }} />
                 </span>
-                <span className={`font-ledger text-right ${f.kind ? "font-bold" : f.v < 0 ? "text-[#8a3a12] dark:text-danger-500" : "text-info-700 dark:text-info-500"}`}>{f.kind ? "" : f.v >= 0 ? "+" : ""}{mil(f.v)}</span>
+                <span className={`font-ledger text-right ${f.kind ? "font-bold" : f.v < 0 ? "text-danger-700 dark:text-danger-500" : "text-info-700 dark:text-info-500"}`}>{f.kind ? "" : f.v >= 0 ? "+" : ""}{mil(f.v)}</span>
               </Link>
             ))}
             <p className="text-xs text-muted-foreground">Start of month is worked back from today's balances and what Bastion recorded this month; transfers between our own accounts cancel out.</p>
@@ -503,7 +503,7 @@ function BandStat({ to, label, value, sub, tone }: { to: string; label: string; 
     <Link to={to} className="bg-card border border-border rounded-[14px] px-4 py-3.5 flex flex-col gap-1.5 text-foreground hover:border-brand-500/80 transition-colors">
       <span className="lbl">{label}</span>
       <span className="font-ledger text-[26px] font-semibold tracking-tight leading-none">{value}</span>
-      <span className={`text-xs ${tone === "good" ? "text-[#9ad1a3]" : tone === "bad" ? "text-[#f0a99a]" : "text-muted-foreground"}`}>{sub}</span>
+      <span className={`text-xs ${tone === "good" ? "text-up" : tone === "bad" ? "text-down" : "text-muted-foreground"}`}>{sub}</span>
     </Link>
   );
 }

@@ -130,13 +130,13 @@ export default function AccountsGrid({ period }: { period: string }) {
             <span className="px-3 py-2.5 text-right flex flex-col items-end"><span className="text-foreground">Total</span><span className="font-normal">all accounts</span></span>
           </div>
           {rowsDef.map((r) => (
-            <div key={r.label} className={`grid items-center text-sm ${r.dark ? "mx-3 my-1.5 rounded-xl bg-[#191a10] text-[#f3eee2] font-semibold" : r.strong ? "border-t border-foreground/60 font-semibold" : "border-t border-border/70 hover:bg-muted/40"}`} style={{ gridTemplateColumns: cols }}>
+            <div key={r.label} className={`grid items-center text-sm ${r.dark ? "mx-3 my-1.5 rounded-xl bg-ink text-ink-foreground font-semibold" : r.strong ? "border-t border-foreground/60 font-semibold" : "border-t border-border/70 hover:bg-muted/40"}`} style={{ gridTemplateColumns: cols }}>
               <span className={`py-2 ${r.dark ? "px-3" : "px-6"}`}>{r.label}</span>
               {grid.map((c) => {
                 const v = r.get(c);
                 return (
                   <button key={c.loc.id} type="button" onClick={() => openLedger(c)}
-                    className={`${cell} rounded-md hover:underline ${r.signed && v < 0 ? (r.dark ? "text-[#f0a99a]" : "text-danger-700 dark:text-danger-500") : ""} ${Math.abs(v) < 0.5 ? "opacity-50" : ""}`}>
+                    className={`${cell} rounded-md hover:underline ${r.signed && v < 0 ? (r.dark ? "text-down" : "text-danger-700 dark:text-danger-500") : ""} ${Math.abs(v) < 0.5 ? "opacity-50" : ""}`}>
                     {fmt(v, r.signed)}
                   </button>
                 );

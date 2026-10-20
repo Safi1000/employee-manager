@@ -41,7 +41,7 @@ export default function DocumentInput({
 
   return (
     <div>
-      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <label className="block text-sm text-foreground mb-1">{label}</label>
       <div className="flex items-center gap-2">
         <input
           ref={fileRef}
@@ -52,21 +52,21 @@ export default function DocumentInput({
             setScanned(null);
             onChange(multiple ? e.target.files ?? undefined : e.target.files?.[0]);
           }}
-          className="flex-1 min-w-0 px-4 py-2 border border-slate-200 rounded-md text-sm"
+          className="flex-1 min-w-0 px-4 py-2 border border-border rounded-md text-sm"
         />
         <button
           type="button"
           onClick={() => setCamOpen(true)}
           title="Photograph this document with the camera"
-          className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-slate-200 text-xs text-slate-700 hover:bg-slate-50"
+          className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-border text-xs text-foreground hover:bg-muted/50"
         >
           <ScanLine className="w-4 h-4" strokeWidth={1.5} /> Scan
         </button>
-        <Upload className="w-4 h-4 flex-shrink-0 text-slate-400" strokeWidth={1.5} />
+        <Upload className="w-4 h-4 flex-shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
       </div>
 
       {scanned && (
-        <div className="mt-1.5 flex items-center gap-2 text-xs text-slate-600">
+        <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="truncate">Scanned: {scanned.name}</span>
           <button type="button" onClick={clear} className="text-danger-600 hover:underline inline-flex items-center gap-0.5">
             <X className="w-3 h-3" strokeWidth={2} /> remove
@@ -74,7 +74,7 @@ export default function DocumentInput({
         </div>
       )}
       {!scanned && selectedName && (
-        <p className="mt-1.5 truncate text-xs text-slate-600">{selectedName}</p>
+        <p className="mt-1.5 truncate text-xs text-muted-foreground">{selectedName}</p>
       )}
 
       <CameraCapture

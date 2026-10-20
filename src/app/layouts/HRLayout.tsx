@@ -17,7 +17,7 @@ export default function HRLayout() {
   ];
 
   return (
-    <div className="app-shell flex h-dvh bg-slate-50">
+    <div className="app-shell flex h-dvh bg-muted/50">
       <Sidebar title="HR Panel" links={links} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <TopBar />

@@ -647,7 +647,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 option is hidden without cashflow.view (same data as /cashflow), so
                 the whole toggle disappears when there is nothing to switch to. */}
             {canViewCashflow && (
-            <span className="inline-flex items-center rounded-lg bg-slate-100 p-0.5">
+            <span className="inline-flex items-center rounded-lg bg-muted p-0.5">
               {([
                 { key: "financial", label: "Revenue Basis" },
                 { key: "cashflow", label: "Cash Basis" },
@@ -658,8 +658,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   onClick={() => { setTopTab(t.key); if (t.key === "cashflow") setCashflowOpened(true); }}
                   className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
                     topTab === t.key
-                      ? "bg-white text-brand-700 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
+                      ? "bg-card text-brand-700 shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {t.label}
@@ -738,7 +738,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         <div className="bg-card rounded-2xl border border-border">
           {/* One report, no tab strip to choose from, when this is the standalone
               Partnership Report page. */}
-          <div className={`p-4 md:p-6 border-b border-slate-200 overflow-x-auto${partnershipOnly ? " hidden" : ""}`}>
+          <div className={`p-4 md:p-6 border-b border-border overflow-x-auto${partnershipOnly ? " hidden" : ""}`}>
             <div className="flex gap-2 min-w-max">
               {/* Partnership Report has its own page under Finance now, so it is
                   no longer a tab here — this component still renders it, but only
@@ -762,7 +762,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${activeTab === tab.key
                       ? "bg-foreground text-background font-semibold"
-                      : "text-slate-600 hover:bg-slate-100"
+                      : "text-muted-foreground hover:bg-muted"
                     }`}
                 >
                   {tab.label}
@@ -775,19 +775,19 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
             <div className="p-6">
               <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-lg text-slate-900 mb-1">Profit & Loss Statement</h3>
-                  <p className="text-sm text-slate-500">
+                  <h3 className="text-lg text-foreground mb-1">Profit & Loss Statement</h3>
+                  <p className="text-sm text-muted-foreground">
                     For {formatPeriod(plPeriod)} ({firstOfMonth(plPeriod)} – {lastOfMonth(plPeriod)})
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Branch is driven by the global region selector at the top of
                       the app (Head Office / All Regions), not a per-page filter. */}
-                  <label className="text-sm text-slate-600">Month:</label>
+                  <label className="text-sm text-muted-foreground">Month:</label>
                   <ThemedSelect
                     value={plPeriod}
                     onChange={(e) => setPlPeriod(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     {chartPeriodOptions.map((p) => (
                       <option key={p} value={p}>
@@ -799,30 +799,30 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               </div>
 
               {loadingPl ? (
-                <div className="py-12 text-center text-slate-500">
+                <div className="py-12 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </div>
               ) : (
                 <div className="space-y-6">
                   {/* Revenue */}
                   <div>
-                    <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Revenue</h4>
+                    <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Revenue</h4>
                     <div className="space-y-2 mb-3">
                       <div className="flex justify-between items-center pl-4">
-                        <span className="text-sm text-slate-600">Security Services Revenue</span>
+                        <span className="text-sm text-muted-foreground">Security Services Revenue</span>
                         <span className="text-sm text-success-600">
                           PKR {plFigures.securityRevenue.toLocaleString()}
                         </span>
                       </div>
                       <div className="flex justify-between items-center pl-4">
-                        <span className="text-sm text-slate-600">Guard Deployment Revenue</span>
+                        <span className="text-sm text-muted-foreground">Guard Deployment Revenue</span>
                         <span className="text-sm text-success-600">
                           PKR {plFigures.guardRevenue.toLocaleString()}
                         </span>
                       </div>
                     </div>
-                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                      <span className="text-sm text-slate-900">Total Revenue</span>
+                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-border">
+                      <span className="text-sm text-foreground">Total Revenue</span>
                       <span className="text-sm text-success-600">
                         PKR {plFigures.totalRevenue.toLocaleString()}
                       </span>
@@ -831,7 +831,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
 
                   {/* Cost of Services */}
                   <div>
-                    <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cost of Services</h4>
+                    <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Cost of Services</h4>
                     <div className="space-y-2 mb-3">
                       {[
                         { name: "Guard Payroll & Salaries", amount: plFigures.guardPayroll },
@@ -841,15 +841,15 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                         { name: "Other Cost of Services", amount: plFigures.cosOther },
                       ].map((item) => (
                         <div key={item.name} className="flex justify-between items-center pl-4">
-                          <span className="text-sm text-slate-600">{item.name}</span>
+                          <span className="text-sm text-muted-foreground">{item.name}</span>
                           <span className="text-sm text-danger-600">
                             PKR {item.amount.toLocaleString()}
                           </span>
                         </div>
                       ))}
                     </div>
-                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                      <span className="text-sm text-slate-900">Total Cost of Services</span>
+                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-border">
+                      <span className="text-sm text-foreground">Total Cost of Services</span>
                       <span className="text-sm text-danger-600">
                         PKR {plFigures.totalCos.toLocaleString()}
                       </span>
@@ -857,9 +857,9 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </div>
 
                   {/* Gross Profit */}
-                  <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="pt-4 border-t-2 border-border">
                     <div className="flex justify-between items-center">
-                      <span className="text-base text-slate-900">{plFigures.grossProfit < 0 ? "Gross Loss" : "Gross Profit"}</span>
+                      <span className="text-base text-foreground">{plFigures.grossProfit < 0 ? "Gross Loss" : "Gross Profit"}</span>
                       <span
                         className={`text-lg ${plFigures.grossProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
@@ -870,7 +870,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
 
                   {/* Operating Expenses */}
                   <div>
-                    <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Operating Expenses</h4>
+                    <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Operating Expenses</h4>
                     <div className="space-y-2 mb-3">
                       {[
                         { name: "Office Salaries (non-billable staff)", amount: plFigures.officePayroll },
@@ -890,15 +890,15 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                           : []),
                       ].map((item) => (
                         <div key={item.name} className="flex justify-between items-center pl-4">
-                          <span className="text-sm text-slate-600">{item.name}</span>
+                          <span className="text-sm text-muted-foreground">{item.name}</span>
                           <span className="text-sm text-danger-600">
                             PKR {item.amount.toLocaleString()}
                           </span>
                         </div>
                       ))}
                     </div>
-                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                      <span className="text-sm text-slate-900">Total Operating Expenses</span>
+                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-border">
+                      <span className="text-sm text-foreground">Total Operating Expenses</span>
                       <span className="text-sm text-danger-600">
                         PKR {plFigures.totalOpex.toLocaleString()}
                       </span>
@@ -906,9 +906,9 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </div>
 
                   {/* Operating Profit */}
-                  <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="pt-4 border-t-2 border-border">
                     <div className="flex justify-between items-center">
-                      <span className="text-base text-slate-900">{plFigures.operatingProfit < 0 ? "Operating Loss" : "Operating Profit"}</span>
+                      <span className="text-base text-foreground">{plFigures.operatingProfit < 0 ? "Operating Loss" : "Operating Profit"}</span>
                       <span
                         className={`text-lg ${plFigures.operatingProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
@@ -920,22 +920,22 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   {/* EBT / Tax / Net */}
                   <div className="pt-2 space-y-2">
                     <div className="flex justify-between items-center pl-4">
-                      <span className="text-sm text-slate-600">Earnings Before Tax (EBT)</span>
-                      <span className={`text-sm ${plFigures.ebt >= 0 ? "text-slate-900" : "text-danger-600"}`}>
+                      <span className="text-sm text-muted-foreground">Earnings Before Tax (EBT)</span>
+                      <span className={`text-sm ${plFigures.ebt >= 0 ? "text-foreground" : "text-danger-600"}`}>
                         PKR {plFigures.ebt.toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between items-center pl-4">
-                      <span className="text-sm text-slate-600">Income Tax</span>
+                      <span className="text-sm text-muted-foreground">Income Tax</span>
                       <span className="text-sm text-danger-600">
                         PKR {plFigures.taxes.toLocaleString()}
                       </span>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="pt-4 border-t-2 border-border">
                     <div className="flex justify-between items-center">
-                      <span className="text-base text-slate-900">Net Profit</span>
+                      <span className="text-base text-foreground">Net Profit</span>
                       <span
                         className={`text-xl ${plFigures.netProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
@@ -964,19 +964,19 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   underneath. Switching basis must never move a control. */}
               <div className="p-6 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-lg text-slate-900 mb-1">Client Statements — Revenue Basis</h3>
-                  <p className="text-sm text-slate-500">
+                  <h3 className="text-lg text-foreground mb-1">Client Statements — Revenue Basis</h3>
+                  <p className="text-sm text-muted-foreground">
                     For {formatPeriod(statementPeriod)} ({firstOfMonth(statementPeriod)} – {lastOfMonth(statementPeriod)})
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Branch is driven by the global region selector at the top of
                       the app, not a per-page filter. */}
-                  <label className="text-sm text-slate-600">Month:</label>
+                  <label className="text-sm text-muted-foreground">Month:</label>
                   <ThemedSelect
                     value={statementPeriod}
                     onChange={(e) => setStatementPeriod(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     {chartPeriodOptions.map((p) => (
                       <option key={p} value={p}>
@@ -986,13 +986,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </ThemedSelect>
                   {clientStatementExportBtn}
                 </div>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-muted-foreground">
                   Total Income = Invoiced − (Payroll + Direct Expenses + Regional Overhead + Head Office).
                   Overhead is apportioned pro-rata by revenue.
                 </span>
               </div>
 
-              <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-slate-200">
+              <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-border">
                 <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                   <p className="lbl mb-1">Total Invoiced</p>
                   <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700 dark:text-brand-500">
@@ -1013,13 +1013,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 </div>
                 <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                   <p className="lbl mb-1">Regional Overhead</p>
-                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground">
                     <span className="cur">PKR</span>{Math.round(statementTotals.regional).toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                   <p className="lbl mb-1">Head Office</p>
-                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground">
                     <span className="cur">PKR</span>{Math.round(statementTotals.ho).toLocaleString()}
                   </p>
                 </div>
@@ -1049,37 +1049,37 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Total Invoiced</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Expense</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Direct Expenses</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Regional Overhead</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Total Income</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Total Invoiced</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Payroll Expense</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Direct Expenses</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Regional Overhead</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Total Income</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {loadingClients && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                         </td>
                       </tr>
                     )}
                     {!loadingClients && clientStatementRows.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                           No clients yet.
                         </td>
                       </tr>
                     )}
                     {!loadingClients &&
                       clientStatementRows.map((client) => (
-                        <tr key={client.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 text-sm text-slate-900">
+                        <tr key={client.id} className="hover:bg-muted/50 transition-colors">
+                          <td className="px-6 py-4 text-sm text-foreground">
                             <div>{client.name}</div>
-                            <div className="text-xs text-slate-500 font-mono">{client.client_code}</div>
+                            <div className="text-xs text-muted-foreground font-mono">{client.client_code}</div>
                           </td>
                           <td className="px-6 py-4 text-sm text-brand-600 text-right">
                             PKR {client.total_invoiced.toLocaleString()}
@@ -1090,7 +1090,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                           <td className="px-6 py-4 text-sm text-danger-600 text-right">
                             PKR {client.expenses.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-500 text-right">
+                          <td className="px-6 py-4 text-sm text-muted-foreground text-right">
                             PKR {Math.round(client.regional_overhead).toLocaleString()}
                           </td>
                           <td className="px-6 py-4 text-sm text-right">
@@ -1109,17 +1109,17 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                         </tr>
                       ))}
                     {!loadingClients && hoUnallocated && (
-                      <tr className="bg-slate-50">
-                        <td className="px-6 py-4 text-sm text-slate-900">
+                      <tr className="bg-muted/50">
+                        <td className="px-6 py-4 text-sm text-foreground">
                           <div>Head office — unallocated</div>
-                          <div className="text-xs text-slate-500">
+                          <div className="text-xs text-muted-foreground">
                             Held at head office, not apportioned to clients
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
-                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
-                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
-                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
                         <td className="px-6 py-4 text-sm text-right">
                           <span className={Number(hoUnallocated.net) >= 0 ? "text-success-600" : "text-danger-600"}>
                             PKR {Number(hoUnallocated.net).toLocaleString()}
@@ -1138,20 +1138,20 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
             <div className="p-6">
               <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-lg text-slate-900 mb-1">Partnership Report</h3>
-                  <p className="text-sm text-slate-500">
+                  <h3 className="text-lg text-foreground mb-1">Partnership Report</h3>
+                  <p className="text-sm text-muted-foreground">
                     For {formatPeriod(partnershipPeriod)} · Equity shares allocated:{" "}
-                    <span className={equityShareTotal > 100 ? "text-danger-600" : "text-slate-900"}>
+                    <span className={equityShareTotal > 100 ? "text-danger-600" : "text-foreground"}>
                       {equityShareTotal}%
                     </span>
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-sm text-slate-600">Month:</label>
+                  <label className="text-sm text-muted-foreground">Month:</label>
                   <ThemedSelect
                     value={partnershipPeriod}
                     onChange={(e) => setPartnershipPeriod(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     {chartPeriodOptions.map((p) => (
                       <option key={p} value={p}>{formatPeriod(p)}</option>
@@ -1188,11 +1188,11 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
 
               <div className="overflow-x-auto">
                 {loadingPartnership ? (
-                  <div className="py-12 text-center text-slate-500">
+                  <div className="py-12 text-center text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                   </div>
                 ) : partners.length === 0 ? (
-                  <div className="py-12 text-center text-slate-500 text-sm">
+                  <div className="py-12 text-center text-muted-foreground text-sm">
                     No partners yet. Add the first one above.
                   </div>
                 ) : (() => {
@@ -1241,7 +1241,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 })()}
               </div>
 
-              <p className="mt-4 text-xs text-slate-500">
+              <p className="mt-4 text-xs text-muted-foreground">
                 Equity shares divide the company-wide residual; a regional partner's share divides
                 their own region. The two are separate pools, so they are not summed together.
               </p>
@@ -1294,10 +1294,10 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       <Modal isOpen={isClientStatementModalOpen} onClose={() => setIsClientStatementModalOpen(false)} title="Full Client Statement" size="lg">
         {selectedClient && (
           <div className="space-y-4">
-            <div className="pb-4 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">{selectedClient.name}</h3>
-              <p className="text-xs text-slate-500 font-mono">{selectedClient.client_code}</p>
-              <p className="text-xs text-slate-500 mt-1">Month: {formatPeriod(statementPeriod)}</p>
+            <div className="pb-4 border-b border-border">
+              <h3 className="text-base text-foreground">{selectedClient.name}</h3>
+              <p className="text-xs text-muted-foreground font-mono">{selectedClient.client_code}</p>
+              <p className="text-xs text-muted-foreground mt-1">Month: {formatPeriod(statementPeriod)}</p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1315,11 +1315,11 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               </div>
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Regional Overhead</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700"><span className="cur">PKR</span>{Math.round(selectedClient.regional_overhead).toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground"><span className="cur">PKR</span>{Math.round(selectedClient.regional_overhead).toLocaleString()}</p>
               </div>
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Head Office</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700"><span className="cur">PKR</span>{Math.round(selectedClient.ho_share).toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground"><span className="cur">PKR</span>{Math.round(selectedClient.ho_share).toLocaleString()}</p>
               </div>
               <div className={`p-3 rounded-lg border ${selectedClient.total_income >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}>
                 <p className={`text-xs mb-1 ${selectedClient.total_income >= 0 ? "text-success-700" : "text-danger-700"}`}>Total Income</p>
@@ -1329,30 +1329,30 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">Invoices</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm text-foreground mb-3">Invoices</h4>
               {selectedClient.invoices.length === 0 ? (
-                <p className="text-sm text-slate-500">No invoices for this client.</p>
+                <p className="text-sm text-muted-foreground">No invoices for this client.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Invoice #</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Received</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Outstanding</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Attachment</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Invoice #</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Amount</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Received</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Outstanding</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Attachment</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-border">
                       {selectedClient.invoices.map((inv) => {
                         const out = Number(inv.invoice_amount) - Number(inv.amount_received);
                         return (
                           <tr key={inv.id}>
-                            <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
-                            <td className="px-3 py-2 text-xs text-slate-600">{formatDate(inv.invoice_date)}</td>
+                            <td className="px-3 py-2 text-xs font-mono text-foreground">{inv.invoice_number}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(inv.invoice_date)}</td>
                             <td className="px-3 py-2 text-xs text-right text-brand-600">
                               PKR {Number(inv.invoice_amount).toLocaleString()}
                             </td>
@@ -1375,7 +1375,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                                   View
                                 </button>
                               ) : (
-                                <span className="text-slate-400">—</span>
+                                <span className="text-muted-foreground/70">—</span>
                               )}
                             </td>
                           </tr>
@@ -1387,7 +1387,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               )}
             </div>
 
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button variant="primary" size="md" className="flex-1" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Print / Save PDF

@@ -87,8 +87,8 @@ export default function FinancialReports() {
               {kpis.map((k) => (
                 <div key={k.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
                   <span className="lbl truncate">{k.label}</span>
-                  <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${k.v < 0 ? "text-[#f0a99a]" : ""}`}><span className="cur">PKR</span>{Math.round(k.v).toLocaleString()}</span>
-                  <span className={`text-xs truncate ${k.good == null ? "text-muted-foreground" : k.good ? "text-[#9ad1a3]" : "text-[#f0a99a]"}`}>{k.sub}</span>
+                  <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${k.v < 0 ? "text-down" : ""}`}><span className="cur">PKR</span>{Math.round(k.v).toLocaleString()}</span>
+                  <span className={`text-xs truncate ${k.good == null ? "text-muted-foreground" : k.good ? "text-up" : "text-down"}`}>{k.sub}</span>
                 </div>
               ))}
             </div>

@@ -13,7 +13,7 @@ import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/ale
 const TIER: Record<string, string> = {
   blocking: "bg-danger-50 text-danger-700 border-danger-200",
   warning: "bg-warning-50 text-warning-700 border-warning-200",
-  dashboard: "bg-slate-50 text-slate-600 border-slate-200",
+  dashboard: "bg-muted/50 text-muted-foreground border-border",
 };
 
 export default function Alerts() {
@@ -75,9 +75,9 @@ export default function Alerts() {
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Alerts" subtitle="Blocking, warning and dashboard-tier signals" live>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          {tile("Blocking", blocking, "stop an action until overridden", blocking ? "text-[#f0a99a]" : "text-[#9ad1a3]")}
-          {tile("Open warnings", alerts.length - blocking, "waiting to be acknowledged", alerts.length - blocking ? "text-[#f6d79b]" : "text-[#9ad1a3]")}
-          {tile("Live warnings", warnings.length, "computed from today's data", warnings.length ? "text-[#f6d79b]" : "text-[#9ad1a3]")}
+          {tile("Blocking", blocking, "stop an action until overridden", blocking ? "text-down" : "text-up")}
+          {tile("Open warnings", alerts.length - blocking, "waiting to be acknowledged", alerts.length - blocking ? "text-heed" : "text-up")}
+          {tile("Live warnings", warnings.length, "computed from today's data", warnings.length ? "text-heed" : "text-up")}
           {tile("Dashboard signals", dashboard.length, "worth knowing, no action", "text-foreground")}
         </div>
       </Header>

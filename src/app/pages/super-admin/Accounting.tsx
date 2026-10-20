@@ -2294,12 +2294,12 @@ export default function Accounting() {
             ].map((x) => (
               <span key={x.k} className="flex items-baseline gap-2 text-sm">
                 <span className="text-muted-foreground">{x.k}</span>
-                <span className={`font-ledger font-semibold ${x.v < 0 ? "text-[#f0a99a]" : "text-foreground"}`}>{x.v < 0 ? "−" : ""}{Math.abs(Math.round(x.v)).toLocaleString()}</span>
+                <span className={`font-ledger font-semibold ${x.v < 0 ? "text-down" : "text-foreground"}`}>{x.v < 0 ? "−" : ""}{Math.abs(Math.round(x.v)).toLocaleString()}</span>
               </span>
             ))}
             <span className="ml-auto flex items-baseline gap-2">
               <span className="text-muted-foreground text-sm">=</span>
-              <span className="font-ledger text-xl font-semibold text-[#9ad1a3]"><span className="cur">PKR</span>{Math.round(totalAccountBalance + cashBalance + receivableTotals.outstanding - payableTotals.pending - payableTotals.overdue).toLocaleString()}</span>
+              <span className="font-ledger text-xl font-semibold text-up"><span className="cur">PKR</span>{Math.round(totalAccountBalance + cashBalance + receivableTotals.outstanding - payableTotals.pending - payableTotals.overdue).toLocaleString()}</span>
             </span>
           </div>
           <Tabs<typeof activeTab>
@@ -2329,7 +2329,7 @@ export default function Accounting() {
               <p className="lbl mb-1">Cheques in Transit</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{totalPendingCheques.toLocaleString()}</p>
             </div>
-            <div className="band on-dark p-4 md:p-5 rounded-2xl">
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-brand-500/60">
               <p className="lbl mb-1">Net Available Cash</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground"><span className="cur">PKR</span>{grandTotal.toLocaleString()}</p>
             </div>
@@ -2340,7 +2340,7 @@ export default function Accounting() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <p className="lbl mb-1">Opening Balance</p>
-              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-slate-900">
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-foreground">
                 <span className="cur">PKR</span>{receivableTotals.opening.toLocaleString()}
               </p>
             </div>
@@ -2373,7 +2373,7 @@ export default function Accounting() {
 
         {activeTab === "payables" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
-            <div className="band on-dark p-4 md:p-5 rounded-2xl">
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-brand-500/60">
               <p className="lbl mb-1">Total Payable</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-foreground">
                 <span className="cur">PKR</span>{payableTotals.total.toLocaleString()}
@@ -2410,9 +2410,9 @@ export default function Accounting() {
               <p className="lbl mb-1">Owed to Partners (Undrawn)</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{Math.round(custodySummary.totalPartnerOwed).toLocaleString()}</p>
             </div>
-            <div className="band on-dark p-4 md:p-5 rounded-2xl">
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-brand-500/60">
               <p className="lbl mb-1">Free Company Cash</p>
-              <p className={`font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl ${custodySummary.freeCash < 0 ? "text-danger-400" : "text-[#fff]"}`}><span className="cur">PKR</span>{Math.round(custodySummary.freeCash).toLocaleString()}</p>
+              <p className={`font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl ${custodySummary.freeCash < 0 ? "text-danger-500" : "text-on-fill"}`}><span className="cur">PKR</span>{Math.round(custodySummary.freeCash).toLocaleString()}</p>
             </div>
           </div>
         )}
@@ -2432,25 +2432,25 @@ export default function Accounting() {
         )}
 
         <div className="bg-card rounded-2xl border border-border mb-6">
-          <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
+          <div className="p-6 border-b border-border flex flex-wrap items-center gap-3">
 
             {activeTab === "receivables" && (
               <div className="ml-auto flex items-center gap-2 flex-wrap">
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" strokeWidth={1.5} />
+                  <Search className="w-3.5 h-3.5 text-muted-foreground/70 absolute left-2.5 top-1/2 -translate-y-1/2" strokeWidth={1.5} />
                   <input
                     type="text"
                     value={receivablesSearch}
                     onChange={(e) => setReceivablesSearch(e.target.value)}
                     placeholder="Search client / code…"
-                    className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-sm w-56"
+                    className="pl-8 pr-3 py-1.5 border border-border rounded-md text-sm w-56"
                   />
                 </div>
-                <label className="text-xs text-slate-500">Client:</label>
+                <label className="text-xs text-muted-foreground">Client:</label>
                 <ThemedSelect
                   value={receivablesClientFilter}
                   onChange={(e) => setReceivablesClientFilter(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm max-w-[14rem]"
+                  className="px-3 py-1.5 border border-border rounded-md text-sm max-w-[14rem]"
                 >
                   <option value="all">All Clients</option>
                   {[...allClientsForRec]
@@ -2459,24 +2459,24 @@ export default function Accounting() {
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                 </ThemedSelect>
-                <label className="text-xs text-slate-500">Branch:</label>
+                <label className="text-xs text-muted-foreground">Branch:</label>
                 <ThemedSelect
                   disabled={!!regionId}
                   title={regionId ? "Set by the region bar at the top" : undefined}
                   value={regionId ?? receivablesBranchFilter}
                   onChange={(e) => setReceivablesBranchFilter(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-1.5 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Branches</option>
                   {branchesList.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </ThemedSelect>
-                <label className="text-xs text-slate-500">Month:</label>
+                <label className="text-xs text-muted-foreground">Month:</label>
                 <ThemedSelect
                   value={receivablesMonth}
                   onChange={(e) => setReceivablesMonth(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-1.5 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Months</option>
                   {monthOptions.map((m) => (
@@ -2487,11 +2487,11 @@ export default function Accounting() {
             )}
             {activeTab === "payables" && (
               <div className="ml-auto flex items-center gap-2">
-                <label className="text-xs text-slate-500">Month:</label>
+                <label className="text-xs text-muted-foreground">Month:</label>
                 <ThemedSelect
                   value={payablesMonth}
                   onChange={(e) => setPayablesMonth(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                  className="px-3 py-1.5 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Months</option>
                   {monthOptions.map((m) => (
@@ -2506,27 +2506,27 @@ export default function Accounting() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Opening Balance</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Invoiced</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Withholding</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Opening Balance</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Invoiced</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Withholding</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Received</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Outstanding</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
                   )}
                   {!loading && filteredReceivables.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         No client activity matching the current filters.
                       </td>
                     </tr>
@@ -2547,14 +2547,14 @@ export default function Accounting() {
                             owing ? "bg-danger-50 hover:bg-danger-100" : "bg-success-50 hover:bg-success-100"
                           }`}
                         >
-                          <td className="px-6 py-4 text-sm text-slate-900">
+                          <td className="px-6 py-4 text-sm text-foreground">
                             <div className="flex items-center gap-2">
-                              <Building2 className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
+                              <Building2 className="w-3.5 h-3.5 text-muted-foreground/70" strokeWidth={1.5} />
                               <span>{item.name}</span>
                             </div>
-                            <div className="text-xs text-slate-500 font-mono ml-5">{item.client_code}</div>
+                            <div className="text-xs text-muted-foreground font-mono ml-5">{item.client_code}</div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-700 text-right">
+                          <td className="px-6 py-4 text-sm text-foreground text-right">
                             <div className="inline-flex items-center gap-2 justify-end">
                               <span title={isMonthView ? "Carried forward from prior period" : undefined}>
                                 PKR {Number(item.opening_balance ?? 0).toLocaleString()}
@@ -2565,8 +2565,8 @@ export default function Accounting() {
                                 onClick={() => openEditOpeningBalance(item)}
                                 className={`inline-flex items-center justify-center w-6 h-6 rounded ${
                                   canEditOpening
-                                    ? "text-slate-600 hover:bg-slate-100"
-                                    : "text-slate-300 cursor-not-allowed"
+                                    ? "text-muted-foreground hover:bg-muted"
+                                    : "text-muted-foreground/50 cursor-not-allowed"
                                 }`}
                                 title={
                                   isMonthView
@@ -2631,9 +2631,9 @@ export default function Accounting() {
 
           {activeTab === "payables" && (
             <>
-              <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
+              <div className="p-6 border-b border-border flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-slate-500">Status:</span>
+                  <span className="text-muted-foreground">Status:</span>
                   {(["all", "pending", "overdue", "paid"] as const).map((s) => (
                     <button
                       key={s}
@@ -2641,7 +2641,7 @@ export default function Accounting() {
                       className={`px-3 py-1 rounded-md text-xs capitalize transition-colors ${
                         payableStatusFilter === s
                           ? "bg-foreground text-background font-semibold"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          : "bg-muted text-foreground hover:bg-border"
                       }`}
                     >
                       {s}
@@ -2649,7 +2649,7 @@ export default function Accounting() {
                   ))}
                 </div>
                 <div className="ml-auto flex flex-wrap gap-3 text-xs">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-warning-50 text-warning-800">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-warning-50 text-warning-700 dark:text-warning-500">
                     Pending: PKR {payablesSummary.pendingTotal.toLocaleString()}
                   </span>
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-danger-50 text-danger-700">
@@ -2663,20 +2663,20 @@ export default function Accounting() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Vendor</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Transactions</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Outstanding</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Paid</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Next Due</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Vendor</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Transactions</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Outstanding</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Paid</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Next Due</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {loading && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                           Loading…
                         </td>
@@ -2684,7 +2684,7 @@ export default function Accounting() {
                     )}
                     {!loading && filteredPayables.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                           {payables.length === 0
                             ? "No payables yet. Create an expense with payment mode 'Payable' to see it here."
                             : "No payables match the selected filter."}
@@ -2701,12 +2701,12 @@ export default function Accounting() {
                             ? "bg-danger-50 text-danger-700"
                             : "bg-warning-50 text-warning-700";
                         return (
-                          <tr key={g.key} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-slate-900">{g.name}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{g.items.length}</td>
+                          <tr key={g.key} className="hover:bg-muted/50 transition-colors">
+                            <td className="px-6 py-4 text-sm text-foreground">{g.name}</td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground">{g.items.length}</td>
                             <td className="px-6 py-4 text-sm text-danger-600">PKR {g.outstanding.toLocaleString()}</td>
                             <td className="px-6 py-4 text-sm text-success-700">PKR {g.paid.toLocaleString()}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{g.nextDue ? formatDate(g.nextDue) : "—"}</td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground">{g.nextDue ? formatDate(g.nextDue) : "—"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
                                 {status}
@@ -2740,21 +2740,21 @@ export default function Accounting() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Bank Name</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Account Number</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Owner</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Account Balance</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Cheque Balance</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Total Balance</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Bank Name</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Account Number</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Type</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Owner</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Account Balance</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Cheque Balance</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Total Balance</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {loading && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -2762,7 +2762,7 @@ export default function Accounting() {
                   )}
                   {!loading && banks.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         No bank accounts yet. Click "Add Bank Account" to create one.
                       </td>
                     </tr>
@@ -2773,24 +2773,24 @@ export default function Accounting() {
                       const pendChq = pendingChequesByBank.get(bank.id) ?? 0;
                       const totalBal = acct + pendChq;
                       return (
-                        <tr key={bank.id} className={`hover:bg-slate-50 transition-colors ${bank.active ? "" : "opacity-60"}`}>
+                        <tr key={bank.id} className={`hover:bg-muted/50 transition-colors ${bank.active ? "" : "opacity-60"}`}>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <Building2 className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
-                              <span className="text-sm text-slate-900">{bank.bank_name}</span>
+                              <span className="text-sm text-foreground">{bank.bank_name}</span>
                               {!bank.active && (
-                                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-600 border border-slate-200">
+                                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] bg-muted text-muted-foreground border border-border">
                                   Inactive
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{bank.account_type}</td>
-                          <td className="px-6 py-4 text-sm text-slate-600">
-                            {bank.owner_type === "company" && <span className="text-slate-500">Company</span>}
+                          <td className="px-6 py-4 text-sm text-muted-foreground font-mono">{bank.account_number}</td>
+                          <td className="px-6 py-4 text-sm text-muted-foreground">{bank.account_type}</td>
+                          <td className="px-6 py-4 text-sm text-muted-foreground">
+                            {bank.owner_type === "company" && <span className="text-muted-foreground">Company</span>}
                             {bank.owner_type === "partner" && (
-                              <span className="text-purple-700">
+                              <span className="text-info-700">
                                 Partner: {partners.find((p) => p.id === bank.owner_partner_id)?.name ?? "—"}
                               </span>
                             )}
@@ -2804,7 +2804,7 @@ export default function Accounting() {
                           <td className="px-6 py-4 text-sm text-warning-600">
                             {pendChq > 0 ? `PKR ${pendChq.toLocaleString()}` : "—"}
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-foreground">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
                             <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)} disabled={!bank.active}>
                               Withdraw
@@ -2833,7 +2833,7 @@ export default function Accounting() {
               </table>
             </div>
 
-            <div className="border-t border-slate-200 p-6">
+            <div className="border-t border-border p-6">
               {/* Record-type toggle — mirrors the page-level tab bar style. */}
               <div className="flex gap-2 flex-wrap mb-3">
                 {(["cheques", "deposits"] as const).map((v) => (
@@ -2842,7 +2842,7 @@ export default function Accounting() {
                     type="button"
                     onClick={() => setChequeSectionView(v)}
                     className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                      chequeSectionView === v ? "bg-foreground text-background font-semibold" : "text-slate-600 hover:bg-slate-100"
+                      chequeSectionView === v ? "bg-foreground text-background font-semibold" : "text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {v === "cheques" ? "Cheques" : "Cash Deposits"}
@@ -2853,15 +2853,15 @@ export default function Accounting() {
                 <div>
                   {chequeSectionView === "cheques" ? (
                     <>
-                      <h3 className="text-base text-slate-900">Cheques</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <h3 className="text-base text-foreground">Cheques</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         Cheques deduct the bank balance immediately when issued.
                       </p>
                     </>
                   ) : (
                     <>
-                      <h3 className="text-base text-slate-900">Cash Deposits</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <h3 className="text-base text-foreground">Cash Deposits</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         Cash moved from Cash in Hand into a bank account.
                       </p>
                     </>
@@ -2871,7 +2871,7 @@ export default function Accounting() {
                   <ThemedSelect
                     value={chequeBankFilter}
                     onChange={(e) => setChequeBankFilter(e.target.value)}
-                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                    className="px-3 py-1.5 border border-border rounded-md text-sm"
                   >
                     <option value="all">All Banks</option>
                     {banks.map((b) => (
@@ -2884,7 +2884,7 @@ export default function Accounting() {
                     <ThemedSelect
                       value={chequeFilter}
                       onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared" | "bounced")}
-                      className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                      className="px-3 py-1.5 border border-border rounded-md text-sm"
                     >
                       <option value="all">All Status</option>
                       <option value="pending">Pending</option>
@@ -2895,7 +2895,7 @@ export default function Accounting() {
                   <ThemedSelect
                     value={chequeMonthFilter}
                     onChange={(e) => setChequeMonthFilter(e.target.value)}
-                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                    className="px-3 py-1.5 border border-border rounded-md text-sm"
                   >
                     <option value="all">All Months</option>
                     {monthOptions.map((m) => (
@@ -2932,19 +2932,19 @@ export default function Accounting() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50">
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Cheque #</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Type</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Bank</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Date</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Recipient / Payer</th>
-                      <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Amount</th>
-                      <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Used / Linked</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Status</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Actions</th>
+                    <tr className="border-b border-border bg-muted/50">
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Cheque #</th>
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Type</th>
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Bank</th>
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Date</th>
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Recipient / Payer</th>
+                      <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Amount</th>
+                      <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Used / Linked</th>
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
+                      <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {cheques
                       .filter((c) => chequeBankFilter === "all" || c.bank_account_id === chequeBankFilter)
                       .filter((c) => chequeFilter === "all" || c.status === chequeFilter)
@@ -2964,26 +2964,26 @@ export default function Accounting() {
                           <tr
                             key={c.id}
                             ref={c.id === focusCheque ? focusChequeRow : undefined}
-                            className={`hover:bg-slate-50 ${
+                            className={`hover:bg-muted/50 ${
                               c.id === focusCheque ? FOCUS_ROW_CLASS : ""
                             }`}
                           >
-                            <td className="px-4 py-2 text-sm text-slate-900 font-mono">{c.cheque_number}</td>
+                            <td className="px-4 py-2 text-sm text-foreground font-mono">{c.cheque_number}</td>
                             <td className="px-4 py-2 text-sm">
                               {isReceivables ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-violet-50 text-violet-700">Receivables</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-info-50 text-info-700">Receivables</span>
                               ) : isIncoming ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">Deposit</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">Deposit</span>
                               ) : isPayment ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-info-50 text-info-700">Payment</span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-info-50 text-info-700">Cash</span>
                               )}
                             </td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "—"}</td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{formatDate(c.cheque_date)}</td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "—"}</td>
-                            <td className="px-4 py-2 text-sm text-slate-900 text-right">
+                            <td className="px-4 py-2 text-sm text-muted-foreground">{bank?.bank_name ?? "—"}</td>
+                            <td className="px-4 py-2 text-sm text-muted-foreground">{formatDate(c.cheque_date)}</td>
+                            <td className="px-4 py-2 text-sm text-muted-foreground">{c.recipient ?? "—"}</td>
+                            <td className="px-4 py-2 text-sm text-foreground text-right">
                               PKR {Number(c.amount).toLocaleString()}
                             </td>
                             <td className="px-4 py-2 text-sm text-right">
@@ -2992,7 +2992,7 @@ export default function Accounting() {
                                   PKR {linkedSum.toLocaleString()} / {Number(c.amount).toLocaleString()}
                                 </span>
                               ) : (
-                                <span className="text-slate-400">—</span>
+                                <span className="text-muted-foreground/70">—</span>
                               )}
                             </td>
                             <td className="px-4 py-2">
@@ -3156,7 +3156,7 @@ export default function Accounting() {
                             .filter((c) => chequeFilter === "all" || c.status === chequeFilter)
                             .filter((c) => chequeMonthFilter === "all" || (c.cheque_date ?? "").slice(0, 7) === chequeMonthFilter).length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-500">
+                        <td colSpan={9} className="px-4 py-6 text-center text-sm text-muted-foreground">
                           No cheques to show.
                         </td>
                       </tr>
@@ -3170,20 +3170,20 @@ export default function Accounting() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-4 py-2 text-sm text-slate-500">Slip #</th>
-                      <th className="text-left px-4 py-2 text-sm text-slate-500">Bank</th>
-                      <th className="text-left px-4 py-2 text-sm text-slate-500">Date</th>
-                      <th className="text-right px-4 py-2 text-sm text-slate-500">Amount</th>
-                      <th className="text-left px-4 py-2 text-sm text-slate-500">Deposited By</th>
-                      <th className="text-left px-4 py-2 text-sm text-slate-500">Reference / Notes</th>
-                      <th className="text-right px-4 py-2 text-sm text-slate-500">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-2 text-sm text-muted-foreground">Slip #</th>
+                      <th className="text-left px-4 py-2 text-sm text-muted-foreground">Bank</th>
+                      <th className="text-left px-4 py-2 text-sm text-muted-foreground">Date</th>
+                      <th className="text-right px-4 py-2 text-sm text-muted-foreground">Amount</th>
+                      <th className="text-left px-4 py-2 text-sm text-muted-foreground">Deposited By</th>
+                      <th className="text-left px-4 py-2 text-sm text-muted-foreground">Reference / Notes</th>
+                      <th className="text-right px-4 py-2 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {filteredDeposits.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">
                           No cash deposits to show.
                         </td>
                       </tr>
@@ -3191,13 +3191,13 @@ export default function Accounting() {
                     {filteredDeposits.map((d) => {
                       const bank = banks.find((b) => b.id === d.bank_account_id);
                       return (
-                        <tr key={d.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-2 text-sm text-slate-900 font-mono">#{d.slip_number}</td>
-                          <td className="px-4 py-2 text-sm text-slate-600">{bank ? `${bank.bank_name} · ${bank.account_number}` : "—"}</td>
-                          <td className="px-4 py-2 text-sm text-slate-600">{formatDate(d.deposit_date)}</td>
-                          <td className="px-4 py-2 text-sm text-slate-900 text-right font-mono">PKR {Number(d.amount).toLocaleString()}</td>
-                          <td className="px-4 py-2 text-sm text-slate-600">{custodianNameByLoc(d.cash_location_id) ?? (d.deposited_by ? (profileNames.get(d.deposited_by) ?? "—") : "—")}</td>
-                          <td className="px-4 py-2 text-sm text-slate-500">{d.notes ?? "—"}</td>
+                        <tr key={d.id} className="hover:bg-muted/50 transition-colors">
+                          <td className="px-4 py-2 text-sm text-foreground font-mono">#{d.slip_number}</td>
+                          <td className="px-4 py-2 text-sm text-muted-foreground">{bank ? `${bank.bank_name} · ${bank.account_number}` : "—"}</td>
+                          <td className="px-4 py-2 text-sm text-muted-foreground">{formatDate(d.deposit_date)}</td>
+                          <td className="px-4 py-2 text-sm text-foreground text-right font-mono">PKR {Number(d.amount).toLocaleString()}</td>
+                          <td className="px-4 py-2 text-sm text-muted-foreground">{custodianNameByLoc(d.cash_location_id) ?? (d.deposited_by ? (profileNames.get(d.deposited_by) ?? "—") : "—")}</td>
+                          <td className="px-4 py-2 text-sm text-muted-foreground">{d.notes ?? "—"}</td>
                           <td className="px-4 py-2 text-right flex gap-2 justify-end">
                             <Button variant="ghost" size="sm" onClick={() => downloadSlipByRef(d.id)}>
                               <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
@@ -3356,16 +3356,16 @@ export default function Accounting() {
             </div>
           )}
           {chequeForm.direction === "incoming" ? (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800">
+            <div className="p-3 bg-success-50 border border-success-200 rounded-md text-xs text-success-700">
               <strong>Deposit Cheque</strong> — Recording a cheque received from a payer. The bank balance will be credited <strong>only when you mark it as cleared</strong>. No balance change on issue.
             </div>
           ) : (
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Cheque Type *</label>
+            <label className="block text-sm text-foreground mb-1">Cheque Type *</label>
             <div className="grid grid-cols-2 gap-2">
               <label
                 className={`flex items-start gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
-                  chequeForm.cheque_type === "payment" ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                  chequeForm.cheque_type === "payment" ? "border-foreground bg-muted/50" : "border-border hover:border-border"
                 }`}
               >
                 <input
@@ -3377,12 +3377,12 @@ export default function Accounting() {
                 />
                 <span>
                   <strong>Payment Cheque</strong>
-                  <span className="block text-[11px] text-slate-500">Used to pay expenses/salaries/advances. Clears only when the linked items' total matches exactly.</span>
+                  <span className="block text-[11px] text-muted-foreground">Used to pay expenses/salaries/advances. Clears only when the linked items' total matches exactly.</span>
                 </span>
               </label>
               <label
                 className={`flex items-start gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
-                  chequeForm.cheque_type === "cash" ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                  chequeForm.cheque_type === "cash" ? "border-foreground bg-muted/50" : "border-border hover:border-border"
                 }`}
               >
                 <input
@@ -3394,19 +3394,19 @@ export default function Accounting() {
                 />
                 <span>
                   <strong>Cash Cheque</strong>
-                  <span className="block text-[11px] text-slate-500">Withdraw from this bank. On clearance, the amount lands in the Cash (Treasury) balance.</span>
+                  <span className="block text-[11px] text-muted-foreground">Withdraw from this bank. On clearance, the amount lands in the Cash (Treasury) balance.</span>
                 </span>
               </label>
             </div>
           </div>
           )}
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+            <label className="block text-sm text-foreground mb-1">Bank Account *</label>
             <ThemedSelect
               required
               value={chequeForm.bank_account_id}
               onChange={(e) => setChequeForm({ ...chequeForm, bank_account_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm"
             >
               <option value="">Select bank</option>
               {banks.map((b) => (
@@ -3418,41 +3418,41 @@ export default function Accounting() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Cheque Number *</label>
+              <label className="block text-sm text-foreground mb-1">Cheque Number *</label>
               <input
                 required
                 type="text"
                 value={chequeForm.cheque_number}
                 onChange={(e) => setChequeForm({ ...chequeForm, cheque_number: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                 placeholder="e.g., 000123"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Date *</label>
+              <label className="block text-sm text-foreground mb-1">Date *</label>
               <input
                 required
                 type="date"
                 value={chequeForm.cheque_date}
                 onChange={(e) => setChequeForm({ ...chequeForm, cheque_date: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input
                 required
                 type="number"
                 step="0.01"
                 value={chequeForm.amount}
                 onChange={(e) => setChequeForm({ ...chequeForm, amount: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 placeholder="0.00"
               />
               <AmountInWords value={chequeForm.amount} />
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">
+              <label className="block text-sm text-foreground mb-1">
                 {chequeForm.direction === "incoming"
                   ? "Received From (Payer)"
                   : chequeForm.cheque_type === "cash"
@@ -3464,55 +3464,55 @@ export default function Accounting() {
                   <ThemedSelect
                     value={chequeForm.custodian_employee_id}
                     onChange={(e) => setChequeForm({ ...chequeForm, custodian_employee_id: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="">Select office-staff recipient…</option>
                     {custodians.map((c) => (
                       <option key={c.employeeId} value={c.employeeId}>{c.fullName} — holds {`PKR ${Math.round(c.held).toLocaleString()}`}</option>
                     ))}
                   </ThemedSelect>
-                  <p className="text-[11px] text-slate-500 mt-1">Once the cheque is marked cleared, the cash lands in this custodian's held cash and in Cash in Hand.</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">Once the cheque is marked cleared, the cash lands in this custodian's held cash and in Cash in Hand.</p>
                 </>
               ) : (
                 <input
                   type="text"
                   value={chequeForm.recipient}
                   onChange={(e) => setChequeForm({ ...chequeForm, recipient: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   placeholder={chequeForm.direction === "incoming" ? "Payer / drawer name" : "Payee name"}
                 />
               )}
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <label className="block text-sm text-foreground mb-1">Notes</label>
               <textarea
                 value={chequeForm.notes}
                 onChange={(e) => setChequeForm({ ...chequeForm, notes: e.target.value })}
                 rows={2}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Attachment (optional)</label>
+              <label className="block text-sm text-foreground mb-1">Attachment (optional)</label>
               <input
                 type="file"
                 onChange={(e) => setChequeForm({ ...chequeForm, attachment: e.target.files?.[0] })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
               {chequeForm.attachment && (
-                <p className="text-xs text-slate-500 mt-1">Selected: {chequeForm.attachment.name}</p>
+                <p className="text-xs text-muted-foreground mt-1">Selected: {chequeForm.attachment.name}</p>
               )}
             </div>
           </div>
           {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "cash" && (
-            <div className="bg-brand-50 border border-brand-200 rounded-md p-3 text-xs text-brand-800">
+            <div className="bg-brand-50 border border-brand-200 rounded-md p-3 text-xs text-brand-700 dark:text-brand-500">
               Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
               It stays <strong>Pending</strong> until you mark it cleared — only then does the cash move into <strong>Cash in Hand</strong> and the selected custodian's held cash.
               {" "}Deleting it while Pending restores the bank balance.
             </div>
           )}
           {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "payment" && (
-            <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-xs text-warning-800">
+            <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-xs text-warning-700 dark:text-warning-500">
               Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
               This payment cheque can only be cleared once linked expenses/salaries/advances total exactly its amount.
               {" "}Deleting it while Pending restores the bank balance.
@@ -3560,44 +3560,44 @@ export default function Accounting() {
                 await loadAll();
               }}
             >
-              <div className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2.5 text-sm text-danger-800">
+              <div className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2.5 text-sm text-danger-700 dark:text-danger-500">
                 {isIncoming
                   ? `No balance change — ${bankName} was never credited for this cheque.`
                   : `${amount} returns to ${bankName}: the amount was reserved when the cheque was issued and the money never left.`}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-slate-500">Amount</p>
-                  <p className="text-slate-900">{amount}</p>
+                  <p className="text-xs text-muted-foreground">Amount</p>
+                  <p className="text-foreground">{amount}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Bank</p>
-                  <p className="text-slate-900">{bankName}</p>
+                  <p className="text-xs text-muted-foreground">Bank</p>
+                  <p className="text-foreground">{bankName}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Date</p>
-                  <p className="text-slate-900">{formatDate(bounceTarget.cheque_date)}</p>
+                  <p className="text-xs text-muted-foreground">Date</p>
+                  <p className="text-foreground">{formatDate(bounceTarget.cheque_date)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">{isIncoming ? "From" : "To"}</p>
-                  <p className="text-slate-900">{bounceTarget.recipient ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">{isIncoming ? "From" : "To"}</p>
+                  <p className="text-foreground">{bounceTarget.recipient ?? "—"}</p>
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Reason</label>
+                <label className="block text-sm text-foreground mb-1">Reason</label>
                 <textarea
                   rows={3}
                   autoFocus
                   value={bounceReason}
                   onChange={(ev) => setBounceReason(ev.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                   placeholder="e.g. Insufficient funds, signature mismatch, stale-dated"
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Optional, but it is what the bank statement will need explaining against later.
                 </p>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 The cheque is kept and marked Bounced — it is never deleted, so the record still
                 matches the bank.
               </p>
@@ -3619,19 +3619,19 @@ export default function Accounting() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-xs text-slate-500">Direction / Type</p>
+                <p className="text-xs text-muted-foreground">Direction / Type</p>
                 <p className="flex gap-1">
                   {(chequeView.direction ?? "outgoing") === "incoming" ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">Deposit (Incoming)</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">Deposit (Incoming)</span>
                   ) : chequeView.cheque_type === "payment" ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment (Outgoing)</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-info-50 text-info-700">Payment (Outgoing)</span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash (Outgoing)</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-info-50 text-info-700">Cash (Outgoing)</span>
                   )}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Status</p>
+                <p className="text-xs text-muted-foreground">Status</p>
                 <p>
                   {chequeView.status === "bounced" ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger-50 text-danger-700 border border-danger-200">
@@ -3645,37 +3645,37 @@ export default function Accounting() {
                     </span>
                   )}
                   {chequeView.bounce_reason && (
-                    <span className="block text-xs text-slate-500 mt-1">{chequeView.bounce_reason}</span>
+                    <span className="block text-xs text-muted-foreground mt-1">{chequeView.bounce_reason}</span>
                   )}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Bank</p>
-                <p className="text-slate-900">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "—"}</p>
+                <p className="text-xs text-muted-foreground">Bank</p>
+                <p className="text-foreground">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "—"}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Date</p>
-                <p className="text-slate-900">{formatDate(chequeView.cheque_date)}</p>
+                <p className="text-xs text-muted-foreground">Date</p>
+                <p className="text-foreground">{formatDate(chequeView.cheque_date)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {(chequeView.direction ?? "outgoing") === "incoming" ? "Received From" : "Recipient"}
                 </p>
-                <p className="text-slate-900">{chequeView.recipient ?? "—"}</p>
+                <p className="text-foreground">{chequeView.recipient ?? "—"}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Amount</p>
-                <p className="text-slate-900">PKR {Number(chequeView.amount).toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Amount</p>
+                <p className="text-foreground">PKR {Number(chequeView.amount).toLocaleString()}</p>
               </div>
               {chequeView.notes && (
                 <div className="col-span-full">
-                  <p className="text-xs text-slate-500">Notes</p>
-                  <p className="text-slate-900 whitespace-pre-wrap">{chequeView.notes}</p>
+                  <p className="text-xs text-muted-foreground">Notes</p>
+                  <p className="text-foreground whitespace-pre-wrap">{chequeView.notes}</p>
                 </div>
               )}
               {(chequeView.drive_view_url || chequeView.attachment_path) && (
                 <div className="col-span-full">
-                  <p className="text-xs text-slate-500 mb-1">Attachment</p>
+                  <p className="text-xs text-muted-foreground mb-1">Attachment</p>
                   {chequeViewAttachmentUrl ? (
                     <a
                       href={chequeViewAttachmentUrl}
@@ -3687,16 +3687,16 @@ export default function Accounting() {
                       Open attachment
                     </a>
                   ) : (
-                    <span className="text-xs text-slate-400">Loading…</span>
+                    <span className="text-xs text-muted-foreground/70">Loading…</span>
                   )}
                 </div>
               )}
             </div>
 
             {(chequeView.direction ?? "outgoing") !== "incoming" && (
-            <div className="border-t border-slate-200 pt-3">
+            <div className="border-t border-border pt-3">
               <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm text-slate-900">Linked Items</h4>
+                <h4 className="text-sm text-foreground">Linked Items</h4>
                 {chequeView.cheque_type === "payment" && (() => {
                   const linked = chequeViewItems.reduce((s, x) => s + x.amount, 0);
                   const cap = Number(chequeView.amount);
@@ -3709,27 +3709,27 @@ export default function Accounting() {
                 })()}
               </div>
               {chequeViewItems.length === 0 ? (
-                <p className="text-sm text-slate-500">Nothing linked to this cheque yet.</p>
+                <p className="text-sm text-muted-foreground">Nothing linked to this cheque yet.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+                      <tr className="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
                         <th className="text-left px-3 py-2">Kind</th>
                         <th className="text-left px-3 py-2">Description</th>
                         <th className="text-left px-3 py-2">Date</th>
                         <th className="text-right px-3 py-2">Amount</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-border">
                       {chequeViewItems.map((it, idx) => (
                         <tr key={idx}>
                           <td className="px-3 py-2 text-xs">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700">{it.kind}</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-muted text-foreground">{it.kind}</span>
                           </td>
-                          <td className="px-3 py-2 text-slate-700">{it.description}</td>
-                          <td className="px-3 py-2 text-slate-500">{it.date}</td>
-                          <td className="px-3 py-2 text-right text-slate-900">PKR {it.amount.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-foreground">{it.description}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{it.date}</td>
+                          <td className="px-3 py-2 text-right text-foreground">PKR {it.amount.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -3745,35 +3745,35 @@ export default function Accounting() {
       <Modal isOpen={isBankModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">
         <form className="space-y-4" onSubmit={handleAddBank}>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
+            <label className="block text-sm text-foreground mb-1">Bank Name *</label>
             <input
               required
               type="text"
               value={newBank.bank_name}
               onChange={(e) => setNewBank({ ...newBank, bank_name: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="e.g., Allied Bank"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Number *</label>
+            <label className="block text-sm text-foreground mb-1">Account Number *</label>
             <input
               required
               type="text"
               value={newBank.account_number}
               onChange={(e) => setNewBank({ ...newBank, account_number: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="Enter account number"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">IBAN</label>
+            <label className="block text-sm text-foreground mb-1">IBAN</label>
             <input
               type="text"
               value={newBank.iban}
               maxLength={24}
               onChange={(e) => setNewBank({ ...newBank, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
               placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
             />
             {newBank.iban && newBank.iban.length !== 24 && (
@@ -3784,44 +3784,44 @@ export default function Accounting() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
+              <label className="block text-sm text-foreground mb-1">Branch Code</label>
               <input
                 type="text"
                 value={newBank.branch_code}
                 onChange={(e) => setNewBank({ ...newBank, branch_code: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 placeholder="e.g., 0123"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Branch Name</label>
+              <label className="block text-sm text-foreground mb-1">Branch Name</label>
               <input
                 type="text"
                 value={newBank.branch_name}
                 onChange={(e) => setNewBank({ ...newBank, branch_name: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 placeholder="e.g., DHA Phase 5"
               />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">SWIFT Code</label>
+              <label className="block text-sm text-foreground mb-1">SWIFT Code</label>
               <input
                 type="text"
                 value={newBank.swift_code}
                 onChange={(e) => setNewBank({ ...newBank, swift_code: e.target.value.toUpperCase() })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
                 placeholder="ABPAPKKA"
               />
-              <p className="text-[10px] text-slate-500 mt-1">Optional — for future foreign transfers.</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Optional — for future foreign transfers.</p>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Currency</label>
+              <label className="block text-sm text-foreground mb-1">Currency</label>
               <ThemedSelect
                 value={newBank.currency_code}
                 onChange={(e) => setNewBank({ ...newBank, currency_code: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="PKR">PKR — Pakistani Rupee</option>
                 <option value="USD">USD — US Dollar</option>
@@ -3832,22 +3832,22 @@ export default function Accounting() {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Type</label>
+            <label className="block text-sm text-foreground mb-1">Account Type</label>
             <ThemedSelect
               value={newBank.account_type}
               onChange={(e) => setNewBank({ ...newBank, account_type: e.target.value as "Current" | "Savings" })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="Current">Current</option>
               <option value="Savings">Savings</option>
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Account For *</label>
+            <label className="block text-sm text-foreground mb-1">Account For *</label>
             <ThemedSelect
               value={newBank.owner_type}
               onChange={(e) => setNewBank({ ...newBank, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="company">Company</option>
               <option value="partner">Partner</option>
@@ -3856,12 +3856,12 @@ export default function Accounting() {
           </div>
           {newBank.owner_type === "partner" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Partner *</label>
+              <label className="block text-sm text-foreground mb-1">Partner *</label>
               <ThemedSelect
                 required
                 value={newBank.owner_partner_id}
                 onChange={(e) => setNewBank({ ...newBank, owner_partner_id: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="">Select partner…</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -3873,12 +3873,12 @@ export default function Accounting() {
           )}
           {newBank.owner_type === "client" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client *</label>
+              <label className="block text-sm text-foreground mb-1">Client *</label>
               <ThemedSelect
                 required
                 value={newBank.owner_client_id}
                 onChange={(e) => setNewBank({ ...newBank, owner_client_id: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="">Select client…</option>
                 {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -3886,15 +3886,15 @@ export default function Accounting() {
             </div>
           )}
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
+            <label className="block text-sm text-foreground mb-1">Opening Balance (PKR)</label>
             <input
               type="number"
               value={newBank.opening_balance}
               onChange={(e) => setNewBank({ ...newBank, opening_balance: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="0"
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Seeded into Account Balance and logged as an opening transaction.
             </p>
           </div>
@@ -3921,7 +3921,7 @@ export default function Accounting() {
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-3 bg-success-50 border border-success-200 rounded-md">
               <CheckCircle2 className="w-5 h-5 text-success-600 mt-0.5" strokeWidth={1.5} />
-              <div className="text-sm text-success-800">
+              <div className="text-sm text-success-700 dark:text-success-500">
                 Deposited <strong>PKR {depositSuccess.amount.toLocaleString()}</strong> to {depositSuccess.bank_name}.
                 Cash in Hand reduced; bank balance increased. Slip <strong>#{depositSuccess.slip_number}</strong>.
               </div>
@@ -3939,12 +3939,12 @@ export default function Accounting() {
         {!depositSuccess && (
           <form className="space-y-4" onSubmit={handleDeposit}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Deposited By (custodian) *</label>
+              <label className="block text-sm text-foreground mb-1">Deposited By (custodian) *</label>
               <ThemedSelect
                 required
                 value={depositCustodianId}
                 onChange={(e) => setDepositCustodianId(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="">Select who is depositing this cash…</option>
                 {custodians.map((c) => (
@@ -3955,7 +3955,7 @@ export default function Accounting() {
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Source</label>
+              <label className="block text-sm text-foreground mb-1">Source</label>
               {(() => {
                 const sel = custodians.find((c) => c.locationId === depositCustodianId);
                 return (
@@ -3963,26 +3963,26 @@ export default function Accounting() {
                     type="text"
                     value={sel ? `${sel.fullName}'s cash · PKR ${Math.round(sel.held).toLocaleString()} available` : "Select a custodian above"}
                     disabled
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
                   />
                 );
               })()}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+              <label className="block text-sm text-foreground mb-1">Bank Account</label>
               {selectedBank ? (
                 <input
                   type="text"
                   value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
                   disabled
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
                 />
               ) : (
                 <ThemedSelect
                   required
                   value={depositBankId}
                   onChange={(e) => setDepositBankId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select bank account…</option>
                   {banks.filter((b) => b.active).map((b) => (
@@ -3993,17 +3993,17 @@ export default function Accounting() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Deposit Date *</label>
+                <label className="block text-sm text-foreground mb-1">Deposit Date *</label>
                 <input
                   required
                   type="date"
                   value={depositDate}
                   onChange={(e) => setDepositDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+                <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
                 <input
                   required
                   type="number"
@@ -4011,32 +4011,32 @@ export default function Accounting() {
                   step="0.01"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                   placeholder="0"
                 />
                 <AmountInWords value={depositAmount} />
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Reference / Notes</label>
+              <label className="block text-sm text-foreground mb-1">Reference / Notes</label>
               <input
                 type="text"
                 value={depositNotes}
                 onChange={(e) => setDepositNotes(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 placeholder="Optional note (e.g. source of funds)"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Deposit Slip (optional)</label>
+              <label className="block text-sm text-foreground mb-1">Deposit Slip (optional)</label>
               <input
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={(e) => setDepositSlipFile(e.target.files?.[0] ?? null)}
-                className="w-full text-sm text-slate-700 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                className="w-full text-sm text-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-muted file:text-foreground hover:file:bg-muted"
               />
               {depositSlipFile && (
-                <p className="text-xs text-slate-500 mt-1">{depositSlipFile.name} will be uploaded to Google Drive.</p>
+                <p className="text-xs text-muted-foreground mt-1">{depositSlipFile.name} will be uploaded to Google Drive.</p>
               )}
             </div>
             {depositError && (
@@ -4045,7 +4045,7 @@ export default function Accounting() {
                 <div className="flex-1">{depositError}</div>
               </div>
             )}
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Moves money from the selected custodian's held cash into this bank account — a pure
               location transfer. It does not create an expense, payroll, or partner entry.
             </p>
@@ -4065,71 +4065,71 @@ export default function Accounting() {
         {selectedBank && (
           <form className="space-y-4" onSubmit={handleWithdraw}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+              <label className="block text-sm text-foreground mb-1">Bank Account</label>
               <input
                 type="text"
                 value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
                 disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Account Balance</label>
+                <label className="block text-sm text-foreground mb-1">Account Balance</label>
                 <input
                   type="text"
                   value={`PKR ${Number(selectedBank.balance).toLocaleString()}`}
                   disabled
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Cash Balance</label>
+                <label className="block text-sm text-foreground mb-1">Cash Balance</label>
                 <input
                   type="text"
                   value={`PKR ${cashBalance.toLocaleString()}`}
                   disabled
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount to Withdraw (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount to Withdraw (PKR) *</label>
               <input
                 required
                 type="number"
                 min={1}
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 placeholder="0"
               />
               <AmountInWords value={withdrawAmount} />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Deducts from Account Balance and adds to Cash Balance.
               </p>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Cash Received By (Office Staff) *</label>
+              <label className="block text-sm text-foreground mb-1">Cash Received By (Office Staff) *</label>
               <ThemedSelect
                 value={withdrawCustodianId}
                 onChange={(e) => setWithdrawCustodianId(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="">Select office-staff recipient…</option>
                 {custodians.map((c) => (
                   <option key={c.employeeId} value={c.employeeId}>{c.fullName} — holds {`PKR ${Math.round(c.held).toLocaleString()}`}</option>
                 ))}
               </ThemedSelect>
-              <p className="text-xs text-slate-500 mt-1">The withdrawn cash is added to this custodian's held cash.</p>
+              <p className="text-xs text-muted-foreground mt-1">The withdrawn cash is added to this custodian's held cash.</p>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <label className="block text-sm text-foreground mb-1">Notes</label>
               <textarea
                 value={withdrawNotes}
                 onChange={(e) => setWithdrawNotes(e.target.value)}
                 rows={2}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div className="flex items-center gap-3 pt-2">
@@ -4147,15 +4147,15 @@ export default function Accounting() {
       <Modal isOpen={isStatementModalOpen} onClose={() => setIsStatementModalOpen(false)} title="Client Statement" size="lg">
         {selectedClient && (
           <div className="space-y-4">
-            <div className="pb-4 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">{selectedClient.name}</h3>
-              <p className="text-xs text-slate-500 font-mono">{selectedClient.client_code}</p>
+            <div className="pb-4 border-b border-border">
+              <h3 className="text-base text-foreground">{selectedClient.name}</h3>
+              <p className="text-xs text-muted-foreground font-mono">{selectedClient.client_code}</p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Opening Balance</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-900"><span className="cur">PKR</span>{Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground"><span className="cur">PKR</span>{Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
               </div>
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Total Invoiced</p>
@@ -4168,7 +4168,7 @@ export default function Accounting() {
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Withholding</p>
                 <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700"><span className="cur">PKR</span>{selectedClient.total_withholding.toLocaleString()}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">deducted by the client</p>
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">deducted by the client</p>
               </div>
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Outstanding</p>
@@ -4177,10 +4177,10 @@ export default function Accounting() {
             </div>
 
             {statementLedger && (
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-border">
                 <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-                  <h4 className="text-sm text-slate-900">Ledger</h4>
-                  <span className="text-xs text-slate-500">
+                  <h4 className="text-sm text-foreground">Ledger</h4>
+                  <span className="text-xs text-muted-foreground">
                     {statementLedger.scopeLabel} &middot; {statementLedger.entries.length}{" "}
                     {statementLedger.entries.length === 1 ? "entry" : "entries"}
                   </span>
@@ -4188,55 +4188,55 @@ export default function Accounting() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Entry</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Reference</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Account / Instrument</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Invoiced</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Received</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Withholding</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Balance</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Entry</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Reference</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Account / Instrument</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Invoiced</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Received</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Withholding</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Balance</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      <tr className="bg-slate-50">
-                        <td className="px-3 py-2 text-xs text-slate-600">&mdash;</td>
-                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={3}>
+                    <tbody className="divide-y divide-border">
+                      <tr className="bg-muted/50">
+                        <td className="px-3 py-2 text-xs text-muted-foreground">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-foreground" colSpan={3}>
                           Opening balance
                           {receivablesMonth !== "all" && (
-                            <span className="text-slate-500"> &middot; carried forward</span>
+                            <span className="text-muted-foreground"> &middot; carried forward</span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-xs text-right text-slate-300">&mdash;</td>
-                        <td className="px-3 py-2 text-xs text-right text-slate-300">&mdash;</td>
-                        <td className="px-3 py-2 text-xs text-right text-slate-300">&mdash;</td>
-                        <td className="px-3 py-2 text-xs text-right tabular-nums text-slate-900">
+                        <td className="px-3 py-2 text-xs text-right text-muted-foreground/50">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-right text-muted-foreground/50">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-right text-muted-foreground/50">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-right tabular-nums text-foreground">
                           PKR {Math.round(statementLedger.opening).toLocaleString()}
                         </td>
                       </tr>
                       {statementLedger.entries.map((e) => (
                         <tr key={e.key}>
-                          <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
-                            {e.date ? formatDate(e.date) : <span className="text-slate-300">&mdash;</span>}
+                          <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                            {e.date ? formatDate(e.date) : <span className="text-muted-foreground/50">&mdash;</span>}
                           </td>
-                          <td className="px-3 py-2 text-xs text-slate-900 whitespace-nowrap">{e.label}</td>
-                          <td className="px-3 py-2 text-xs text-slate-500 font-mono max-w-[12rem] truncate" title={e.reference}>
+                          <td className="px-3 py-2 text-xs text-foreground whitespace-nowrap">{e.label}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground font-mono max-w-[12rem] truncate" title={e.reference}>
                             {e.reference}
                           </td>
-                          <td className="px-3 py-2 text-xs text-slate-600 max-w-[14rem] truncate" title={e.account}>
-                            {e.account || <span className="text-slate-300">&mdash;</span>}
+                          <td className="px-3 py-2 text-xs text-muted-foreground max-w-[14rem] truncate" title={e.account}>
+                            {e.account || <span className="text-muted-foreground/50">&mdash;</span>}
                           </td>
                           <td className="px-3 py-2 text-xs text-right tabular-nums text-brand-600">
-                            {e.debit ? `PKR ${Math.round(e.debit).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
+                            {e.debit ? `PKR ${Math.round(e.debit).toLocaleString()}` : <span className="text-muted-foreground/50">&mdash;</span>}
                           </td>
                           <td className="px-3 py-2 text-xs text-right tabular-nums text-success-600">
-                            {e.credit ? `PKR ${Math.round(e.credit).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
+                            {e.credit ? `PKR ${Math.round(e.credit).toLocaleString()}` : <span className="text-muted-foreground/50">&mdash;</span>}
                           </td>
                           <td className="px-3 py-2 text-xs text-right tabular-nums text-danger-600">
-                            {e.withholding ? `PKR ${Math.round(e.withholding).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
+                            {e.withholding ? `PKR ${Math.round(e.withholding).toLocaleString()}` : <span className="text-muted-foreground/50">&mdash;</span>}
                           </td>
-                          <td className="px-3 py-2 text-xs text-right tabular-nums text-slate-900">
+                          <td className="px-3 py-2 text-xs text-right tabular-nums text-foreground">
                             PKR {Math.round(e.balance).toLocaleString()}
                           </td>
                         </tr>
@@ -4246,8 +4246,8 @@ export default function Accounting() {
                         footer that can disagree with its own table is worse than
                         no footer. */}
                     <tfoot>
-                      <tr className="border-t-2 border-slate-300 bg-slate-50">
-                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={4}>Closing balance</td>
+                      <tr className="border-t-2 border-border bg-muted/50">
+                        <td className="px-3 py-2 text-xs text-foreground" colSpan={4}>Closing balance</td>
                         <td className="px-3 py-2 text-xs text-right tabular-nums text-brand-700">
                           PKR {Math.round(statementLedger.debits).toLocaleString()}
                         </td>
@@ -4265,7 +4265,7 @@ export default function Accounting() {
                   </table>
                 </div>
                 {statementLedger.entries.length === 0 && (
-                  <p className="text-xs text-slate-500 mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     Nothing invoiced or received in this period &mdash; the balance is the carried-forward opening.
                   </p>
                 )}
@@ -4279,30 +4279,30 @@ export default function Accounting() {
               </div>
             )}
 
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">Invoices</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm text-foreground mb-3">Invoices</h4>
               {selectedClient.invoices.length === 0 ? (
-                <p className="text-sm text-slate-500">No invoices yet for this client.</p>
+                <p className="text-sm text-muted-foreground">No invoices yet for this client.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Invoice #</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Received</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Outstanding</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Attachment</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Invoice #</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Amount</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Received</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Outstanding</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Attachment</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-border">
                       {selectedClient.invoices.map((inv) => {
                         const out = Number(inv.invoice_amount) - Number(inv.amount_received);
                         return (
                           <tr key={inv.id}>
-                            <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
-                            <td className="px-3 py-2 text-xs text-slate-600">{formatDate(inv.invoice_date)}</td>
+                            <td className="px-3 py-2 text-xs font-mono text-foreground">{inv.invoice_number}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(inv.invoice_date)}</td>
                             <td className="px-3 py-2 text-xs text-right text-brand-600">
                               PKR {Number(inv.invoice_amount).toLocaleString()}
                             </td>
@@ -4325,7 +4325,7 @@ export default function Accounting() {
                                   View
                                 </button>
                               ) : (
-                                <span className="text-slate-400">—</span>
+                                <span className="text-muted-foreground/70">—</span>
                               )}
                             </td>
                           </tr>
@@ -4337,7 +4337,7 @@ export default function Accounting() {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border">
               <Button variant="primary" size="md" className="flex-1" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Print / Save PDF
@@ -4393,28 +4393,28 @@ export default function Accounting() {
         {selectedClient && (
           <form className="space-y-4" onSubmit={handleRecordWht}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <label className="block text-sm text-foreground mb-1">Client</label>
               <input
                 type="text"
                 value={`${selectedClient.name} (${selectedClient.client_code})`}
                 disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
               />
             </div>
 
             {receiptsForWht.length === 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 This client has no recorded receipts yet. Withholding is deducted from a
                 payment, so record the payment first — then come back here.
               </p>
             ) : (
               <>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Receipt *</label>
+                  <label className="block text-sm text-foreground mb-1">Receipt *</label>
                   <ThemedSelect
                     value={whtPaymentId}
                     onChange={(e) => setWhtPaymentId(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   >
                     {receiptsForWht.map((r) => (
                       <option key={r.id} value={r.id}>
@@ -4423,14 +4423,14 @@ export default function Accounting() {
                       </option>
                     ))}
                   </ThemedSelect>
-                  <p className="text-[11px] text-slate-500 mt-1">
+                  <p className="text-[11px] text-muted-foreground mt-1">
                     Newest first. The most recent receipt is selected for you — it is
                     nearly always the one being corrected.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">
+                  <label className="block text-sm text-foreground mb-1">
                     Withholding Deducted (PKR) *
                   </label>
                   <input
@@ -4440,10 +4440,10 @@ export default function Accounting() {
                     step="0.01"
                     value={whtAmount}
                     onChange={(e) => setWhtAmount(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                   <AmountInWords value={whtAmount} />
-                  <p className="text-[11px] text-slate-500 mt-1.5">
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
                     {Number(selectedClient.withholding_tax_rate ?? 0) > 0
                       ? `Prefilled at ${selectedClient.withholding_tax_rate}% of this receipt — edit if the client deducted something else.`
                       : "This client has no agreed withholding rate."}{" "}
@@ -4452,7 +4452,7 @@ export default function Accounting() {
                 </div>
 
                 {selectedWhtReceipt && (
-                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 space-y-0.5">
+                  <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
                     <p>
                       Cash received: <strong>PKR {Math.round(selectedWhtReceipt.amount).toLocaleString()}</strong>{" "}
                       via {selectedWhtReceipt.instrument}
@@ -4464,7 +4464,7 @@ export default function Accounting() {
                       </strong>{" "}
                       of what the client owes — cash plus withholding together.
                     </p>
-                    <p className="text-slate-500">
+                    <p className="text-muted-foreground">
                       No bank or cash balance moves: the money that arrived already arrived.
                     </p>
                   </div>
@@ -4488,16 +4488,16 @@ export default function Accounting() {
         {selectedClient && (
           <form className="space-y-4" onSubmit={handleSaveOpeningBalance}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <label className="block text-sm text-foreground mb-1">Client</label>
               <input
                 type="text"
                 value={selectedClient.name}
                 disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Opening Balance (PKR) *</label>
               <input
                 required
                 type="number"
@@ -4505,9 +4505,9 @@ export default function Accounting() {
                 step="0.01"
                 value={openingBalanceValue}
                 onChange={(e) => setOpeningBalanceValue(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Editable only while the client has no outstanding balance. Adds on top of invoice totals.
               </p>
             </div>
@@ -4527,16 +4527,16 @@ export default function Accounting() {
         {selectedClient && (
           <form className="space-y-4" onSubmit={handleRecordPayment}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <label className="block text-sm text-foreground mb-1">Client</label>
               <input
                 type="text"
                 value={selectedClient.name}
                 disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
               />
             </div>
             {canEditAccounting && (
-              <label className="flex items-start gap-2 text-sm text-slate-700 bg-warning-50 border border-warning-200 rounded p-2.5 cursor-pointer">
+              <label className="flex items-start gap-2 text-sm text-foreground bg-warning-50 border border-warning-200 rounded p-2.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={paymentStandalone}
@@ -4544,19 +4544,19 @@ export default function Accounting() {
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="text-slate-900">No specific invoice</span> — apply to client balance
+                  <span className="text-foreground">No specific invoice</span> — apply to client balance
                   (advance / unallocated receipt, or paying down an opening balance).
                 </span>
               </label>
             )}
             {!paymentStandalone && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Apply to Invoice *</label>
+                <label className="block text-sm text-foreground mb-1">Apply to Invoice *</label>
                 <ThemedSelect
                   required
                   value={paymentInvoiceId}
                   onChange={(e) => setPaymentInvoiceId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 >
                   <option value="">Select an open invoice…</option>
                   {selectedClient.invoices
@@ -4573,7 +4573,7 @@ export default function Accounting() {
               </div>
             )}
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Payment Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Payment Amount (PKR) *</label>
               <input
                 required
                 type="number"
@@ -4581,30 +4581,30 @@ export default function Accounting() {
                 step="0.01"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
               <AmountInWords value={paymentAmount} />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
+              <label className="block text-sm text-foreground mb-1">Payment Date *</label>
               <input
                 required
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-2">Received Via *</label>
+              <label className="block text-sm text-foreground mb-2">Received Via *</label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {(["Cash", "Bank", "Cheque"] as const).map((v) => (
                   <label
                     key={v}
                     className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
                       paymentVia === v
-                        ? "border-slate-900 bg-slate-50"
-                        : "border-slate-200 hover:border-slate-300"
+                        ? "border-foreground bg-muted/50"
+                        : "border-border hover:border-border"
                     }`}
                   >
                     <input
@@ -4625,12 +4625,12 @@ export default function Accounting() {
             </div>
             {paymentVia === "Cash" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Received By (Office Staff) *</label>
+                <label className="block text-sm text-foreground mb-1">Received By (Office Staff) *</label>
                 <ThemedSelect
                   required
                   value={paymentCustodianId}
                   onChange={(e) => setPaymentCustodianId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 >
                   <option value="">Select who received the cash…</option>
                   {custodians.map((c) => (
@@ -4639,19 +4639,19 @@ export default function Accounting() {
                     </option>
                   ))}
                 </ThemedSelect>
-                <p className="text-[11px] text-slate-500 mt-1.5">
+                <p className="text-[11px] text-muted-foreground mt-1.5">
                   This cash will be added to the selected staff member's custody balance.
                 </p>
               </div>
             )}
             {(paymentVia === "Bank" || paymentVia === "Cheque") && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+                <label className="block text-sm text-foreground mb-1">Bank Account *</label>
                 <ThemedSelect
                   required
                   value={paymentBankId}
                   onChange={(e) => setPaymentBankId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 >
                   <option value="">Select bank account…</option>
                   {banks.map((b) => (
@@ -4665,24 +4665,24 @@ export default function Accounting() {
             {paymentVia === "Cheque" && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Cheque Number *</label>
+                  <label className="block text-sm text-foreground mb-1">Cheque Number *</label>
                   <input
                     required
                     type="text"
                     value={paymentChequeNumber}
                     onChange={(e) => setPaymentChequeNumber(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="e.g. 001234"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Cheque Date *</label>
+                  <label className="block text-sm text-foreground mb-1">Cheque Date *</label>
                   <input
                     required
                     type="date"
                     value={paymentChequeDate}
                     onChange={(e) => setPaymentChequeDate(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -4692,18 +4692,18 @@ export default function Accounting() {
                 after the money lands, and a field that could only be filled at
                 the moment of the receipt meant those deductions were never
                 recorded at all. */}
-            <p className="text-[11px] text-slate-500 -mt-1">
+            <p className="text-[11px] text-muted-foreground -mt-1">
               Enter the cash that actually arrived. If the client withheld tax, record it
               with <strong>Record WHT</strong> on their row — before or after this receipt,
               it settles the same balance either way.
             </p>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <label className="block text-sm text-foreground mb-1">Notes</label>
               <textarea
                 value={paymentNotes}
                 onChange={(e) => setPaymentNotes(e.target.value)}
                 rows={2}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
             <div className="flex items-center gap-3 pt-2">
@@ -4722,33 +4722,33 @@ export default function Accounting() {
         {selectedBank && (
           <form className="space-y-4" onSubmit={handleEditBank}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+              <label className="block text-sm text-foreground mb-1">Bank Name</label>
               <input
                 required
                 type="text"
                 value={editBankForm.bank_name}
                 onChange={(e) => setEditBankForm({ ...editBankForm, bank_name: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Account Number</label>
+              <label className="block text-sm text-foreground mb-1">Account Number</label>
               <input
                 required
                 type="text"
                 value={editBankForm.account_number}
                 onChange={(e) => setEditBankForm({ ...editBankForm, account_number: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">IBAN</label>
+              <label className="block text-sm text-foreground mb-1">IBAN</label>
               <input
                 type="text"
                 maxLength={24}
                 value={editBankForm.iban}
                 onChange={(e) => setEditBankForm({ ...editBankForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
                 placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
               />
               {editBankForm.iban && editBankForm.iban.length !== 24 && (
@@ -4759,40 +4759,40 @@ export default function Accounting() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
+                <label className="block text-sm text-foreground mb-1">Branch Code</label>
                 <input
                   type="text"
                   value={editBankForm.branch_code}
                   onChange={(e) => setEditBankForm({ ...editBankForm, branch_code: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Branch Name</label>
+                <label className="block text-sm text-foreground mb-1">Branch Name</label>
                 <input
                   type="text"
                   value={editBankForm.branch_name}
                   onChange={(e) => setEditBankForm({ ...editBankForm, branch_name: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">SWIFT Code</label>
+                <label className="block text-sm text-foreground mb-1">SWIFT Code</label>
                 <input
                   type="text"
                   value={editBankForm.swift_code}
                   onChange={(e) => setEditBankForm({ ...editBankForm, swift_code: e.target.value.toUpperCase() })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Currency</label>
+                <label className="block text-sm text-foreground mb-1">Currency</label>
                 <ThemedSelect
                   value={editBankForm.currency_code}
                   onChange={(e) => setEditBankForm({ ...editBankForm, currency_code: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="PKR">PKR</option>
                   <option value="USD">USD</option>
@@ -4803,22 +4803,22 @@ export default function Accounting() {
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Account Type</label>
+              <label className="block text-sm text-foreground mb-1">Account Type</label>
               <ThemedSelect
                 value={editBankForm.account_type}
                 onChange={(e) => setEditBankForm({ ...editBankForm, account_type: e.target.value as "Current" | "Savings" })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="Current">Current</option>
                 <option value="Savings">Savings</option>
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Account For</label>
+              <label className="block text-sm text-foreground mb-1">Account For</label>
               <ThemedSelect
                 value={editBankForm.owner_type}
                 onChange={(e) => setEditBankForm({ ...editBankForm, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="company">Company</option>
                 <option value="partner">Partner</option>
@@ -4827,12 +4827,12 @@ export default function Accounting() {
             </div>
             {editBankForm.owner_type === "partner" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Partner *</label>
+                <label className="block text-sm text-foreground mb-1">Partner *</label>
                 <ThemedSelect
                   required
                   value={editBankForm.owner_partner_id}
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_partner_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select partner…</option>
                   {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -4841,19 +4841,19 @@ export default function Accounting() {
             )}
             {editBankForm.owner_type === "client" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Client *</label>
+                <label className="block text-sm text-foreground mb-1">Client *</label>
                 <ThemedSelect
                   required
                   value={editBankForm.owner_client_id}
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_client_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select client…</option>
                   {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </ThemedSelect>
               </div>
             )}
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Balance reflects actual transactions recorded in the system.
             </p>
             <div className="flex items-center gap-3 pt-4">
@@ -4871,12 +4871,12 @@ export default function Accounting() {
       <Modal isOpen={isTransferModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsTransferModalOpen(false)} title="Wire Transfer" size="md">
         <form className="space-y-4" onSubmit={handleTransfer}>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">From Account *</label>
+            <label className="block text-sm text-foreground mb-1">From Account *</label>
             <ThemedSelect
               required
               value={transferFromId}
               onChange={(e) => setTransferFromId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="">Select source…</option>
               {banks.map((b) => {
@@ -4892,12 +4892,12 @@ export default function Accounting() {
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">To Account *</label>
+            <label className="block text-sm text-foreground mb-1">To Account *</label>
             <ThemedSelect
               required
               value={transferToId}
               onChange={(e) => setTransferToId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="">Select destination…</option>
               {banks.filter((b) => b.id !== transferFromId).map((b) => {
@@ -4913,7 +4913,7 @@ export default function Accounting() {
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+            <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
             <input
               required
               type="number"
@@ -4921,28 +4921,28 @@ export default function Accounting() {
               step="0.01"
               value={transferAmount}
               onChange={(e) => setTransferAmount(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="0.00"
             />
             <AmountInWords value={transferAmount} />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Transfer Date *</label>
+            <label className="block text-sm text-foreground mb-1">Transfer Date *</label>
             <input
               required
               type="date"
               value={transferDate}
               onChange={(e) => setTransferDate(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <label className="block text-sm text-foreground mb-1">Notes</label>
             <textarea
               value={transferNotes}
               onChange={(e) => setTransferNotes(e.target.value)}
               rows={2}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="Optional"
             />
           </div>
@@ -4966,7 +4966,7 @@ export default function Accounting() {
         {payableVendorGroup && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-3 text-xs">
-              <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-700">{payableVendorGroup.items.length} transaction(s)</span>
+              <span className="px-2.5 py-1 rounded bg-muted text-foreground">{payableVendorGroup.items.length} transaction(s)</span>
               <span className="px-2.5 py-1 rounded bg-danger-50 text-danger-700">Outstanding: PKR {payableVendorGroup.outstanding.toLocaleString()}</span>
               <span className="px-2.5 py-1 rounded bg-success-50 text-success-700">Paid: PKR {payableVendorGroup.paid.toLocaleString()}</span>
               {payableVendorGroup.key !== "no-vendor" && payableVendorGroup.outstanding > 0 && (
@@ -4983,17 +4983,17 @@ export default function Accounting() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Amount Due</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Expense Date</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Due Date</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Amount Due</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Expense Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Due Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {payableVendorGroup.items.map((item) => {
                         const status = payableDisplayStatus(item);
                         const statusClass =
@@ -5003,27 +5003,27 @@ export default function Accounting() {
                             ? "bg-danger-50 text-danger-700"
                             : "bg-warning-50 text-warning-700";
                         return (
-                          <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "—"}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">
-                              {item.client?.name ?? <span className="text-slate-400">Office</span>}
+                          <tr key={item.id} className="hover:bg-muted/50 transition-colors">
+                            <td className="px-6 py-4 text-sm text-muted-foreground">{item.category?.name ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground">
+                              {item.client?.name ?? <span className="text-muted-foreground/70">Office</span>}
                             </td>
                             <td className="px-6 py-4 text-sm text-danger-600">
                               PKR {Number(item.amount).toLocaleString()}
                               {status !== "Paid" && paidOf(item) > 0 && (
-                                <div className="text-[10px] text-slate-500 mt-1">
+                                <div className="text-[10px] text-muted-foreground mt-1">
                                   Paid PKR {paidOf(item).toLocaleString()} · Remaining PKR {owedOf(item).toLocaleString()}
                                 </div>
                               )}
                             </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{formatDate(item.expense_date)}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ? formatDate(item.due_date) : "—"}</td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground">{formatDate(item.expense_date)}</td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground">{item.due_date ? formatDate(item.due_date) : "—"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
                                 {status !== "Paid" && paidOf(item) > 0 ? "Partially paid" : status}
                               </span>
                               {status === "Paid" && item.paid_via && (
-                                <div className="text-[10px] text-slate-500 mt-1">
+                                <div className="text-[10px] text-muted-foreground mt-1">
                                   via {item.paid_via}
                                   {item.paid_at ? ` · ${formatDate(item.paid_at)}` : ""}
                                 </div>
@@ -5034,7 +5034,7 @@ export default function Accounting() {
                                 item.payable_status === "Paid" ? (
                                   // Cleared by vendor payments: undone by reverting the
                                   // payment below, not the bill.
-                                  <span className="text-[11px] text-slate-500">Vendor payment</span>
+                                  <span className="text-[11px] text-muted-foreground">Vendor payment</span>
                                 ) : (
                                   <Button variant="ghost" size="sm" onClick={() => openPay(payableVendorGroup.key, payableVendorGroup.name, owedOf(item), item.id)}>
                                     <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
@@ -5063,23 +5063,23 @@ export default function Accounting() {
               const vps = vendorPayments.filter((v) => v.vendor_id === payableVendorGroup.key);
               if (vps.length === 0) return null;
               return (
-                <div className="border-t border-slate-200 pt-3">
-                  <div className="text-sm font-medium text-slate-700 mb-2">Vendor payments</div>
+                <div className="border-t border-border pt-3">
+                  <div className="text-sm font-medium text-foreground mb-2">Vendor payments</div>
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-6 py-2 text-sm text-slate-500">Date</th>
-                        <th className="text-left px-6 py-2 text-sm text-slate-500">Amount</th>
-                        <th className="text-left px-6 py-2 text-sm text-slate-500">Paid via</th>
-                        <th className="text-left px-6 py-2 text-sm text-slate-500">Actions</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-6 py-2 text-sm text-muted-foreground">Date</th>
+                        <th className="text-left px-6 py-2 text-sm text-muted-foreground">Amount</th>
+                        <th className="text-left px-6 py-2 text-sm text-muted-foreground">Paid via</th>
+                        <th className="text-left px-6 py-2 text-sm text-muted-foreground">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200">
+                    <tbody className="divide-y divide-border">
                       {vps.map((v) => (
                         <tr key={v.id}>
-                          <td className="px-6 py-2 text-sm text-slate-600">{formatDate(v.paid_on)}</td>
+                          <td className="px-6 py-2 text-sm text-muted-foreground">{formatDate(v.paid_on)}</td>
                           <td className="px-6 py-2 text-sm text-success-700">PKR {Number(v.amount).toLocaleString()}</td>
-                          <td className="px-6 py-2 text-sm text-slate-600">
+                          <td className="px-6 py-2 text-sm text-muted-foreground">
                             {v.paid_via === "Bank"
                               ? `Bank · ${banks.find((b) => b.id === v.paid_bank_account_id)?.bank_name ?? "—"}`
                               : `Cash · ${custodians.find((c) => c.locationId === v.custodian_location_id)?.fullName ?? "custodian"}`}
@@ -5121,22 +5121,22 @@ export default function Accounting() {
                 ["Branch code", v?.branch_code],
               ] as [string, string | null | undefined][]).filter(([, val]) => !!val) as [string, string][];
               return (
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="text-xs text-slate-500 mb-2">Vendor bank details</div>
+                <div className="rounded-md border border-border bg-muted/50 px-4 py-3">
+                  <div className="text-xs text-muted-foreground mb-2">Vendor bank details</div>
                   {rows.length === 0 ? (
-                    <p className="text-sm text-slate-500">None recorded. Add them in Expenses ▸ Manage Vendors.</p>
+                    <p className="text-sm text-muted-foreground">None recorded. Add them in Expenses ▸ Manage Vendors.</p>
                   ) : (
                     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
                       {rows.map(([label, val]) => (
                         <div key={label} className="min-w-0">
-                          <dt className="text-xs text-slate-500">{label}</dt>
-                          <dd className="flex items-center gap-1.5 text-slate-900">
+                          <dt className="text-xs text-muted-foreground">{label}</dt>
+                          <dd className="flex items-center gap-1.5 text-foreground">
                             <span className={`truncate ${label === "Account number" || label === "Branch code" ? "font-mono" : ""}`}>{val}</span>
                             <button
                               type="button"
                               title={`Copy ${label.toLowerCase()}`}
                               onClick={() => { void navigator.clipboard?.writeText(val); }}
-                              className="flex-shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                              className="flex-shrink-0 p-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-border"
                             >
                               <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
                             </button>
@@ -5150,16 +5150,16 @@ export default function Accounting() {
             })()}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Outstanding</label>
+                <label className="block text-sm text-foreground mb-1">Outstanding</label>
                 <input
                   type="text"
                   value={`PKR ${payTarget.owed.toLocaleString()}`}
                   disabled
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Amount Paid *</label>
+                <label className="block text-sm text-foreground mb-1">Amount Paid *</label>
                 <input
                   type="number"
                   min="0"
@@ -5169,29 +5169,29 @@ export default function Accounting() {
                   autoFocus
                   value={payAmount}
                   onChange={(e) => setPayAmount(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                   placeholder="e.g. 1500"
                 />
               </div>
             </div>
 
             {payPreview.length > 0 && Number(payAmount) > 0 && (
-              <div className="border border-slate-200 rounded-md overflow-hidden">
-                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
+              <div className="border border-border rounded-md overflow-hidden">
+                <div className="px-3 py-2 bg-muted/50 border-b border-border text-xs text-muted-foreground">
                   Clears bills oldest first
                 </div>
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs text-slate-500 border-b border-slate-200">
+                    <tr className="text-xs text-muted-foreground border-b border-border">
                       <th className="text-left px-3 py-1.5">Bill date</th>
                       <th className="text-right px-3 py-1.5">Owed</th>
                       <th className="text-right px-3 py-1.5">Paid now</th>
                       <th className="text-right px-3 py-1.5">Remaining</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border">
                     {payPreview.map((r) => (
-                      <tr key={r.bill.id} className={r.take === 0 ? "text-slate-400" : ""}>
+                      <tr key={r.bill.id} className={r.take === 0 ? "text-muted-foreground/70" : ""}>
                         <td className="px-3 py-1.5">{formatDate(r.bill.expense_date)}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{r.owed.toLocaleString()}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{r.take.toLocaleString()}</td>
@@ -5206,13 +5206,13 @@ export default function Accounting() {
             )}
 
             <div>
-              <label className="block text-sm text-slate-700 mb-2">Pay Via *</label>
+              <label className="block text-sm text-foreground mb-2">Pay Via *</label>
               <div className="grid grid-cols-2 gap-2">
                 {(["Cash", "Bank"] as const).map((v) => (
                   <label
                     key={v}
                     className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
-                      payVia === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                      payVia === v ? "border-foreground bg-muted/50" : "border-border hover:border-border"
                     }`}
                   >
                     <input type="radio" name="pay-via" checked={payVia === v} onChange={() => setPayVia(v)} />
@@ -5223,12 +5223,12 @@ export default function Accounting() {
             </div>
             {payVia === "Cash" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+                <label className="block text-sm text-foreground mb-1">Paid By (Office Staff) *</label>
                 <ThemedSelect
                   required
                   value={payCustodianId}
                   onChange={(e) => setPayCustodianId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select who paid the cash…</option>
                   {custodians.map((c) => (
@@ -5249,12 +5249,12 @@ export default function Accounting() {
             )}
             {payVia === "Bank" && (
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+                <label className="block text-sm text-foreground mb-1">Bank Account *</label>
                 <ThemedSelect
                   required
                   value={payBankId}
                   onChange={(e) => setPayBankId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select bank account…</option>
                   {banks.map((b) => (
@@ -5281,11 +5281,11 @@ export default function Accounting() {
       <Modal isOpen={isBankExportOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsBankExportOpen(false)} title="Export Bank Statement" size="sm">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+            <label className="block text-sm text-foreground mb-1">Bank Account</label>
             <ThemedSelect
               value={bankExportBankId}
               onChange={(e) => setBankExportBankId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             >
               <option value="all">All Banks</option>
               {banks.map((b) => (
@@ -5295,21 +5295,21 @@ export default function Accounting() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">From Date</label>
+              <label className="block text-sm text-foreground mb-1">From Date</label>
               <input
                 type="date"
                 value={bankExportFrom}
                 onChange={(e) => setBankExportFrom(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">To Date</label>
+              <label className="block text-sm text-foreground mb-1">To Date</label>
               <input
                 type="date"
                 value={bankExportTo}
                 onChange={(e) => setBankExportTo(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
           </div>
@@ -5479,13 +5479,13 @@ function HistoryBody({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-slate-200">
+      <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-border">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Account</label>
+          <label className="text-xs text-muted-foreground">Account</label>
           <ThemedSelect
             value={bankFilter}
             onChange={(e) => setBankFilter(e.target.value)}
-            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             <option value="all">All accounts</option>
             <option value="__cash__">Cash (Treasury)</option>
@@ -5497,11 +5497,11 @@ function HistoryBody({
           </ThemedSelect>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Month</label>
+          <label className="text-xs text-muted-foreground">Month</label>
           <ThemedSelect
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
-            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             <option value="all">All</option>
             {monthOptions.map((m) => (
@@ -5518,14 +5518,14 @@ function HistoryBody({
               className={`px-3 py-1.5 rounded-md text-xs ${
                 scope === s
                   ? "bg-foreground text-background font-semibold"
-                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                  : "bg-card text-muted-foreground border border-border hover:bg-muted/50"
               }`}
             >
               {s === "all" ? "All" : s === "cash" ? "Cash only" : "Account only"}
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-slate-500">
+        <span className="ml-auto text-xs text-muted-foreground">
           {filtered.length} entr{filtered.length === 1 ? "y" : "ies"}
         </span>
       </div>
@@ -5535,20 +5535,20 @@ function HistoryBody({
           container, so introducing a second one detaches the header. */}
       <div className="max-h-[60vh] overflow-auto">
         {filtered.length === 0 ? (
-          <p className="text-sm text-slate-500 py-6 text-center">{emptyText}</p>
+          <p className="text-sm text-muted-foreground py-6 text-center">{emptyText}</p>
         ) : (
           <table className="w-full">
-            <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-slate-200">
-                <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
-                <th className="text-left px-3 py-2 text-xs text-slate-500">Account</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500">Δ</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500">Before → After</th>
-                <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b border-border">
+                <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                <th className="text-left px-3 py-2 text-xs text-muted-foreground">Kind</th>
+                <th className="text-left px-3 py-2 text-xs text-muted-foreground">Account</th>
+                <th className="text-right px-3 py-2 text-xs text-muted-foreground">Δ</th>
+                <th className="text-right px-3 py-2 text-xs text-muted-foreground">Before → After</th>
+                <th className="text-left px-3 py-2 text-xs text-muted-foreground">Description</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-border">
               {filtered.map((t) => {
                 const bank = banks.find((b) => b.id === t.bank_account_id);
                 const ledger = balanceLedger.get(t.id) ?? {};
@@ -5556,21 +5556,21 @@ function HistoryBody({
                 const ad = Number(t.account_delta);
                 return (
                   <tr key={t.id}>
-                    <td className="px-3 py-2 text-xs text-slate-600">
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
                       {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
-                    <td className="px-3 py-2 text-xs text-slate-700">
+                    <td className="px-3 py-2 text-xs text-foreground">{kindLabel[t.kind]}</td>
+                    <td className="px-3 py-2 text-xs text-foreground">
                       {bank ? (
                         <>
-                          <div className="font-medium text-slate-900">{bank.bank_name}</div>
-                          <div className="font-mono text-slate-500">{bank.account_number}</div>
+                          <div className="font-medium text-foreground">{bank.bank_name}</div>
+                          <div className="font-mono text-muted-foreground">{bank.account_number}</div>
                           {(bank.branch_name || bank.branch_code) && (
-                            <div className="text-slate-400">
+                            <div className="text-muted-foreground/70">
                               {[bank.branch_name, bank.branch_code].filter(Boolean).join(" · ")}
                             </div>
                           )}
-                          {cd !== 0 && <div className="text-slate-500">↔ Cash</div>}
+                          {cd !== 0 && <div className="text-muted-foreground">↔ Cash</div>}
                         </>
                       ) : cd !== 0 ? "Cash" : "—"}
                     </td>
@@ -5578,7 +5578,7 @@ function HistoryBody({
                       {ad !== 0 && (
                         <div
                           className={
-                            ad > 0 ? "text-success-700" : ad < 0 ? "text-danger-700" : "text-slate-500"
+                            ad > 0 ? "text-success-700" : ad < 0 ? "text-danger-700" : "text-muted-foreground"
                           }
                         >
                           {ad > 0 ? "+" : ""}
@@ -5588,7 +5588,7 @@ function HistoryBody({
                       {cd !== 0 && (
                         <div
                           className={
-                            cd > 0 ? "text-success-700" : cd < 0 ? "text-danger-700" : "text-slate-500"
+                            cd > 0 ? "text-success-700" : cd < 0 ? "text-danger-700" : "text-muted-foreground"
                           }
                         >
                           {cd > 0 ? "+" : ""}
@@ -5596,24 +5596,24 @@ function HistoryBody({
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-right font-mono text-slate-700">
+                    <td className="px-3 py-2 text-xs text-right font-mono text-foreground">
                       {ledger.bank && (
                         <div>
-                          <span className="text-slate-400">Bank </span>
+                          <span className="text-muted-foreground/70">Bank </span>
                           {ledger.bank.before.toLocaleString()} →{" "}
                           {ledger.bank.after.toLocaleString()}
                         </div>
                       )}
                       {ledger.cash && (
                         <div>
-                          <span className="text-slate-400">Cash </span>
+                          <span className="text-muted-foreground/70">Cash </span>
                           {ledger.cash.before.toLocaleString()} →{" "}
                           {ledger.cash.after.toLocaleString()}
                         </div>
                       )}
-                      {!ledger.bank && !ledger.cash && <span className="text-slate-400">—</span>}
+                      {!ledger.bank && !ledger.cash && <span className="text-muted-foreground/70">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <span className="flex-1">{t.description ?? "—"}</span>
                         {t.kind === "deposit" && t.reference_id && onDownloadSlip && depositRefs?.has(t.reference_id) && (
@@ -5621,7 +5621,7 @@ function HistoryBody({
                             type="button"
                             title="Download deposit slip"
                             onClick={() => onDownloadSlip(t.reference_id as string)}
-                            className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
+                            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                           >
                             <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
                           </button>
@@ -5636,7 +5636,7 @@ function HistoryBody({
         )}
       </div>
 
-      <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+      <div className="flex items-center gap-3 pt-4 border-t border-border">
         <Button variant="secondary" size="md" className="ml-auto" onClick={onClose}>
           Close
         </Button>

@@ -324,7 +324,7 @@ export default function SuperAdminLayout() {
   };
 
   return (
-    <div className="app-shell flex h-dvh bg-slate-50">
+    <div className="app-shell flex h-dvh bg-muted/50">
       <Sidebar
         title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
         links={links}

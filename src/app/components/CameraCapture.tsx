@@ -143,16 +143,16 @@ export default function CameraCapture({
       />
       <div
         style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
-        className="relative w-full max-w-lg mx-3 rounded-lg bg-white shadow-lg flex flex-col max-h-[90dvh]"
+        className="relative w-full max-w-lg mx-3 rounded-lg bg-card shadow-lg flex flex-col max-h-[90dvh]"
       >
-        <div className="flex items-center justify-between border-b border-slate-200 p-4">
-          <h3 className="text-base text-slate-900">{title}</h3>
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <h3 className="text-base text-foreground">{title}</h3>
           <button
             onClick={() => {
               stop();
               onClose();
             }}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-muted-foreground/70 hover:text-muted-foreground"
             aria-label="Close"
           >
             <X className="w-5 h-5" strokeWidth={1.5} />
@@ -166,7 +166,7 @@ export default function CameraCapture({
               <span>{error}</span>
             </div>
           ) : (
-            <div className="relative overflow-hidden rounded-md bg-slate-900 aspect-[4/3]">
+            <div className="relative overflow-hidden rounded-md bg-ink aspect-[4/3]">
               {/* The live feed stays mounted behind the still so returning from a
                   retake does not have to restart the camera. */}
               <video
@@ -187,7 +187,7 @@ export default function CameraCapture({
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
           {error ? (
             <Button variant="secondary" onClick={() => void start()}>
               <RefreshCw className="w-4 h-4" strokeWidth={1.5} /> Try again

@@ -28,13 +28,13 @@ export default function AddendumTable({
   siteNameOf?: (a: ContractAddendum) => string;
 }) {
   if (addendums.length === 0) {
-    return <p className="px-3 py-3 text-sm text-slate-500">No addendums on this contract.</p>;
+    return <p className="px-3 py-3 text-sm text-muted-foreground">No addendums on this contract.</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
+          <tr className="text-xs text-muted-foreground uppercase border-b border-border">
             <th className="text-left px-3 py-2">Effective</th>
             <th className="text-left px-3 py-2">Change</th>
             {siteNameOf && <th className="text-left px-3 py-2">Site</th>}
@@ -43,15 +43,15 @@ export default function AddendumTable({
             <th className="text-left px-3 py-2">Reference</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-border">
           {addendums.map((a) => {
             const cat = a.contract_line_id
               ? categoryByLineId.get(a.contract_line_id) ?? a.category
               : a.category;
             return (
               <tr key={a.id}>
-                <td className="px-3 py-1.5 text-slate-700">{formatDate(a.effective_from)}</td>
-                <td className="px-3 py-1.5 text-slate-700">
+                <td className="px-3 py-1.5 text-foreground">{formatDate(a.effective_from)}</td>
+                <td className="px-3 py-1.5 text-foreground">
                   {ADDENDUM_CHANGE_TYPE_LABEL[a.change_type]}
                   {a.change_type === "RATE_CHANGE"
                     ? a.new_rate != null && ` → PKR ${Number(a.new_rate).toLocaleString()}`
@@ -60,12 +60,12 @@ export default function AddendumTable({
                       : ` (${a.change_type === "REDUCE_HEADCOUNT" ? "−" : "+"}${a.count_delta})` +
                         (a.unit_rate != null ? ` @ PKR ${Number(a.unit_rate).toLocaleString()}` : "")}
                 </td>
-                {siteNameOf && <td className="px-3 py-1.5 text-slate-600">{siteNameOf(a)}</td>}
-                <td className="px-3 py-1.5 text-slate-600">
+                {siteNameOf && <td className="px-3 py-1.5 text-muted-foreground">{siteNameOf(a)}</td>}
+                <td className="px-3 py-1.5 text-muted-foreground">
                   {cat ? CONTRACT_LINE_CATEGORY_LABEL[cat] : "—"}
-                  {a.notes && <span className="text-[10px] text-slate-400 ml-1">{a.notes}</span>}
+                  {a.notes && <span className="text-[10px] text-muted-foreground/70 ml-1">{a.notes}</span>}
                 </td>
-                <td className="px-3 py-1.5 text-slate-600">{ADDENDUM_SOURCE_LABEL[a.source]}</td>
+                <td className="px-3 py-1.5 text-muted-foreground">{ADDENDUM_SOURCE_LABEL[a.source]}</td>
                 <td className="px-3 py-1.5">
                   {a.drive_view_url ? (
                     <a
@@ -78,7 +78,7 @@ export default function AddendumTable({
                       {a.reference_file_name ?? "Document"}
                     </a>
                   ) : (
-                    <span className="text-xs text-slate-500">{a.reference ?? "—"}</span>
+                    <span className="text-xs text-muted-foreground">{a.reference ?? "—"}</span>
                   )}
                 </td>
               </tr>

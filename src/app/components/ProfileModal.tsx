@@ -74,11 +74,11 @@ export default function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onC
         )}
 
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center">
+          <div className="h-16 w-16 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
             {avatarUrl ? (
               <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
             ) : (
-              <span className="text-xl text-slate-500">{initials}</span>
+              <span className="text-xl text-muted-foreground">{initials}</span>
             )}
           </div>
           <div>
@@ -105,30 +105,30 @@ export default function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onC
                 Remove
               </button>
             )}
-            <p className="text-[10px] text-slate-500 mt-1">PNG/JPG up to 512 KB.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">PNG/JPG up to 512 KB.</p>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Display Name</label>
+          <label className="block text-sm text-foreground mb-1">Display Name</label>
           <input
             type="text"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
             placeholder="Your name"
           />
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Display Email</label>
+          <label className="block text-sm text-foreground mb-1">Display Email</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
             placeholder="you@example.com"
           />
-          <p className="text-[10px] text-slate-500 mt-1">
+          <p className="text-[10px] text-muted-foreground mt-1">
             Shown in the app. This does not change your sign-in email.
           </p>
         </div>

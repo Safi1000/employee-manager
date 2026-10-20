@@ -74,18 +74,18 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Current Password</label>
+            <label className="block text-sm text-foreground mb-1">Current Password</label>
             <input
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">New Password</label>
+            <label className="block text-sm text-foreground mb-1">New Password</label>
             <input
               type="password"
               value={newPassword}
@@ -93,19 +93,19 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
               required
               minLength={8}
               placeholder="At least 8 characters"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Confirm New Password</label>
+            <label className="block text-sm text-foreground mb-1">Confirm New Password</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
               minLength={8}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
 

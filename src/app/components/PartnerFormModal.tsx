@@ -228,8 +228,8 @@ export default function PartnerFormModal({
     <Modal isOpen={isOpen} onClose={onClose} title={partner ? `Edit ${partner.name}` : "Add Partner"} size="md">
       <div className="space-y-4">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">
-            Partner name * {editing && <span className="text-slate-400">(locked)</span>}
+          <label className="block text-sm text-foreground mb-1">
+            Partner name * {editing && <span className="text-muted-foreground/70">(locked)</span>}
           </label>
           <input
             type="text"
@@ -237,25 +237,25 @@ export default function PartnerFormModal({
             disabled={editing}
             onChange={(e) => setName(e.target.value)}
             placeholder="Full name"
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-400"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground/70"
           />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Kind *</label>
+            <label className="block text-sm text-foreground mb-1">Kind *</label>
             <ThemedSelect
               value={scope}
               disabled={editing}
               onChange={(e) => setScope(e.target.value as "COMPANY" | "BRANCH")}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-400"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground/70"
             >
               <option value="COMPANY">Equity partner</option>
               <option value="BRANCH">Regional partner</option>
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Profit share % *</label>
+            <label className="block text-sm text-foreground mb-1">Profit share % *</label>
             <input
               type="number"
               step="0.001"
@@ -264,12 +264,12 @@ export default function PartnerFormModal({
               value={share}
               disabled={editing}
               onChange={(e) => setShare(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right disabled:bg-slate-50 disabled:text-slate-400"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm text-right disabled:bg-muted/50 disabled:text-muted-foreground/70"
             />
           </div>
         </div>
 
-        <p className="text-[11px] text-slate-500 -mt-2">
+        <p className="text-[11px] text-muted-foreground -mt-2">
           {scope === "COMPANY"
             ? `Takes a share of the company-wide residual pool. ${equityShareTotal}% of equity is allocated so far.`
             : "Takes a share of their own region only. Regional and equity shares are separate pools and are never summed together."}
@@ -278,12 +278,12 @@ export default function PartnerFormModal({
         {scope === "BRANCH" && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Region *</label>
+              <label className="block text-sm text-foreground mb-1">Region *</label>
               <ThemedSelect
                 value={branchId}
                 disabled={editing}
                 onChange={(e) => setBranchId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground/70"
               >
                 <option value="">Select region…</option>
                 {regionOptions.map((b) => (
@@ -292,7 +292,7 @@ export default function PartnerFormModal({
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Share bites on</label>
+              <label className="block text-sm text-foreground mb-1">Share bites on</label>
               {/* Company policy, not a per-partner choice. It used to be a dropdown
                   writing partners.basis — which is exactly how two partners could
                   come to disagree about what a rupee of profit is, so 0232 hoisted
@@ -300,12 +300,12 @@ export default function PartnerFormModal({
                   change it once, for the company, in Partnership policy — which
                   is now a control on the report behind this dialog rather than
                   a sentence naming a screen that did not exist. */}
-              <div className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-600">
+              <div className="w-full px-3 py-2 border border-border rounded-md text-sm bg-muted/50 text-muted-foreground">
                 {companyBasis === "cash" ? "Net Cash — cash basis"
                   : companyBasis === "revenue" ? "Total Income — revenue basis"
                     : "Not configured"}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Company-wide setting — the Client Statements column every partner&apos;s
                 share is taken from.{" "}
                 {onOpenPolicy ? (
@@ -326,8 +326,8 @@ export default function PartnerFormModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">
-              Opening balance {partner && <span className="text-slate-400">(locked)</span>}
+            <label className="block text-sm text-foreground mb-1">
+              Opening balance {partner && <span className="text-muted-foreground/70">(locked)</span>}
             </label>
             <input
               type="number"
@@ -335,24 +335,24 @@ export default function PartnerFormModal({
               disabled={editing}
               onChange={(e) => setOpening(e.target.value)}
               placeholder="0"
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right disabled:bg-slate-50 disabled:text-slate-400"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm text-right disabled:bg-muted/50 disabled:text-muted-foreground/70"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-muted-foreground mt-1">
               Positive = the company owes the partner.
             </p>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">
-              Shares profit from {partner && <span className="text-slate-400">(locked)</span>}
+            <label className="block text-sm text-foreground mb-1">
+              Shares profit from {partner && <span className="text-muted-foreground/70">(locked)</span>}
             </label>
             <input
               type="month"
               value={startMonth}
               disabled={editing}
               onChange={(e) => setStartMonth(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-400"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground/70"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-muted-foreground mt-1">
               No profit share for months before this.
             </p>
           </div>
@@ -362,16 +362,16 @@ export default function PartnerFormModal({
             The actual place to edit each client's share. The detail drawer
             shows the same breakdown read-only. */}
         {isRegional && (
-          <div className="pt-4 border-t border-slate-200">
-            <p className="text-sm text-slate-700 mb-1">Client shares — {regionName ?? "this region"}</p>
-            <p className="text-[11px] text-slate-500 mb-2">
+          <div className="pt-4 border-t border-border">
+            <p className="text-sm text-foreground mb-1">Client shares — {regionName ?? "this region"}</p>
+            <p className="text-[11px] text-muted-foreground mb-2">
               Set a share on a single client to override their headline {Number(partner?.profit_share_percent)}%.
               Amounts are for {period}.
             </p>
-            <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <div className="overflow-x-auto border border-border rounded-md">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50">
+                  <tr className="text-xs text-muted-foreground uppercase">
                     <th className="text-left px-3 py-2">Client</th>
                     <th className="text-right px-3 py-2">{companyBasis === "cash" ? "Net Cash" : "Total Income"}</th>
                     <th className="text-right px-3 py-2">Share</th>
@@ -379,26 +379,26 @@ export default function PartnerFormModal({
                     <th className="text-right px-3 py-2">Edit</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {loadingBd && (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                    <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
                       <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading…
                     </td></tr>
                   )}
                   {!loadingBd && breakdown.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                    <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
                       No clients in this region for {period}.
                     </td></tr>
                   )}
                   {!loadingBd && breakdown.map((r) => {
                     const editing = editClientId === r.client_id;
                     return (
-                      <tr key={r.client_id} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 text-slate-900">
+                      <tr key={r.client_id} className="hover:bg-muted/50">
+                        <td className="px-3 py-2 text-foreground">
                           {r.client_name}
-                          <span className="text-xs text-slate-500 font-mono ml-2">{r.client_code}</span>
+                          <span className="text-xs text-muted-foreground font-mono ml-2">{r.client_code}</span>
                         </td>
-                        <td className={`px-3 py-2 text-right tabular-nums ${Number(r.client_net) < 0 ? "text-danger-600" : "text-slate-700"}`}>
+                        <td className={`px-3 py-2 text-right tabular-nums ${Number(r.client_net) < 0 ? "text-danger-600" : "text-foreground"}`}>
                           {acct(Number(r.client_net))}
                         </td>
                         <td className="px-3 py-2 text-right">
@@ -407,16 +407,16 @@ export default function PartnerFormModal({
                               type="number" step="0.001" min="0" max="100"
                               value={editPct}
                               onChange={(e) => setEditPct(e.target.value)}
-                              className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                              className="w-20 px-2 py-1 border border-border rounded text-sm text-right"
                             />
                           ) : (
-                            <span className={r.is_override ? "text-brand-700 font-medium" : "text-slate-600"}>
+                            <span className={r.is_override ? "text-brand-700 font-medium" : "text-muted-foreground"}>
                               {Number(r.share_percent)}%
-                              {r.is_override && <span className="block text-[10px] text-slate-500">override</span>}
+                              {r.is_override && <span className="block text-[10px] text-muted-foreground">override</span>}
                             </span>
                           )}
                         </td>
-                        <td className={`px-3 py-2 text-right tabular-nums ${Number(r.amount) < 0 ? "text-danger-600" : "text-slate-900"}`}>
+                        <td className={`px-3 py-2 text-right tabular-nums ${Number(r.amount) < 0 ? "text-danger-600" : "text-foreground"}`}>
                           {acct(Number(r.amount))}
                         </td>
                         <td className="px-3 py-2 text-right">
@@ -430,7 +430,7 @@ export default function PartnerFormModal({
                               <button
                                 type="button"
                                 onClick={() => { setEditClientId(r.client_id); setEditPct(String(r.share_percent)); }}
-                                className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                                className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                                 title="Set a share just for this client"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
@@ -439,7 +439,7 @@ export default function PartnerFormModal({
                                 <button
                                   type="button"
                                   onClick={() => clearClientShare(r)}
-                                  className="p-1.5 rounded text-slate-500 hover:bg-slate-100"
+                                  className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                                   title={`Reset to the headline ${Number(partner?.profit_share_percent)}%`}
                                 >
                                   <RotateCcw className="w-3.5 h-3.5" />
@@ -459,7 +459,7 @@ export default function PartnerFormModal({
 
         {error && <p className="text-sm text-danger-600">{error}</p>}
 
-        <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+        <div className="flex items-center gap-3 pt-4 border-t border-border">
           {/* Editing an existing partner only touches per-client shares, which
               save inline — so there is nothing for a form-level Save to do. */}
           {!editing && (

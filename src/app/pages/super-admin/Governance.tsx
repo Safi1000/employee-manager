@@ -12,7 +12,7 @@ import { usePageState } from "../../lib/pageState";
 
 type Tab = "approvals" | "departments";
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const DEPARTMENTS = ["operations", "compliance", "hr", "finance", "client_management"] as const;
 
 export default function Governance() {
@@ -75,13 +75,13 @@ export default function Governance() {
       {tab === "approvals" && (
         <div className="space-y-4">
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">Pending requests</h3>
-            <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+            <h3 className="text-sm text-foreground mb-2">Pending requests</h3>
+            <div className="border border-border rounded-md divide-y divide-border">
               {pending.map((r) => (
                 <div key={r.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="text-slate-700">
+                  <span className="text-foreground">
                     {String(r.action_key).replace(/_/g, " ")}
-                    {r.amount != null && <span className="text-slate-500"> · {Number(r.amount).toLocaleString()}</span>}
+                    {r.amount != null && <span className="text-muted-foreground"> · {Number(r.amount).toLocaleString()}</span>}
                   </span>
                   <div className="flex items-center gap-2">
                     <Button variant="primary" size="sm" disabled={busy}
@@ -91,29 +91,29 @@ export default function Governance() {
                   </div>
                 </div>
               ))}
-              {pending.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No pending requests.</p>}
+              {pending.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No pending requests.</p>}
             </div>
           </section>
 
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">Decision log</h3>
-            <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-72 overflow-y-auto">
+            <h3 className="text-sm text-foreground mb-2">Decision log</h3>
+            <div className="border border-border rounded-md divide-y divide-border max-h-72 overflow-y-auto">
               {requests.filter((r) => r.status !== "pending").map((r) => (
                 <div key={r.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                  <span className="text-slate-600">{String(r.action_key).replace(/_/g, " ")}{r.amount != null && ` · ${Number(r.amount).toLocaleString()}`}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{r.status}</span>
+                  <span className="text-muted-foreground">{String(r.action_key).replace(/_/g, " ")}{r.amount != null && ` · ${Number(r.amount).toLocaleString()}`}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-muted border border-border">{r.status}</span>
                 </div>
               ))}
             </div>
           </section>
 
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">Action thresholds</h3>
-            <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+            <h3 className="text-sm text-foreground mb-2">Action thresholds</h3>
+            <div className="border border-border rounded-md divide-y divide-border">
               {configs.map((c) => (
                 <div key={c.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                  <span className="text-slate-700">{c.name}</span>
-                  <span className="text-xs text-slate-500">approver: {c.approver_permission}{c.threshold_amount != null && ` · > ${Number(c.threshold_amount).toLocaleString()}`}</span>
+                  <span className="text-foreground">{c.name}</span>
+                  <span className="text-xs text-muted-foreground">approver: {c.approver_permission}{c.threshold_amount != null && ` · > ${Number(c.threshold_amount).toLocaleString()}`}</span>
                 </div>
               ))}
             </div>
@@ -122,17 +122,17 @@ export default function Governance() {
       )}
 
       {tab === "departments" && (
-        <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+        <div className="border border-border rounded-md divide-y divide-border">
           {staff.map((s) => (
             <div key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <span className="text-slate-700">{s.full_name ?? s.email}</span>
+              <span className="text-foreground">{s.full_name ?? s.email}</span>
               <div className="flex items-center gap-2">
                 <ThemedSelect className={FIELD} value={s.department ?? ""}
                   onChange={(e) => run(supabase.from("profiles").update({ department: e.target.value || null }).eq("id", s.id))}>
                   <option value="">— department —</option>
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d.replace(/_/g, " ")}</option>)}
                 </ThemedSelect>
-                <label className="flex items-center gap-1 text-xs text-slate-500">
+                <label className="flex items-center gap-1 text-xs text-muted-foreground">
                   <input type="checkbox" checked={!!s.is_rmd}
                     onChange={() => run(supabase.from("profiles").update({ is_rmd: !s.is_rmd }).eq("id", s.id))} />
                   RMD
@@ -142,7 +142,7 @@ export default function Governance() {
               </div>
             </div>
           ))}
-          {staff.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No staff accounts.</p>}
+          {staff.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No staff accounts.</p>}
         </div>
       )}
     </div>

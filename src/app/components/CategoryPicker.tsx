@@ -67,37 +67,37 @@ export default function CategoryPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-md text-sm bg-white text-left hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+        className="w-full flex items-center gap-2 px-3 py-2 border border-border rounded-md text-sm bg-card text-left hover:border-border focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:bg-muted/50 disabled:text-muted-foreground/70"
       >
-        <Search className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
-        <span className={`flex-1 truncate ${selectedName ? "text-slate-900" : "text-slate-500"}`}>
+        <Search className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" strokeWidth={1.5} />
+        <span className={`flex-1 truncate ${selectedName ? "text-foreground" : "text-muted-foreground"}`}>
           {selectedName || placeholder}
         </span>
-        <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" strokeWidth={1.5} />
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg">
-          <div className="p-2 border-b border-slate-200">
+        <div className="absolute z-30 mt-1 w-full bg-card border border-border rounded-md shadow-lg">
+          <div className="p-2 border-b border-border">
             <input
               autoFocus
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search categories…"
-              className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              className="w-full px-2 py-1.5 border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
             />
           </div>
           <div className="max-h-64 overflow-y-auto py-1">
             {matches.length === 0 && (
-              <div className="px-3 py-2 text-xs text-slate-500">No matching category.</div>
+              <div className="px-3 py-2 text-xs text-muted-foreground">No matching category.</div>
             )}
             {matches.map((c) => (
               <button
                 type="button"
                 key={c.id}
                 onClick={() => select(c.id)}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === c.id ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 ${value === c.id ? "bg-brand-50 text-brand-700" : "text-foreground"}`}
               >
                 {c.name}
               </button>

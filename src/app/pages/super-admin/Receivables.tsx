@@ -14,7 +14,7 @@ import { usePageState } from "../../lib/pageState";
 type Tab = "aging" | "reminders" | "writeoff" | "billing" | "settings";
 
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 export default function Receivables() {
@@ -81,9 +81,9 @@ export default function Receivables() {
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 
       {tab === "aging" && (
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto border border-border rounded-md">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="text-left px-3 py-2">Region</th>
                 <th className="text-right px-3 py-2">Current</th>
@@ -94,10 +94,10 @@ export default function Receivables() {
                 <th className="text-right px-3 py-2">DSO (wtd)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {aging.map((r, i) => (
                 <tr key={i} className={r.workout_account ? "bg-warning-50" : ""}>
-                  <td className="px-3 py-1.5 text-slate-700">
+                  <td className="px-3 py-1.5 text-foreground">
                     {r.region_name ?? "—"}{r.workout_account && <span className="ml-2 text-[10px] uppercase text-warning-700">workout</span>}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{money(r.bucket_current)}</td>
@@ -108,7 +108,7 @@ export default function Receivables() {
                   <td className="px-3 py-1.5 text-right tabular-nums">{Number(r.dso_weighted_days ?? 0).toFixed(0)}</td>
                 </tr>
               ))}
-              {aging.length === 0 && <tr><td colSpan={7} className="px-3 py-3 text-slate-500">No outstanding receivables.</td></tr>}
+              {aging.length === 0 && <tr><td colSpan={7} className="px-3 py-3 text-muted-foreground">No outstanding receivables.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -116,10 +116,10 @@ export default function Receivables() {
 
       {tab === "reminders" && (
         <div className="space-y-2">
-          <p className="text-xs text-slate-400">Cadence steps come from Policy ({(settings?.reminder_cadence_days ?? [0, 7, 15, 30, 45]).join(", ")} days). Logging a reminder removes it from this queue.</p>
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <p className="text-xs text-muted-foreground/70">Cadence steps come from Policy ({(settings?.reminder_cadence_days ?? [0, 7, 15, 30, 45]).join(", ")} days). Logging a reminder removes it from this queue.</p>
+          <div className="overflow-x-auto border border-border rounded-md">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                 <tr>
                   <th className="text-left px-3 py-2">Invoice</th>
                   <th className="text-left px-3 py-2">Client</th>
@@ -129,11 +129,11 @@ export default function Receivables() {
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {reminders.map((r) => (
                   <tr key={r.invoice_id} className={r.workout_account ? "bg-warning-50" : ""}>
-                    <td className="px-3 py-1.5 text-slate-700">{r.invoice_number}</td>
-                    <td className="px-3 py-1.5 text-slate-600">{r.client_name}</td>
+                    <td className="px-3 py-1.5 text-foreground">{r.invoice_number}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{r.client_name}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{money(r.outstanding)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{r.age_days}d</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">+{r.due_step}</td>
@@ -145,7 +145,7 @@ export default function Receivables() {
                     </td>
                   </tr>
                 ))}
-                {reminders.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-slate-500">No reminders due.</td></tr>}
+                {reminders.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-muted-foreground">No reminders due.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -173,9 +173,9 @@ function WriteOffTab({ openInv, clientName, run, busy }: {
 }) {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   return (
-    <div className="overflow-x-auto border border-slate-200 rounded-md">
+    <div className="overflow-x-auto border border-border rounded-md">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+        <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
           <tr>
             <th className="text-left px-3 py-2">Invoice</th>
             <th className="text-left px-3 py-2">Client</th>
@@ -184,14 +184,14 @@ function WriteOffTab({ openInv, clientName, run, busy }: {
             <th className="px-3 py-2"></th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-border">
           {openInv.map((i) => {
             // 0313: matches what write_off_receivable actually writes off.
             const out = Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0);
             return (
               <tr key={i.id}>
-                <td className="px-3 py-1.5 text-slate-700">{i.invoice_number}</td>
-                <td className="px-3 py-1.5 text-slate-600">{clientName(i.client_id)}</td>
+                <td className="px-3 py-1.5 text-foreground">{i.invoice_number}</td>
+                <td className="px-3 py-1.5 text-muted-foreground">{clientName(i.client_id)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{money(out)}</td>
                 <td className="px-3 py-1.5">
                   <input className={FIELD + " w-full"} placeholder="Bad-debt reason"
@@ -206,7 +206,7 @@ function WriteOffTab({ openInv, clientName, run, busy }: {
               </tr>
             );
           })}
-          {openInv.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No open invoices to write off.</td></tr>}
+          {openInv.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-muted-foreground">No open invoices to write off.</td></tr>}
         </tbody>
       </table>
     </div>
@@ -233,21 +233,21 @@ function BillingTab({ companyId: _companyId, clients }: { companyId: string; cli
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <p className="text-xs text-slate-400">Suggests a billable amount from verified attendance guard-days served in the period, pro-rated against the active contract rate (§10).</p>
+      <p className="text-xs text-muted-foreground/70">Suggests a billable amount from verified attendance guard-days served in the period, pro-rated against the active contract rate (§10).</p>
       <div className="flex items-end gap-2 flex-wrap">
         <div>
-          <label className="text-xs text-slate-500 block mb-1">Client</label>
+          <label className="text-xs text-muted-foreground block mb-1">Client</label>
           <ThemedSelect className={FIELD} value={clientId} onChange={(e) => setClientId(e.target.value)}>
             <option value="">— client —</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </ThemedSelect>
         </div>
         <div>
-          <label className="text-xs text-slate-500 block mb-1">From</label>
+          <label className="text-xs text-muted-foreground block mb-1">From</label>
           <input type="date" className={FIELD} value={start} onChange={(e) => setStart(e.target.value)} />
         </div>
         <div>
-          <label className="text-xs text-slate-500 block mb-1">To</label>
+          <label className="text-xs text-muted-foreground block mb-1">To</label>
           <input type="date" className={FIELD} value={end} onChange={(e) => setEnd(e.target.value)} />
         </div>
         <Button variant="primary" size="sm" disabled={busy || !clientId} onClick={compute}>Compute</Button>
@@ -284,27 +284,27 @@ function PolicyTab({ settings, run, busy, companyId, clients }: {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <section className="border border-slate-200 rounded-md p-4 space-y-3">
-        <h3 className="text-sm text-slate-900">Bad-debt bearer (D1) & reminder cadence</h3>
+      <section className="border border-border rounded-md p-4 space-y-3">
+        <h3 className="text-sm text-foreground">Bad-debt bearer (D1) & reminder cadence</h3>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600 w-40">Bad debt borne by</label>
+          <label className="text-sm text-muted-foreground w-40">Bad debt borne by</label>
           <ThemedSelect className={FIELD} value={bearer} onChange={(e) => setBearer(e.target.value)}>
             <option value="region">Operating region</option>
             <option value="head_office">Head office</option>
           </ThemedSelect>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600 w-40">Reminder cadence (days)</label>
+          <label className="text-sm text-muted-foreground w-40">Reminder cadence (days)</label>
           <input className={FIELD + " flex-1"} value={cadence} onChange={(e) => setCadence(e.target.value)} placeholder="0, 7, 15, 30, 45" />
         </div>
         <Button variant="primary" size="sm" disabled={busy} onClick={saveSettings}>Save policy</Button>
       </section>
 
-      <section className="border border-slate-200 rounded-md p-4 space-y-2">
-        <h3 className="text-sm text-slate-900">Client receivable ownership & workout flags (§5)</h3>
+      <section className="border border-border rounded-md p-4 space-y-2">
+        <h3 className="text-sm text-foreground">Client receivable ownership & workout flags (§5)</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="text-left px-3 py-2">Client</th>
                 <th className="text-center px-3 py-2">Workout</th>
@@ -312,10 +312,10 @@ function PolicyTab({ settings, run, busy, companyId, clients }: {
                 <th className="text-right px-3 py-2">Credit ceiling</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {clients.map((c) => (
                 <tr key={c.id}>
-                  <td className="px-3 py-1.5 text-slate-700">{c.name}</td>
+                  <td className="px-3 py-1.5 text-foreground">{c.name}</td>
                   <td className="px-3 py-1.5 text-center">
                     <input type="checkbox" checked={!!c.workout_account}
                       onChange={(e) => run(supabase.from("clients").update({ workout_account: e.target.checked }).eq("id", c.id))} />
@@ -324,7 +324,7 @@ function PolicyTab({ settings, run, busy, companyId, clients }: {
                     <input type="checkbox" checked={!!c.attendance_billing}
                       onChange={(e) => run(supabase.from("clients").update({ attendance_billing: e.target.checked }).eq("id", c.id))} />
                   </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{c.credit_ceiling ? money(c.credit_ceiling) : "—"}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{c.credit_ceiling ? money(c.credit_ceiling) : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -337,9 +337,9 @@ function PolicyTab({ settings, run, busy, companyId, clients }: {
 
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="border border-slate-200 rounded-md p-3 bg-white">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-lg text-slate-900 tabular-nums mt-1">{value}</div>
+    <div className="border border-border rounded-md p-3 bg-card">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg text-foreground tabular-nums mt-1">{value}</div>
     </div>
   );
 }

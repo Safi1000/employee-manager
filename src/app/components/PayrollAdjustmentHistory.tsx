@@ -23,17 +23,17 @@ export default function PayrollAdjustmentHistory({ employeeId }: { employeeId: s
       .then(({ data }) => setRows((data ?? []) as PayrollAdjustment[]));
   }, [employeeId]);
 
-  if (rows.length === 0) return <p className="text-sm text-slate-500">No payslip corrections.</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">No payslip corrections.</p>;
   return (
-    <ul className="divide-y divide-slate-100">
+    <ul className="divide-y divide-border">
       {rows.map((a) => (
         <li key={a.id} className="py-2 text-sm flex items-start justify-between gap-3">
           <div>
             <div>
               <span className="font-medium">{new Date(a.original_period_month + "T00:00:00").toLocaleString("en", { month: "short", year: "numeric" })}</span>
-              <span className="text-slate-500"> · {a.reason}</span>
+              <span className="text-muted-foreground"> · {a.reason}</span>
             </div>
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-muted-foreground">
               {adjustmentSettlementLabel(a)} · raised {formatDate(a.raised_at)}
               {a.status === "settled" && a.settled_at ? ` · settled ${formatDate(a.settled_at)}` : ""}
               {a.status === "cancelled" ? ` · cancelled — ${a.cancelled_reason ?? ""}` : ""}

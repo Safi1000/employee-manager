@@ -55,7 +55,7 @@ const STATUS_COLOR: Record<RosterStatus, string> = {
   confirmed: "bg-success-50 text-success-700 border-success-200",
   leave_requested: "bg-warning-50 text-warning-700 border-warning-200",
   reliever_needed: "bg-danger-50 text-danger-700 border-danger-200",
-  unassigned: "bg-slate-50 text-slate-500 border-slate-200",
+  unassigned: "bg-muted/50 text-muted-foreground border-border",
 };
 
 type DayCount = 7 | 14 | 30;
@@ -309,7 +309,7 @@ export default function Roster() {
             <button
               type="button"
               onClick={() => setStartDate(addDaysISO(startDate, -dayCount))}
-              className="p-2 rounded hover:bg-slate-100 text-slate-600"
+              className="p-2 rounded hover:bg-muted text-muted-foreground"
               title="Previous window"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -317,7 +317,7 @@ export default function Roster() {
             <button
               type="button"
               onClick={() => setStartDate(todayISO())}
-              className="px-3 py-1.5 text-sm rounded border border-slate-200 hover:bg-slate-50"
+              className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted/50"
               title="Jump to today"
             >
               Today
@@ -325,13 +325,13 @@ export default function Roster() {
             <button
               type="button"
               onClick={() => setStartDate(addDaysISO(startDate, dayCount))}
-              className="p-2 rounded hover:bg-slate-100 text-slate-600"
+              className="p-2 rounded hover:bg-muted text-muted-foreground"
               title="Next window"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            <span className="ml-2 text-sm text-slate-700">
-              <Calendar className="w-4 h-4 inline mr-1 text-slate-400" />
+            <span className="ml-2 text-sm text-foreground">
+              <Calendar className="w-4 h-4 inline mr-1 text-muted-foreground/70" />
               {dayLabel(startDate)} → {dayLabel(endDate)}
             </span>
           </div>
@@ -345,7 +345,7 @@ export default function Roster() {
                 className={`px-3 py-1.5 text-xs rounded border transition-colors ${
                   dayCount === n
                     ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    : "border-border text-muted-foreground hover:bg-muted/50"
                 }`}
               >
                 {n} days
@@ -362,7 +362,7 @@ export default function Roster() {
                 className={`px-3 py-1.5 text-xs rounded border transition-colors inline-flex items-center gap-1 ${
                   shift === s
                     ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    : "border-border text-muted-foreground hover:bg-muted/50"
                 }`}
               >
                 {s === "day" ? <Sun className="w-3 h-3" /> : s === "night" ? <Moon className="w-3 h-3" /> : <Sunset className="w-3 h-3" />}
@@ -376,12 +376,12 @@ export default function Roster() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search employee…"
-            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-1.5 border border-border rounded-md text-sm"
           />
           <ThemedSelect
             value={clientFilter}
             onChange={(e) => setClientFilter(e.target.value)}
-            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-1.5 border border-border rounded-md text-sm"
           >
             <option value="all">All clients</option>
             {clients.map((c) => (
@@ -402,57 +402,57 @@ export default function Roster() {
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
-              <thead className="bg-slate-50">
+              <thead className="bg-muted/50">
                 <tr>
-                  <th className="sticky left-0 bg-slate-50 z-10 text-left px-3 py-2 text-xs text-slate-500 uppercase border-b border-slate-200 min-w-[200px]">
+                  <th className="sticky left-0 bg-muted/50 z-10 text-left px-3 py-2 text-xs text-muted-foreground uppercase border-b border-border min-w-[200px]">
                     Employee
                   </th>
                   {dates.map((d) => (
                     <th
                       key={d}
-                      className="text-center px-2 py-2 text-xs text-slate-500 uppercase border-b border-slate-200 min-w-[110px]"
+                      className="text-center px-2 py-2 text-xs text-muted-foreground uppercase border-b border-border min-w-[110px]"
                     >
-                      <div className="text-[10px] text-slate-400">{dayShort(d)}</div>
-                      <div className="text-[11px] text-slate-700">
+                      <div className="text-[10px] text-muted-foreground/70">{dayShort(d)}</div>
+                      <div className="text-[11px] text-foreground">
                         {new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" })}
                       </div>
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={dates.length + 1} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={dates.length + 1} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredEmployees.length === 0 && (
                   <tr>
-                    <td colSpan={dates.length + 1} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={dates.length + 1} className="px-4 py-10 text-center text-muted-foreground text-sm">
                       No active guards / relievers match the current filters.
                     </td>
                   </tr>
                 )}
                 {!loading && filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-slate-50/60">
-                    <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm border-b border-slate-100">
-                      <div className="text-slate-900">{emp.full_name}</div>
-                      <div className="text-xs text-slate-500 font-mono">{empDisplay(emp)}</div>
+                  <tr key={emp.id} className="hover:bg-muted/50/60">
+                    <td className="sticky left-0 bg-card z-10 px-3 py-2 text-sm border-b border-border">
+                      <div className="text-foreground">{emp.full_name}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{empDisplay(emp)}</div>
                     </td>
                     {dates.map((d) => {
                       const a = rosterByKey.get(`${emp.id}:${d}`);
                       const post = a?.post_id ? posts.find((p) => p.id === a.post_id) : null;
                       return (
-                        <td key={d} className="p-1 border-b border-slate-100 text-center align-top">
+                        <td key={d} className="p-1 border-b border-border text-center align-top">
                           <button
                             type="button"
                             onClick={() => openCellEditor(emp, d)}
                             className={`w-full min-h-[44px] rounded border px-1.5 py-1 text-[10px] leading-tight text-left transition-colors ${
                               a
                                 ? STATUS_COLOR[a.status]
-                                : "border-dashed border-slate-200 text-slate-400 hover:bg-slate-50"
+                                : "border-dashed border-border text-muted-foreground/70 hover:bg-muted/50"
                             }`}
                           >
                             {a ? (
@@ -481,7 +481,7 @@ export default function Roster() {
         </div>
 
         {/* Legend */}
-        <div className="text-xs text-slate-500 flex flex-wrap gap-3">
+        <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
           {(Object.keys(ROSTER_STATUS_LABEL) as RosterStatus[]).map((s) => (
             <span key={s} className="inline-flex items-center gap-1">
               <span className={`w-3 h-3 rounded border ${STATUS_COLOR[s]}`} />
@@ -489,7 +489,7 @@ export default function Roster() {
             </span>
           ))}
           <span className="inline-flex items-center gap-1">
-            <span className="w-3 h-3 rounded border border-dashed border-slate-300" />
+            <span className="w-3 h-3 rounded border border-dashed border-border" />
             Empty (unassigned)
           </span>
         </div>
@@ -506,17 +506,17 @@ export default function Roster() {
       >
         {editCell && (
           <div className="space-y-3">
-            <div className="text-xs text-slate-500">
-              Shift: <strong className="text-slate-700">{CONTRACT_SHIFT_LABEL[shift]}</strong>
+            <div className="text-xs text-muted-foreground">
+              Shift: <strong className="text-foreground">{CONTRACT_SHIFT_LABEL[shift]}</strong>
               <span className="mx-2">·</span>
               Employee code: <span className="font-mono">{empDisplay(editCell.employee)}</span>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Post</label>
+              <label className="block text-sm text-foreground mb-1">Post</label>
               <ThemedSelect
                 value={cellForm.post_id}
                 onChange={(e) => setCellForm({ ...cellForm, post_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">— No specific post —</option>
                 {posts.map((p) => {
@@ -530,11 +530,11 @@ export default function Roster() {
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client (override)</label>
+              <label className="block text-sm text-foreground mb-1">Client (override)</label>
               <ThemedSelect
                 value={cellForm.client_id}
                 onChange={(e) => setCellForm({ ...cellForm, client_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">— Inherit from employee's client —</option>
                 {clients.map((c) => (
@@ -543,7 +543,7 @@ export default function Roster() {
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Status</label>
+              <label className="block text-sm text-foreground mb-1">Status</label>
               <div className="grid grid-cols-2 gap-2">
                 {(Object.keys(ROSTER_STATUS_LABEL) as RosterStatus[]).map((s) => (
                   <label
@@ -551,7 +551,7 @@ export default function Roster() {
                     className={`flex items-center gap-2 px-3 py-2 border rounded cursor-pointer text-xs ${
                       cellForm.status === s
                         ? STATUS_COLOR[s]
-                        : "border-slate-200 hover:border-slate-300"
+                        : "border-border hover:border-border"
                     }`}
                   >
                     <input
@@ -566,24 +566,24 @@ export default function Roster() {
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <label className="block text-sm text-foreground mb-1">Notes</label>
               <textarea
                 rows={2}
                 value={cellForm.notes}
                 onChange={(e) => setCellForm({ ...cellForm, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
-            <label className="flex items-center gap-2 text-xs text-slate-700">
+            <label className="flex items-center gap-2 text-xs text-foreground">
               <input
                 type="checkbox"
                 checked={keepForward}
                 onChange={(e) => setKeepForward(e.target.checked)}
-                className="rounded border-slate-300"
+                className="rounded border-border"
               />
               Keep this assignment on the following days until changed
             </label>
-            <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
+            <div className="flex items-center gap-2 pt-3 border-t border-border">
               <Button variant="primary" size="md" onClick={saveCell} className="flex-1">
                 Save
               </Button>
@@ -621,9 +621,9 @@ function Stat({
   accent?: "muted" | "danger";
 }) {
   return (
-    <div className="bg-white p-3 rounded-lg border border-slate-200">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`text-2xl ${accent === "danger" ? "text-danger-600" : "text-slate-900"}`}>{value}</div>
+    <div className="bg-card p-3 rounded-lg border border-border">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`text-2xl ${accent === "danger" ? "text-danger-600" : "text-foreground"}`}>{value}</div>
     </div>
   );
 }
@@ -729,56 +729,56 @@ function PostsModal({
           </div>
         )}
 
-        <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-md border border-slate-200">
+        <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-muted/50 rounded-md border border-border">
           <div>
-            <label className="block text-xs text-slate-700 mb-1">Client *</label>
+            <label className="block text-xs text-foreground mb-1">Client *</label>
             <ThemedSelect
               required
               value={form.client_id}
               onChange={(e) => setForm({ ...form, client_id: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             >
               <option value="">— Select client —</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-xs text-slate-700 mb-1">Post Name *</label>
+            <label className="block text-xs text-foreground mb-1">Post Name *</label>
             <input
               required
               ref={nameRef}
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
               placeholder="e.g., Main Gate"
             />
           </div>
           <div className="col-span-full">
-            <label className="block text-xs text-slate-700 mb-1">Address</label>
+            <label className="block text-xs text-foreground mb-1">Address</label>
             <input
               type="text"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-700 mb-1">Required Guards</label>
+            <label className="block text-xs text-foreground mb-1">Required Guards</label>
             <input
               type="number"
               min="0"
               value={form.required_guards}
               onChange={(e) => setForm({ ...form, required_guards: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-700 mb-1">Shift Pattern</label>
+            <label className="block text-xs text-foreground mb-1">Shift Pattern</label>
             <ThemedSelect
               value={form.shift_pattern}
               onChange={(e) => setForm({ ...form, shift_pattern: e.target.value as ContractShift })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             >
               <option value="day">Day</option>
               <option value="night">Night</option>
@@ -798,36 +798,36 @@ function PostsModal({
           </div>
         </form>
 
-        <div className="border border-slate-200 rounded-md overflow-hidden">
+        <div className="border border-border rounded-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50">
+              <thead className="bg-muted/50">
                 <tr>
-                  <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Post</th>
-                  <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Client</th>
-                  <th className="text-right px-3 py-2 text-xs text-slate-500 uppercase">Guards</th>
-                  <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Shift</th>
-                  <th className="text-right px-3 py-2 text-xs text-slate-500 uppercase">Actions</th>
+                  <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase">Post</th>
+                  <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase">Client</th>
+                  <th className="text-right px-3 py-2 text-xs text-muted-foreground uppercase">Guards</th>
+                  <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase">Shift</th>
+                  <th className="text-right px-3 py-2 text-xs text-muted-foreground uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {posts.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-slate-500 text-sm">
+                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground text-sm">
                       No posts yet. Add one to get started.
                     </td>
                   </tr>
                 )}
                 {posts.map((p) => (
-                  <tr key={p.id} className={p.active ? "" : "bg-slate-50/50 opacity-60"}>
+                  <tr key={p.id} className={p.active ? "" : "bg-muted/50/50 opacity-60"}>
                     <td className="px-3 py-2">
-                      <div className="text-slate-900 inline-flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-slate-400" />
+                      <div className="text-foreground inline-flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-muted-foreground/70" />
                         {p.name}
                       </div>
-                      {p.address && <div className="text-xs text-slate-500">{p.address}</div>}
+                      {p.address && <div className="text-xs text-muted-foreground">{p.address}</div>}
                     </td>
-                    <td className="px-3 py-2 text-slate-600 text-xs">
+                    <td className="px-3 py-2 text-muted-foreground text-xs">
                       {clients.find((c) => c.id === p.client_id)?.name ?? "—"}
                     </td>
                     <td className="px-3 py-2 text-right">{p.required_guards}</td>
@@ -836,13 +836,13 @@ function PostsModal({
                       <div className="flex justify-end gap-1">
                         <button
                           onClick={() => toggleActive(p)}
-                          className="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                          className="text-xs px-2 py-1 rounded border border-border hover:bg-muted/50"
                         >
                           {p.active ? "Deactivate" : "Activate"}
                         </button>
                         <button
                           onClick={() => startEdit(p)}
-                          className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                          className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>

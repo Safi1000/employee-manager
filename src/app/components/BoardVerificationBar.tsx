@@ -44,9 +44,9 @@ export function halfState(info: HalfInfo, legacyAt: string | null) {
 }
 
 const TONE = {
-  success: "border-success-300 bg-success-50 text-success-800 dark:bg-success-900/20 dark:text-success-400",
-  info: "border-brand-300 bg-brand-50 text-brand-800 dark:bg-brand-900/20 dark:text-brand-300",
-  warning: "border-warning-300 bg-warning-50 text-warning-800 dark:bg-warning-900/20 dark:text-warning-400",
+  success: "border-success-200 bg-success-50 text-success-700 dark:bg-success-500/10 dark:text-success-500",
+  info: "border-brand-200 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-500",
+  warning: "border-warning-200 bg-warning-50 text-warning-700 dark:bg-warning-500/10 dark:text-warning-500",
   muted: "border-border text-muted-foreground",
 };
 
@@ -159,7 +159,7 @@ export default function BoardVerificationBar({
       )}
 
       {msg && (
-        <div className={`flex items-start gap-2 px-3 py-2 rounded-md text-xs ${msg.kind === "ok" ? "bg-success-50 text-success-700 border border-success-200 dark:bg-success-900/20 dark:text-success-400" : "bg-danger-50 text-danger-700 border border-danger-200"}`}>
+        <div className={`flex items-start gap-2 px-3 py-2 rounded-md text-xs ${msg.kind === "ok" ? "bg-success-50 text-success-700 border border-success-200 dark:bg-success-500/10 dark:text-success-500" : "bg-danger-50 text-danger-700 border border-danger-200"}`}>
           {msg.kind === "ok" ? <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
           <span className="flex-1">{msg.text}</span>
           <button onClick={() => setMsg(null)}><X className="w-3.5 h-3.5" /></button>

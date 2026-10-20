@@ -64,7 +64,7 @@ const metaOf = (g: SidebarGroup) => SECTION_META[g.label] ?? { icon: g.icon ?? F
 /** Bastion shield mark — amber, matches the landing brand. */
 function BrandMark() {
   return (
-    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-brand-500 text-[#241a06]">
+    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-brand-500 text-on-brand">
       <svg viewBox="0 0 32 32" fill="none" className="h-5 w-5">
         <path d="M16 2.5 4.5 7v8.5c0 6.6 4.7 10.5 11.5 13.3C22.8 25.9 27.5 22 27.5 15.5V7z" stroke="currentColor" strokeWidth="1.8" />
         <path d="M13 15.5a3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3M19 16.5a3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

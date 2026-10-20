@@ -16,8 +16,8 @@ export default function RequireAuth({
 
   if (loading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+      <div className="min-h-dvh flex items-center justify-center bg-muted/50">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -34,10 +34,10 @@ export default function RequireAuth({
       company.subscription_expires_at < today;
     if (company.active === false || expired) {
       return (
-        <div className="min-h-dvh flex items-center justify-center bg-slate-50 p-8">
+        <div className="min-h-dvh flex items-center justify-center bg-muted/50 p-8">
           <div className="max-w-md text-center bg-card border border-border rounded-2xl p-8">
-            <h1 className="text-xl text-slate-900 mb-2">Access suspended</h1>
-            <p className="text-sm text-slate-600 mb-6">
+            <h1 className="text-xl text-foreground mb-2">Access suspended</h1>
+            <p className="text-sm text-muted-foreground mb-6">
               {expired
                 ? "Your company's subscription has expired. Contact your administrator to renew."
                 : "Your company has been deactivated. Contact your administrator for help."}

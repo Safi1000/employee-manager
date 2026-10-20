@@ -237,7 +237,7 @@ export default function ProfitDistribution() {
     return `Client: ${clientName(target_id)}`;
   };
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground/70" /></div>;
 
   return (
     <>
@@ -269,17 +269,17 @@ export default function ProfitDistribution() {
         )}
 
         {/* Explainer */}
-        <div className="bg-brand-50 border border-brand-200 rounded-md p-4 mb-6 text-sm text-brand-800">
+        <div className="bg-brand-50 border border-brand-200 rounded-md p-4 mb-6 text-sm text-brand-700 dark:text-brand-500">
           <strong>How it works:</strong> Rules are resolved from most specific to least: Client → Branch → Company.
           The remaining % after all lines sum is the company-retained share (currently 0 if lines sum to 100%).
           Referral cuts are taken off-the-top before the pool is split per your funding method.
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
+        <div className="flex gap-1 bg-muted rounded-md p-1 mb-6 w-fit">
           {([["rules", "Distribution Rules"], ["referrals", "Referral Arrangements"]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
-              className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               {l}
             </button>
           ))}
@@ -289,7 +289,7 @@ export default function ProfitDistribution() {
         {tab === "rules" && (
           <div className="space-y-3">
             {rules.length === 0 && (
-              <div className="bg-card rounded-2xl border border-border py-12 text-center text-slate-500 text-sm">
+              <div className="bg-card rounded-2xl border border-border py-12 text-center text-muted-foreground text-sm">
                 No distribution rules yet. Add one to define how profit is split.
               </div>
             )}
@@ -302,43 +302,43 @@ export default function ProfitDistribution() {
                 <div key={r.id} className="bg-card rounded-2xl border border-border">
                   <div className="flex items-center justify-between p-4 cursor-pointer select-none" onClick={() => setExpandedRule(isExpanded ? null : r.id)}>
                     <div className="flex items-center gap-3">
-                      {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                      {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground/70" /> : <ChevronRight className="w-4 h-4 text-muted-foreground/70" />}
                       <div>
-                        <p className="text-sm font-medium text-slate-900">{levelLabel(r.level, r.target_id)}</p>
-                        <p className="text-xs text-slate-500">Effective from {r.effective_from} · {lines.length} partner line{lines.length !== 1 ? "s" : ""}{retained > 0 ? ` · ${retained}% retained` : ""}</p>
+                        <p className="text-sm font-medium text-foreground">{levelLabel(r.level, r.target_id)}</p>
+                        <p className="text-xs text-muted-foreground">Effective from {r.effective_from} · {lines.length} partner line{lines.length !== 1 ? "s" : ""}{retained > 0 ? ` · ${retained}% retained` : ""}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs ${r.level === "COMPANY" ? "bg-brand-50 text-brand-700" : r.level === "BRANCH" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700"}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs ${r.level === "COMPANY" ? "bg-brand-50 text-brand-700" : r.level === "BRANCH" ? "bg-warning-50 text-warning-700" : "bg-muted text-foreground"}`}>
                         {r.level}
                       </span>
-                      <button onClick={(e) => { e.stopPropagation(); openEditRule(r); }} className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                      <button onClick={(e) => { e.stopPropagation(); openEditRule(r); }} className="p-1 rounded hover:bg-muted text-muted-foreground">
                         <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteRule(r.id); }} className="p-1 rounded hover:bg-danger-50 text-slate-400 hover:text-danger-600">
+                      <button onClick={(e) => { e.stopPropagation(); deleteRule(r.id); }} className="p-1 rounded hover:bg-danger-50 text-muted-foreground/70 hover:text-danger-600">
                         <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                       </button>
                     </div>
                   </div>
                   {isExpanded && (
-                    <div className="border-t border-slate-200 px-4 py-3">
+                    <div className="border-t border-border px-4 py-3">
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
-                            <tr className="border-b border-slate-100">
-                              <th className="text-left py-2 text-xs text-slate-500">Beneficiary</th>
-                              <th className="text-right py-2 text-xs text-slate-500">Share %</th>
+                            <tr className="border-b border-border">
+                              <th className="text-left py-2 text-xs text-muted-foreground">Beneficiary</th>
+                              <th className="text-right py-2 text-xs text-muted-foreground">Share %</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-50">
+                          <tbody className="divide-y divide-border/60">
                             {lines.map((l) => (
                               <tr key={l.id}>
-                                <td className="py-2 text-slate-900">{l.beneficiary === "PARTNER" ? partnerName(l.partner_id) : "Company Retained"}</td>
+                                <td className="py-2 text-foreground">{l.beneficiary === "PARTNER" ? partnerName(l.partner_id) : "Company Retained"}</td>
                                 <td className="py-2 text-right font-mono">{l.percentage}%</td>
                               </tr>
                             ))}
                             {retained > 0 && (
-                              <tr className="text-slate-500">
+                              <tr className="text-muted-foreground">
                                 <td className="py-2 italic">Company Retained (remainder)</td>
                                 <td className="py-2 text-right font-mono">{retained.toFixed(2)}%</td>
                               </tr>
@@ -359,40 +359,40 @@ export default function ProfitDistribution() {
           <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Referring Partner</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Source Branch</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Basis</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client (if any)</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Cut %</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Funding</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Referring Partner</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Source Branch</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Basis</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client (if any)</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Cut %</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Funding</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {referrals.length === 0 && (
-                  <tr><td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">No referral arrangements yet.</td></tr>
+                  <tr><td colSpan={8} className="px-6 py-10 text-center text-muted-foreground text-sm">No referral arrangements yet.</td></tr>
                 )}
                 {referrals.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 text-sm text-slate-900">{partnerName(r.referring_partner_id)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{branchName(r.source_branch_id)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{r.basis.replace("_", " ")}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{r.client_id ? clientName(r.client_id) : "—"}</td>
+                  <tr key={r.id} className="hover:bg-muted/50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-foreground">{partnerName(r.referring_partner_id)}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{branchName(r.source_branch_id)}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{r.basis.replace("_", " ")}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{r.client_id ? clientName(r.client_id) : "—"}</td>
                     <td className="px-6 py-4 text-right text-sm font-mono">{r.percentage}%</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{r.funding_method.replace(/_/g, " ")}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{r.funding_method.replace(/_/g, " ")}</td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs ${r.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs ${r.is_active ? "bg-success-50 text-success-700" : "bg-muted text-muted-foreground"}`}>
                         {r.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEditReferral(r)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
+                        <button onClick={() => openEditReferral(r)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                           <Pencil className="w-4 h-4" strokeWidth={1.5} />
                         </button>
-                        <button onClick={() => deleteReferral(r.id)} className="p-1.5 rounded hover:bg-danger-50 text-slate-400 hover:text-danger-600 transition-colors">
+                        <button onClick={() => deleteReferral(r.id)} className="p-1.5 rounded hover:bg-danger-50 text-muted-foreground/70 hover:text-danger-600 transition-colors">
                           <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                         </button>
                       </div>
@@ -410,25 +410,25 @@ export default function ProfitDistribution() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Level</label>
+              <label className="block text-sm text-foreground mb-1">Level</label>
               <ThemedSelect value={ruleForm.level} onChange={(e) => setRuleForm({ ...ruleForm, level: e.target.value as any, target_id: "" })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="COMPANY">Company (all branches)</option>
                 <option value="BRANCH">Branch-specific</option>
                 <option value="CLIENT">Client-specific</option>
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Effective From</label>
+              <label className="block text-sm text-foreground mb-1">Effective From</label>
               <input type="date" value={ruleForm.effective_from} onChange={(e) => setRuleForm({ ...ruleForm, effective_from: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
           </div>
           {ruleForm.level === "BRANCH" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Branch</label>
+              <label className="block text-sm text-foreground mb-1">Branch</label>
               <ThemedSelect value={ruleForm.target_id} onChange={(e) => setRuleForm({ ...ruleForm, target_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select branch…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
@@ -436,9 +436,9 @@ export default function ProfitDistribution() {
           )}
           {ruleForm.level === "CLIENT" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <label className="block text-sm text-foreground mb-1">Client</label>
               <ThemedSelect value={ruleForm.target_id} onChange={(e) => setRuleForm({ ...ruleForm, target_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select client…</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </ThemedSelect>
@@ -447,34 +447,34 @@ export default function ProfitDistribution() {
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-slate-700">Distribution Lines</label>
-              <button type="button" onClick={addRuleLine} className="text-xs text-brand-600 hover:text-brand-800">+ Add Line</button>
+              <label className="text-sm text-foreground">Distribution Lines</label>
+              <button type="button" onClick={addRuleLine} className="text-xs text-brand-600 hover:text-brand-700">+ Add Line</button>
             </div>
             <div className="space-y-2">
               {ruleLinesFrm.map((l, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <ThemedSelect value={l.beneficiary} onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, beneficiary: e.target.value as any, partner_id: "" } : x))}
-                    className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                    className="flex-1 px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                     <option value="PARTNER">Partner</option>
                     <option value="RETAINED">Company Retained</option>
                   </ThemedSelect>
                   {l.beneficiary === "PARTNER" && (
                     <ThemedSelect value={l.partner_id} onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, partner_id: e.target.value } : x))}
-                      className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                      className="flex-1 px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                       <option value="">Select partner…</option>
                       {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </ThemedSelect>
                   )}
                   <input type="number" min="0" max="100" step="0.01" placeholder="%" value={l.percentage}
                     onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, percentage: e.target.value } : x))}
-                    className="w-20 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-                  <button type="button" onClick={() => removeRuleLine(i)} className="p-1 text-slate-400 hover:text-danger-600">
+                    className="w-20 px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+                  <button type="button" onClick={() => removeRuleLine(i)} className="p-1 text-muted-foreground/70 hover:text-danger-600">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ))}
             </div>
-            <div className={`flex items-center justify-between mt-3 text-sm ${totalPct > 100 ? "text-danger-600" : "text-slate-500"}`}>
+            <div className={`flex items-center justify-between mt-3 text-sm ${totalPct > 100 ? "text-danger-600" : "text-muted-foreground"}`}>
               <span>Total: <span className="font-mono">{totalPct.toFixed(2)}%</span></span>
               <span>{totalPct < 100 ? `${(100 - totalPct).toFixed(2)}% retained by company` : totalPct > 100 ? "Exceeds 100%!" : "Fully distributed"}</span>
             </div>
@@ -494,17 +494,17 @@ export default function ProfitDistribution() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Referring Partner *</label>
+              <label className="block text-sm text-foreground mb-1">Referring Partner *</label>
               <ThemedSelect value={refForm.referring_partner_id} onChange={(e) => setRefForm({ ...refForm, referring_partner_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select partner…</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Source Branch *</label>
+              <label className="block text-sm text-foreground mb-1">Source Branch *</label>
               <ThemedSelect value={refForm.source_branch_id} onChange={(e) => setRefForm({ ...refForm, source_branch_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select branch…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
@@ -512,39 +512,39 @@ export default function ProfitDistribution() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Basis</label>
+              <label className="block text-sm text-foreground mb-1">Basis</label>
               <ThemedSelect value={refForm.basis} onChange={(e) => setRefForm({ ...refForm, basis: e.target.value as any, client_id: "" })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="BRANCH_PROFIT">Branch Profit</option>
                 <option value="CLIENT_PROFIT">Client Profit</option>
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Cut % *</label>
+              <label className="block text-sm text-foreground mb-1">Cut % *</label>
               <input type="number" min="0" max="100" step="0.01" placeholder="e.g. 10" value={refForm.percentage} onChange={(e) => setRefForm({ ...refForm, percentage: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
           </div>
           {refForm.basis === "CLIENT_PROFIT" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <label className="block text-sm text-foreground mb-1">Client</label>
               <ThemedSelect value={refForm.client_id} onChange={(e) => setRefForm({ ...refForm, client_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select client…</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </ThemedSelect>
             </div>
           )}
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Funding Method</label>
+            <label className="block text-sm text-foreground mb-1">Funding Method</label>
             <ThemedSelect value={refForm.funding_method} onChange={(e) => setRefForm({ ...refForm, funding_method: e.target.value as any })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               <option value="OFF_THE_TOP">Off the Top (everyone bears it pro-rata)</option>
               <option value="PARTNERS_ONLY">Partners Only (company retained slice excluded)</option>
             </ThemedSelect>
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-            <input type="checkbox" checked={refForm.is_active} onChange={(e) => setRefForm({ ...refForm, is_active: e.target.checked })} className="rounded border-slate-300" />
+          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <input type="checkbox" checked={refForm.is_active} onChange={(e) => setRefForm({ ...refForm, is_active: e.target.checked })} className="rounded border-border" />
             Active
           </label>
           <div className="flex gap-2 pt-2">

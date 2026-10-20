@@ -142,9 +142,9 @@ export default function FireGuardModal({
       size="sm"
     >
       <div className="space-y-4">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           Separating{" "}
-          <span className="text-slate-900 font-medium">{guard.full_name}</span>{" "}
+          <span className="text-foreground font-medium">{guard.full_name}</span>{" "}
           ({codeIndex.byId.get(guard.id) ?? guard.employee_code}). The effective date is the day the separation
           takes effect — their last working day is the day before it, and the post
           is free from the effective date on. Prior attendance stays intact.
@@ -153,14 +153,14 @@ export default function FireGuardModal({
         {/* Separation type — both remove from the roster identically; they
             differ only in recorded reason + default rehire eligibility. */}
         <div>
-          <span className="block text-sm text-slate-700 mb-1">Separation type</span>
+          <span className="block text-sm text-foreground mb-1">Separation type</span>
           <div className="flex gap-2">
             {([["firing", "Firing"], ["resignation", "Resignation"]] as const).map(([val, label]) => (
               <button
                 key={val}
                 type="button"
                 onClick={() => { setType(val); setEligible(val === "resignation"); }}
-                className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors ${type === val ? "bg-brand-500 text-brand-950 border-brand-500 font-medium" : "border-border text-muted-foreground hover:bg-accent"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors ${type === val ? "bg-brand-500 text-brand-700 dark:text-brand-500 border-brand-500 font-medium" : "border-border text-muted-foreground hover:bg-accent"}`}
               >
                 {label}
               </button>
@@ -170,12 +170,12 @@ export default function FireGuardModal({
 
         {/* Effective date — Today or a picker. */}
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Effective (fire) date *</label>
+          <label className="block text-sm text-foreground mb-1">Effective (fire) date *</label>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setDate(todayIso())}
-              className={`px-3 py-2 rounded-md text-sm border ${date === todayIso() ? "bg-slate-100 border-slate-300 text-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              className={`px-3 py-2 rounded-md text-sm border ${date === todayIso() ? "bg-muted border-border text-foreground" : "border-border text-muted-foreground hover:bg-muted/50"}`}
             >
               Today
             </button>
@@ -183,19 +183,19 @@ export default function FireGuardModal({
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="flex-1 px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
         </div>
 
         {/* Outstanding dues — only shown when there is something outstanding. */}
         {gatesLoading ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Checking outstanding dues…
           </div>
         ) : hasOutstanding && gates ? (
           <div className="rounded-md border border-warning-200 bg-warning-50 p-3 space-y-1.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning-800">
+            <p className="text-xs font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500">
               Outstanding before exit
             </p>
             <ul className="text-sm text-warning-700 dark:text-warning-500 space-y-1">
@@ -233,18 +233,18 @@ export default function FireGuardModal({
         ) : null}
 
         <div>
-          <label className="block text-sm text-slate-700 mb-1">
+          <label className="block text-sm text-foreground mb-1">
             {type === "resignation" ? "Resignation note *" : "Reason for firing *"}
           </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             placeholder={type === "resignation" ? "e.g. Resigned for personal reasons…" : "e.g. Repeated no-shows, misconduct…"}
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
+        <label className="flex items-center gap-2 text-sm text-foreground">
           <input type="checkbox" checked={eligible} onChange={(e) => setEligible(e.target.checked)} />
           <span>Eligible for rehire</span>
         </label>

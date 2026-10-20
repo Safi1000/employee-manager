@@ -177,13 +177,13 @@ export default function DashboardAttachments() {
 
   return (
     <div className="bg-card rounded-2xl border border-border mb-6 md:mb-8">
-      <div className="p-6 border-b border-slate-200 flex items-start justify-between gap-3 flex-wrap">
+      <div className="p-6 border-b border-border flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <h3 className="text-base text-slate-900 flex items-center gap-2">
+          <h3 className="text-base text-foreground flex items-center gap-2">
             <Paperclip className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
             Files &amp; Links
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Shared with everyone in {company?.name ?? "your company"} · not included in exports
           </p>
         </div>
@@ -212,7 +212,7 @@ export default function DashboardAttachments() {
       </div>
 
       {showLink && !notReady && (
-        <div className="px-6 py-4 border-b border-slate-200 bg-secondary/40 flex flex-col sm:flex-row gap-2 sm:items-center">
+        <div className="px-6 py-4 border-b border-border bg-secondary/40 flex flex-col sm:flex-row gap-2 sm:items-center">
           <input
             autoFocus
             value={linkUrl}
@@ -257,22 +257,22 @@ export default function DashboardAttachments() {
         onDrop={onDrop}
       >
         {loading ? (
-          <div className="py-8 text-center text-slate-500 text-sm">
+          <div className="py-8 text-center text-muted-foreground text-sm">
             <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
           </div>
         ) : notReady ? (
           <div className="py-8 text-center">
-            <Paperclip className="w-6 h-6 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
-            <p className="text-sm text-slate-500">Attachments storage isn’t enabled yet.</p>
+            <Paperclip className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" strokeWidth={1.5} />
+            <p className="text-sm text-muted-foreground">Attachments storage isn’t enabled yet.</p>
             {isAdmin && (
-              <p className="text-xs text-slate-400 mt-1">Apply migration <code className="font-mono">0154_dashboard_attachments</code> to turn this on.</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">Apply migration <code className="font-mono">0154_dashboard_attachments</code> to turn this on.</p>
             )}
           </div>
         ) : items.length === 0 ? (
-          <div className="py-10 text-center border-2 border-dashed border-slate-200 rounded-lg">
-            <Upload className="w-6 h-6 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
-            <p className="text-sm text-slate-500">Drag files here, or use Upload / Add link.</p>
-            <p className="text-xs text-slate-400 mt-1">Documents, images, links — anything worth keeping handy.</p>
+          <div className="py-10 text-center border-2 border-dashed border-border rounded-lg">
+            <Upload className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" strokeWidth={1.5} />
+            <p className="text-sm text-muted-foreground">Drag files here, or use Upload / Add link.</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Documents, images, links — anything worth keeping handy.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

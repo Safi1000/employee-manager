@@ -1003,7 +1003,7 @@ export default function Invoices() {
         {tab === "ledger" && (
         <>
         {focusInvoice && !loading && !invoices.some((i) => i.id === focusInvoice) && (
-          <div className="mb-4 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          <div className="mb-4 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500">
             The invoice this ledger entry points at is not on this screen — it may have
             been deleted, or it may be outside the region you can see.
           </div>
@@ -1012,7 +1012,7 @@ export default function Invoices() {
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="p-4 border-b border-border flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">Client:</label>
+              <label className="text-sm text-muted-foreground">Client:</label>
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}
@@ -1020,11 +1020,11 @@ export default function Invoices() {
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">Month:</label>
+              <label className="text-sm text-muted-foreground">Month:</label>
               <ThemedSelect
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
-                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                className="px-3 py-1.5 border border-border rounded-md text-sm"
               >
                 <option value="all">All Months</option>
                 {monthOptions.map((m) => (
@@ -1032,7 +1032,7 @@ export default function Invoices() {
                 ))}
               </ThemedSelect>
             </div>
-            <div className="ml-auto text-sm text-slate-500">
+            <div className="ml-auto text-sm text-muted-foreground">
               {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? "" : "s"}
             </div>
           </div>
@@ -1053,7 +1053,7 @@ export default function Invoices() {
               <ThemedSelect
                 value={inv.status}
                 onChange={(e) => handleStatusChange(inv, e.target.value as InvoiceStatus)}
-                className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-slate-900 ${
+                className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
                   inv.status === "Delivered" || inv.status === "Paid"
                     ? "bg-success-50 text-success-700 border-success-200"
                     : inv.status === "Partly-Paid"
@@ -1132,29 +1132,29 @@ export default function Invoices() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice #</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice Month</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Invoice Amount</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Attachment</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Invoice #</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Invoice Month</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Invoice Amount</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Received</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Outstanding</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Attachment</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground text-sm">
                       No invoices yet. Click "New Invoice" to create one.
                     </td>
                   </tr>
@@ -1167,23 +1167,23 @@ export default function Invoices() {
                       <tr
                         key={inv.id}
                         ref={inv.id === focusInvoice ? focusInvoiceRow : undefined}
-                        className={`hover:bg-slate-50 transition-colors ${
+                        className={`hover:bg-muted/50 transition-colors ${
                           inv.id === focusInvoice ? FOCUS_ROW_CLASS : ""
                         }`}
                       >
-                        <td className="px-6 py-4 text-sm text-slate-900 font-mono">
+                        <td className="px-6 py-4 text-sm text-foreground font-mono">
                           {inv.invoice_number}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-900">
+                        <td className="px-6 py-4 text-sm text-foreground">
                           <div className="flex items-center gap-2">
-                            <Building2 className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
+                            <Building2 className="w-3.5 h-3.5 text-muted-foreground/70" strokeWidth={1.5} />
                             <span>{inv.client?.name ?? "—"}</span>
                           </div>
-                          <div className="text-xs text-slate-500 font-mono ml-5">
+                          <div className="text-xs text-muted-foreground font-mono ml-5">
                             {inv.client?.client_code ?? ""}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(billingMonth(inv))}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{monthLabel(billingMonth(inv))}</td>
                         <td className="px-6 py-4 text-sm text-brand-600 text-right">
                           PKR {Number(inv.invoice_amount).toLocaleString()}
                         </td>
@@ -1202,7 +1202,7 @@ export default function Invoices() {
                             onChange={(e) =>
                               handleStatusChange(inv, e.target.value as InvoiceStatus)
                             }
-                            className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-slate-900 ${
+                            className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
                               inv.status === "Delivered" || inv.status === "Paid"
                                 ? "bg-success-50 text-success-700 border-success-200"
                                 : inv.status === "Partly-Paid"
@@ -1217,7 +1217,7 @@ export default function Invoices() {
                             <option value="Paid">Paid</option>
                           </ThemedSelect>
                           ) : (
-                            <span className="text-xs text-slate-600">{inv.status}</span>
+                            <span className="text-xs text-muted-foreground">{inv.status}</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm">
@@ -1234,14 +1234,14 @@ export default function Invoices() {
                               <button
                                 type="button"
                                 onClick={() => downloadAttachment(inv)}
-                                className="text-slate-600 hover:text-slate-900"
+                                className="text-muted-foreground hover:text-foreground"
                                 title="Download"
                               >
                                 <Download className="w-3.5 h-3.5" strokeWidth={1.5} />
                               </button>
                             </div>
                           ) : (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-muted-foreground/70">—</span>
                           )}
                         </td>
                         <td className="px-6 py-4 flex gap-1">
@@ -1385,43 +1385,43 @@ export default function Invoices() {
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-slate-700">Payment History</label>
-              <span className="text-xs text-slate-500">
+              <label className="text-sm text-foreground">Payment History</label>
+              <span className="text-xs text-muted-foreground">
                 {editPayments.length} payment{editPayments.length === 1 ? "" : "s"}
               </span>
             </div>
             {/* overflow-auto, not a nested overflow-x wrapper — the sticky
                 <thead> would detach from a second scroll container. */}
-            <div className="rounded-md border border-slate-200 max-h-48 overflow-auto">
+            <div className="rounded-md border border-border max-h-48 overflow-auto">
               {editPayments.length === 0 ? (
-                <div className="p-3 text-sm text-slate-500 text-center">
+                <div className="p-3 text-sm text-muted-foreground text-center">
                   No payments recorded yet. Use "Record Payment" from the invoice list.
                 </div>
               ) : (
                 <table className="w-full">
-                  <thead className="bg-slate-50 sticky top-0">
+                  <thead className="bg-muted/50 sticky top-0">
                     <tr>
-                      <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                      <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
-                      <th className="text-left px-3 py-2 text-xs text-slate-500">Mode</th>
-                      <th className="text-left px-3 py-2 text-xs text-slate-500">Notes</th>
-                      <th className="text-right px-3 py-2 text-xs text-slate-500">Actions</th>
+                      <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                      <th className="text-right px-3 py-2 text-xs text-muted-foreground">Amount</th>
+                      <th className="text-left px-3 py-2 text-xs text-muted-foreground">Mode</th>
+                      <th className="text-left px-3 py-2 text-xs text-muted-foreground">Notes</th>
+                      <th className="text-right px-3 py-2 text-xs text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {editPayments.map((p) => (
                       <tr key={p.id}>
-                        <td className="px-3 py-2 text-xs text-slate-600">{formatDate(p.payment_date)}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(p.payment_date)}</td>
                         <td className="px-3 py-2 text-xs text-success-700 text-right">
                           PKR {Number(p.amount).toLocaleString()}
                         </td>
-                        <td className="px-3 py-2 text-xs text-slate-700">
+                        <td className="px-3 py-2 text-xs text-foreground">
                           {p.payment_mode}
                           {p.payment_mode === "Bank" && p.bank?.bank_name
                             ? ` · ${p.bank.bank_name}`
                             : ""}
                         </td>
-                        <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[140px]">
+                        <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[140px]">
                           {p.notes ?? "—"}
                         </td>
                         <td className="px-3 py-2 text-right">
@@ -1523,7 +1523,7 @@ export default function Invoices() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input
                 required
                 type="number"
@@ -1531,11 +1531,11 @@ export default function Invoices() {
                 step="0.01"
                 value={paymentForm.amount}
                 onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
+              <label className="block text-sm text-foreground mb-1">Payment Date *</label>
               <input
                 required
                 type="date"
@@ -1543,21 +1543,21 @@ export default function Invoices() {
                 onChange={(e) =>
                   setPaymentForm({ ...paymentForm, payment_date: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+            <label className="block text-sm text-foreground mb-1">Payment Mode *</label>
             <div className="flex gap-2">
               {(["Cash", "Bank"] as const).map((mode) => (
                 <label
                   key={mode}
                   className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm border cursor-pointer ${
                     paymentForm.payment_mode === mode
-                      ? "bg-brand-600 text-[#fff] border-brand-600"
-                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                      ? "bg-brand-600 text-on-fill border-brand-600"
+                      : "bg-card text-foreground border-border hover:border-border"
                   }`}
                 >
                   <input
@@ -1581,14 +1581,14 @@ export default function Invoices() {
 
           {paymentForm.payment_mode === "Bank" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <label className="block text-sm text-foreground mb-1">Bank Account *</label>
               <ThemedSelect
                 required
                 value={paymentForm.bank_account_id}
                 onChange={(e) =>
                   setPaymentForm({ ...paymentForm, bank_account_id: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
@@ -1602,14 +1602,14 @@ export default function Invoices() {
 
           {paymentForm.payment_mode === "Cash" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Received By *</label>
+              <label className="block text-sm text-foreground mb-1">Received By *</label>
               <ThemedSelect
                 required
                 value={paymentForm.custodian_location_id}
                 onChange={(e) =>
                   setPaymentForm({ ...paymentForm, custodian_location_id: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="">Select custodian</option>
                 {cashLocations.map((l) => (
@@ -1618,14 +1618,14 @@ export default function Invoices() {
                   </option>
                 ))}
               </ThemedSelect>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Cash is held by a person. The ledger posts this receipt to their account.
               </p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">
+            <label className="block text-sm text-foreground mb-1">
               Withholding Tax Deducted (PKR)
             </label>
             <input
@@ -1636,21 +1636,21 @@ export default function Invoices() {
               onChange={(e) =>
                 setPaymentForm({ ...paymentForm, withholding: e.target.value })
               }
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-muted-foreground mt-1">
               Prefilled from this client&rsquo;s agreed rate. The receivable is cleared by the
               cash received <em>and</em> the tax withheld together.
             </p>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <label className="block text-sm text-foreground mb-1">Notes</label>
             <textarea
               value={paymentForm.notes}
               onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
               rows={2}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               placeholder="Optional notes"
             />
           </div>
@@ -1693,20 +1693,20 @@ export default function Invoices() {
       >
         <form className="space-y-4" onSubmit={handleEditPayment}>
           {editingPayment && editInvoice && (
-            <div className="p-3 rounded-md border border-slate-200 bg-slate-50 text-xs text-slate-600 space-y-1">
+            <div className="p-3 rounded-md border border-border bg-muted/50 text-xs text-muted-foreground space-y-1">
               <div className="flex justify-between">
                 <span>Invoice</span>
-                <span className="font-mono text-slate-900">{editInvoice.invoice_number}</span>
+                <span className="font-mono text-foreground">{editInvoice.invoice_number}</span>
               </div>
               <div className="flex justify-between">
                 <span>Original amount</span>
-                <span className="text-slate-900">
+                <span className="text-foreground">
                   PKR {Number(editingPayment.amount).toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Max allowed</span>
-                <span className="text-slate-900">
+                <span className="text-foreground">
                   PKR {editPaymentMaxAllowed.toLocaleString()}
                 </span>
               </div>
@@ -1715,7 +1715,7 @@ export default function Invoices() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input
                 required
                 type="number"
@@ -1725,11 +1725,11 @@ export default function Invoices() {
                 onChange={(e) =>
                   setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
+              <label className="block text-sm text-foreground mb-1">Payment Date *</label>
               <input
                 required
                 type="date"
@@ -1737,21 +1737,21 @@ export default function Invoices() {
                 onChange={(e) =>
                   setEditPaymentForm({ ...editPaymentForm, payment_date: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+            <label className="block text-sm text-foreground mb-1">Payment Mode *</label>
             <div className="flex gap-2">
               {(["Cash", "Bank"] as const).map((mode) => (
                 <label
                   key={mode}
                   className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm border cursor-pointer ${
                     editPaymentForm.payment_mode === mode
-                      ? "bg-brand-600 text-[#fff] border-brand-600"
-                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                      ? "bg-brand-600 text-on-fill border-brand-600"
+                      : "bg-card text-foreground border-border hover:border-border"
                   }`}
                 >
                   <input
@@ -1776,7 +1776,7 @@ export default function Invoices() {
 
           {editPaymentForm.payment_mode === "Cash" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Received By *</label>
+              <label className="block text-sm text-foreground mb-1">Received By *</label>
               <ThemedSelect
                 required
                 value={editPaymentForm.custodian_location_id}
@@ -1786,7 +1786,7 @@ export default function Invoices() {
                     custodian_location_id: e.target.value,
                   })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="">Select custodian</option>
                 {cashLocations.map((l) => (
@@ -1800,14 +1800,14 @@ export default function Invoices() {
 
           {editPaymentForm.payment_mode === "Bank" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <label className="block text-sm text-foreground mb-1">Bank Account *</label>
               <ThemedSelect
                 required
                 value={editPaymentForm.bank_account_id}
                 onChange={(e) =>
                   setEditPaymentForm({ ...editPaymentForm, bank_account_id: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
@@ -1820,14 +1820,14 @@ export default function Invoices() {
           )}
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <label className="block text-sm text-foreground mb-1">Notes</label>
             <textarea
               value={editPaymentForm.notes}
               onChange={(e) =>
                 setEditPaymentForm({ ...editPaymentForm, notes: e.target.value })
               }
               rows={2}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               placeholder="Optional notes"
             />
           </div>
@@ -1902,7 +1902,7 @@ function InvoiceFields({
   return (
     <>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Client *</label>
+        <label className="block text-sm text-foreground mb-1">Client *</label>
         <ClientFilterSelect
           clients={clients}
           value={form.client_id}
@@ -1921,11 +1921,11 @@ function InvoiceFields({
       </div>
       {form.client_id && (
         <div>
-          <label className="block text-sm text-slate-700 mb-1">
+          <label className="block text-sm text-foreground mb-1">
             Contract {clientContracts.length > 0 ? "*" : ""}
           </label>
           {clientContracts.length === 0 ? (
-            <p className="text-xs text-slate-500 py-2">
+            <p className="text-xs text-muted-foreground py-2">
               This client has no active contracts — the invoice will be recorded without a contract link.
             </p>
           ) : (
@@ -1933,7 +1933,7 @@ function InvoiceFields({
               required
               value={form.contract_id}
               onChange={(e) => setForm({ ...form, contract_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             >
               <option value="">Select contract</option>
               {clientContracts.map((c) => (
@@ -1943,14 +1943,14 @@ function InvoiceFields({
               ))}
             </ThemedSelect>
           )}
-          <p className="text-[10px] text-slate-500 mt-1">
+          <p className="text-[10px] text-muted-foreground mt-1">
             One invoice per contract per month is enforced.
           </p>
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Invoice # *</label>
+          <label className="block text-sm text-foreground mb-1">Invoice # *</label>
           <input
             required
             type="text"
@@ -1967,13 +1967,13 @@ function InvoiceFields({
                 validateInvoiceNumber(e.target.value) ?? (dup ? "That invoice number already exists." : null),
               );
             }}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             placeholder="INV-001"
           />
           {errors.invoice_number && <p className="text-xs text-danger-600 mt-1">{errors.invoice_number}</p>}
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Invoice Month *</label>
+          <label className="block text-sm text-foreground mb-1">Invoice Month *</label>
           <input
             required
             type="month"
@@ -1986,12 +1986,12 @@ function InvoiceFields({
                 ...(makeRef && form.client_id ? { invoice_number: makeRef(form.client_id, md) } : {}),
               });
             }}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
           />
         </div>
       </div>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Invoice Amount (PKR) *</label>
+        <label className="block text-sm text-foreground mb-1">Invoice Amount (PKR) *</label>
         <input
           required
           type="number"
@@ -2000,7 +2000,7 @@ function InvoiceFields({
           value={form.invoice_amount}
           onChange={(e) => setForm({ ...form, invoice_amount: e.target.value })}
           onBlur={(e) => onFieldBlur("invoice_amount", validateAmount(e.target.value))}
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+          className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
         />
         {errors.invoice_amount && <p className="text-xs text-danger-600 mt-1">{errors.invoice_amount}</p>}
       </div>
@@ -2010,9 +2010,9 @@ function InvoiceFields({
           column that used to render historical values has since been removed
           from the list too — withholding is a receipt-side figure only. */}
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Attachment</label>
+        <label className="block text-sm text-foreground mb-1">Attachment</label>
         {(form.existing_drive_view_url || form.existing_attachment_path) && !form.attachment_file && (
-          <div className="flex items-center gap-2 text-xs text-slate-600 mb-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
             <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
             <span className="font-mono truncate flex-1">
               {form.existing_attachment_file_name
@@ -2024,7 +2024,7 @@ function InvoiceFields({
                 href={form.existing_drive_view_url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-brand-700 hover:text-brand-800"
+                className="text-brand-700 hover:text-brand-700"
               >
                 View
               </a>
@@ -2033,14 +2033,14 @@ function InvoiceFields({
               <button
                 type="button"
                 onClick={onClearAttachment}
-                className="text-danger-700 hover:text-danger-800"
+                className="text-danger-700 hover:text-danger-700"
               >
                 Remove
               </button>
             )}
           </div>
         )}
-        <label className="flex items-center justify-center gap-2 px-4 py-2 border border-dashed border-slate-300 rounded-md cursor-pointer hover:border-slate-400 text-sm text-slate-600">
+        <label className="flex items-center justify-center gap-2 px-4 py-2 border border-dashed border-border rounded-md cursor-pointer hover:border-muted-foreground/50 text-sm text-muted-foreground">
           <Upload className="w-4 h-4" strokeWidth={1.5} />
           <span>
             {form.attachment_file
@@ -2060,12 +2060,12 @@ function InvoiceFields({
         </label>
       </div>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Notes</label>
+        <label className="block text-sm text-foreground mb-1">Notes</label>
         <textarea
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
           rows={2}
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+          className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
           placeholder="Optional notes"
         />
       </div>

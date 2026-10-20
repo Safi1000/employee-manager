@@ -429,12 +429,12 @@ export default function RegionalScorecard() {
               onClick={() => setRegionTab(t.key)}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm transition-all ${
                 activeRegion === t.key
-                  ? "bg-brand-600 text-[#fff] shadow-sm shadow-brand-600/25"
+                  ? "bg-brand-600 text-on-fill shadow-sm shadow-brand-600/25"
                   : "text-muted-foreground hover:text-foreground hover:bg-card"
               }`}
             >
               {t.key !== "all" && (
-                <MapPin className={`w-3.5 h-3.5 ${activeRegion === t.key ? "text-[#fff]" : "text-brand-500"}`} strokeWidth={2} />
+                <MapPin className={`w-3.5 h-3.5 ${activeRegion === t.key ? "text-on-fill" : "text-brand-500"}`} strokeWidth={2} />
               )}
               {t.name}
             </button>
@@ -565,7 +565,7 @@ function RegionCard({ row, fin, period }: { row: ScorecardRow; fin: RegionFinanc
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden flex flex-col">
       {/* Header — region + the month's net */}
-      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 bg-slate-50">
+      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 bg-muted/50">
         <h4 className="flex items-center gap-2 text-foreground font-semibold" style={{ fontFamily: "var(--font-display)" }}>
           <MapPin className="w-4 h-4 text-brand-600 dark:text-brand-500 shrink-0" strokeWidth={2} />
           {row.region_name}
@@ -599,17 +599,17 @@ function RegionCard({ row, fin, period }: { row: ScorecardRow; fin: RegionFinanc
         <CostLine
           label="Client-linked" value={fin.clientLinked}
           hint={`${pct(fin.clientLinked).toFixed(0)}%`}
-          bar="bg-slate-400" text="text-muted-foreground"
+          bar="bg-muted-foreground/40" text="text-muted-foreground"
         />
         <CostLine
           label="Region-specific" value={fin.regionSpecific}
           hint={`${pct(fin.regionSpecific).toFixed(0)}%`}
-          bar="bg-amber-500" text="text-amber-700 dark:text-amber-500"
+          bar="bg-warning-500" text="text-warning-700 dark:text-warning-500"
         />
         <CostLine
           label="Shared / allocated" value={fin.shared}
           hint={`${pct(fin.shared).toFixed(0)}%`}
-          bar="bg-indigo-400" text="text-muted-foreground"
+          bar="bg-info-500" text="text-muted-foreground"
         />
         <div className="flex items-baseline justify-between gap-3 pt-2 border-t border-border">
           <span className="text-sm text-foreground font-medium">Net</span>
@@ -620,7 +620,7 @@ function RegionCard({ row, fin, period }: { row: ScorecardRow; fin: RegionFinanc
       </div>
 
       {/* Footer — the view's YTD profit vs last year, kept but de-emphasised */}
-      <div className="px-5 py-2.5 border-t border-border bg-slate-50/60 flex items-center justify-between gap-3">
+      <div className="px-5 py-2.5 border-t border-border bg-muted/50/60 flex items-center justify-between gap-3">
         <span className="text-[11px] text-muted-foreground">Profit YTD {pkr(row.profit_ytd)}</span>
         <span className={`text-[11px] tabular-nums ${ytdDelta >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
           {ytdDelta >= 0 ? "▲" : "▼"} {pkr(Math.abs(ytdDelta))} vs last yr
@@ -776,11 +776,11 @@ function OperatingExpensesTab({
                   </span>
                   <span className="text-xs tabular-nums text-muted-foreground shrink-0">
                     Invoiced {pkr(r.invoiced)} · <span className="text-foreground">{r.pct.toFixed(1)}%</span> · HO{" "}
-                    <span className="text-amber-700 dark:text-amber-500">{pkr(r.ho)}</span>
+                    <span className="text-warning-700 dark:text-warning-500">{pkr(r.ho)}</span>
                   </span>
                 </div>
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-600" style={{ width: `${Math.max(r.pct, 1.5)}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-warning-500 to-warning-600" style={{ width: `${Math.max(r.pct, 1.5)}%` }} />
                 </div>
               </div>
             ))}
@@ -873,7 +873,7 @@ function OperatingExpensesTab({
                   </button>
 
                   {open && (
-                    <div className="bg-slate-50/60 overflow-x-auto">
+                    <div className="bg-muted/50/60 overflow-x-auto">
                       <table className="w-full text-sm min-w-[620px]">
                         <thead>
                           <tr className="text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-y border-border">
@@ -983,7 +983,7 @@ function ProfitTab({
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[640px]">
-          <thead className="bg-slate-50 text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-b border-border">
+          <thead className="bg-muted/50 text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-b border-border">
             <tr>
               <th className="text-left px-4 py-2.5">Region</th>
               <th className="text-right px-4 py-2.5">{L.revenue}</th>
@@ -1028,7 +1028,7 @@ function ProfitTab({
           </tbody>
           {!loading && rows.length > 0 && (
             <tfoot>
-              <tr className="border-t border-border bg-slate-50 text-foreground font-medium">
+              <tr className="border-t border-border bg-muted/50 text-foreground font-medium">
                 <td className="px-4 py-3">Total</td>
                 <td className="px-4 py-3 text-right tabular-nums">{pkr(t.revenue)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{pkr(t.payroll)}</td>

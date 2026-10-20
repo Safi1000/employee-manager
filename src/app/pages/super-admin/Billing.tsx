@@ -138,7 +138,7 @@ export default function Billing() {
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2.5">
           <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
             <div className="flex justify-between gap-2"><span className="lbl">Guards on the plan</span><span className="font-ledger text-sm font-semibold">{cap.used} / {cap.limit}</span></div>
-            <div className="h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${cap.used / cap.limit > 0.95 ? "bg-[#d4674a]" : cap.used / cap.limit > 0.85 ? "bg-brand-500" : "bg-[#9ad1a3]"}`} style={{ width: `${Math.min(100, (cap.used / cap.limit) * 100)}%` }} /></div>
+            <div className="h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${cap.used / cap.limit > 0.95 ? "bg-danger-500" : cap.used / cap.limit > 0.85 ? "bg-brand-500" : "bg-up"}`} style={{ width: `${Math.min(100, (cap.used / cap.limit) * 100)}%` }} /></div>
             <span className="text-xs text-muted-foreground">{cap.remaining} places left before new guards are refused</span>
           </div>
           <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Per month</span><span className="font-ledger text-2xl font-semibold leading-none"><span className="cur">PKR</span>{Number(summary.plan_price_pkr ?? 0).toLocaleString()}</span><span className="text-xs text-muted-foreground">{status ? status.label : "current plan"}</span></div>
@@ -324,7 +324,7 @@ export default function Billing() {
           <button
             onClick={() => run("plan", () => changePlan(guards, care))}
             disabled={!planChanged || guards < cap.used || busy === "plan"}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-[#241a06] transition-colors hover:bg-brand-600 disabled:opacity-50"
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-600 disabled:opacity-50"
           >
             {busy === "plan" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {planChanged ? "Update my plan" : "No changes to apply"}

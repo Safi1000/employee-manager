@@ -139,7 +139,7 @@ export default function AppUpdateBanner() {
   return (
     <div
       role="status"
-      className="fixed inset-x-0 bottom-0 z-[9999] flex flex-wrap items-center justify-center gap-3 border-t border-brand-500/40 bg-brand-500/95 px-4 py-2.5 text-sm text-[#fff] shadow-lg"
+      className="fixed inset-x-0 bottom-0 z-[9999] flex flex-wrap items-center justify-center gap-3 border-t border-brand-500/40 bg-brand-500/95 px-4 py-2.5 text-sm text-on-fill shadow-lg"
       style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
     >
       <RefreshCw className="w-4 h-4 shrink-0" strokeWidth={1.75} />
@@ -149,11 +149,11 @@ export default function AppUpdateBanner() {
       <button
         type="button"
         onClick={reload}
-        className="rounded-md bg-[#fff]/20 px-3 py-1 font-medium hover:bg-[#fff]/30 transition-colors"
+        className="rounded-md bg-on-fill/20 px-3 py-1 font-medium hover:bg-on-fill/30 transition-colors"
       >
         Reload now
       </button>
-      <span className="text-[11px] text-[#fff]/80">
+      <span className="text-[11px] text-on-fill/80">
         Finish what you are typing first — it reloads on its own when you switch away.
       </span>
     </div>

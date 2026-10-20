@@ -496,15 +496,15 @@ export default function FieldOps() {
               <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
                 <div className="flex justify-between"><span className="lbl">{isToday ? "Today's" : "This day's"} notes</span><span className="font-ledger text-sm font-semibold">{written + none} / {total}</span></div>
                 <div className="flex h-3 rounded-full overflow-hidden bg-muted">
-                  <span className="h-full bg-[#9ad1a3]" style={{ width: `${(written / total) * 100}%` }} />
-                  <span className="h-full bg-[#7fa3c4]" style={{ width: `${(none / total) * 100}%` }} />
+                  <span className="h-full bg-up" style={{ width: `${(written / total) * 100}%` }} />
+                  <span className="h-full bg-calm" style={{ width: `${(none / total) * 100}%` }} />
                 </div>
                 <span className="text-xs text-muted-foreground">{blank ? `${blank} client${blank === 1 ? "" : "s"} still blank before the PDF goes out` : "Every client has a note — ready to export"}</span>
               </div>
               {[
-                { label: "Written", v: written, tone: "text-[#9ad1a3]" },
-                { label: "Nothing to report", v: none, tone: "text-[#7fa3c4]" },
-                { label: "Blank", v: blank, tone: blank ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+                { label: "Written", v: written, tone: "text-up" },
+                { label: "Nothing to report", v: none, tone: "text-calm" },
+                { label: "Blank", v: blank, tone: blank ? "text-heed" : "text-up" },
               ].map((t) => (
                 <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span></div>
               ))}
@@ -624,7 +624,7 @@ export default function FieldOps() {
                 {regionLabel ? ` in ${regionLabel}` : ""} · {filledCount} with details ·{" "}
                 {visibleClients.length - filledCount} no report
                 {locked && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-amber-700 dark:text-amber-500">
+                  <span className="ml-2 inline-flex items-center gap-1 text-warning-700 dark:text-warning-500">
                     <Lock className="w-3 h-3" /> past day — read only
                   </span>
                 )}
@@ -643,7 +643,7 @@ export default function FieldOps() {
                   name sits above its textarea on mobile and beside it on desktop,
                   and the textarea is always full width. */}
               <div className="border border-border rounded-md">
-                <div className="hidden md:grid md:grid-cols-[16rem_1fr] bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
+                <div className="hidden md:grid md:grid-cols-[16rem_1fr] bg-muted/50 dark:bg-card text-xs text-muted-foreground uppercase">
                   <div className="px-3 py-2">Client</div>
                   <div className="px-3 py-2">Details</div>
                 </div>
@@ -1020,7 +1020,7 @@ function AttendanceReport({
 
       <div className="border border-border rounded-md overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
+          <thead className="bg-muted/50 dark:bg-card text-xs text-muted-foreground uppercase">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Client</th>
               <th className="px-3 py-2 text-right font-medium">Deployed</th>
@@ -1078,7 +1078,7 @@ function AttendanceReport({
           </tbody>
           {/* The collective line. Summed from the rows displayed above it — the
               one place arithmetic belongs on a reporting screen. */}
-          <tfoot className="bg-slate-50 dark:bg-card font-medium">
+          <tfoot className="bg-muted/50 dark:bg-card font-medium">
             <tr>
               <td className="px-3 py-2">All clients</td>
               <td className="px-3 py-2 text-right tabular-nums">{t.deployed}</td>

@@ -105,7 +105,7 @@ export function FormSection({ step, title, children }: { step?: number; title: s
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         {step != null && (
-          <span className="w-5 h-5 rounded-full bg-brand-500 text-[#241a06] text-[11px] font-semibold flex items-center justify-center">
+          <span className="w-5 h-5 rounded-full bg-brand-500 text-on-brand text-[11px] font-semibold flex items-center justify-center">
             {step}
           </span>
         )}

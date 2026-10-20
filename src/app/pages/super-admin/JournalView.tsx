@@ -435,7 +435,7 @@ export default function JournalView() {
             <div className="grid grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,2fr)] gap-2.5">
               <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Entries</span><span className="font-ledger text-2xl font-semibold leading-none">{entries.toLocaleString()}</span><span className="text-xs text-muted-foreground">{lines.length.toLocaleString()} lines</span></div>
               <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Moved</span><span className="font-ledger text-2xl font-semibold leading-none whitespace-nowrap"><span className="cur">PKR</span>{Math.round(moved).toLocaleString()}</span><span className="text-xs text-muted-foreground">total debits</span></div>
-              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">By hand</span><span className={`font-ledger text-2xl font-semibold leading-none ${manual ? "text-[#f6d79b]" : ""}`}>{manual}</span><span className="text-xs text-muted-foreground">manual entries · {reversals} reversals</span></div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">By hand</span><span className={`font-ledger text-2xl font-semibold leading-none ${manual ? "text-heed" : ""}`}>{manual}</span><span className="text-xs text-muted-foreground">manual entries · {reversals} reversals</span></div>
               <div className="col-span-2 lg:col-span-1 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
                 <span className="lbl">Where postings came from</span>
                 {top.map(([src, v]) => (
@@ -463,11 +463,11 @@ export default function JournalView() {
         )}
 
         <div className="bg-card rounded-2xl border border-border">
-          <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap items-center gap-3">
+          <div className="p-4 md:p-5 border-b border-border flex flex-wrap items-center gap-3">
             <ThemedSelect
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="px-3 py-2 border border-border rounded-md text-sm"
             >
               <option value="">All periods</option>
               {periods.map((p) => (
@@ -480,7 +480,7 @@ export default function JournalView() {
             <ThemedSelect
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[220px]"
+              className="px-3 py-2 border border-border rounded-md text-sm min-w-[220px]"
             >
               <option value="">All accounts</option>
               {accounts.map((a) => (
@@ -493,7 +493,7 @@ export default function JournalView() {
             <ThemedSelect
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[180px]"
+              className="px-3 py-2 border border-border rounded-md text-sm min-w-[180px]"
             >
               <option value="">All clients</option>
               {clients.map((c) => (
@@ -506,7 +506,7 @@ export default function JournalView() {
             <ThemedSelect
               value={partnerId}
               onChange={(e) => setPartnerId(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[180px]"
+              className="px-3 py-2 border border-border rounded-md text-sm min-w-[180px]"
             >
               <option value="">All partners</option>
               {partners.map((p) => (
@@ -533,19 +533,19 @@ export default function JournalView() {
           </div>
 
           {loading ? (
-            <div className="py-16 text-center text-slate-500">
+            <div className="py-16 text-center text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
             </div>
           ) : entries.length === 0 ? (
             <div className="py-16 px-6 text-center">
-              <Info className="w-6 h-6 mx-auto text-slate-400 mb-3" />
-              <p className="text-sm text-slate-700">
+              <Info className="w-6 h-6 mx-auto text-muted-foreground/70 mb-3" />
+              <p className="text-sm text-foreground">
                 {filtersActive
                   ? "No entries match these filters."
                   : "No journal entries yet."}
               </p>
               {!filtersActive && (
-                <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto">
+                <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
                   This is the ledger reporting that nothing has been posted — not
                   a loading failure. Entries appear here as soon as invoices,
                   payroll, expenses or opening balances are entered.
@@ -553,7 +553,7 @@ export default function JournalView() {
               )}
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-border">
               {entries.map((e) => (
                 <EntryBlock key={e.id} entry={e} />
               ))}
@@ -561,21 +561,21 @@ export default function JournalView() {
           )}
 
           {(page > 0 || hasMore) && (
-            <div className="p-4 border-t border-slate-200 flex items-center justify-between text-sm">
+            <div className="p-4 border-t border-border flex items-center justify-between text-sm">
               <button
                 type="button"
                 disabled={page === 0}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
               >
                 <ChevronLeft className="w-4 h-4" /> Previous
               </button>
-              <span className="text-slate-500">Page {page + 1}</span>
+              <span className="text-muted-foreground">Page {page + 1}</span>
               <button
                 type="button"
                 disabled={!hasMore}
                 onClick={() => setPage((p) => p + 1)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
               >
                 Next <ChevronRight className="w-4 h-4" />
               </button>
@@ -593,23 +593,23 @@ export default function JournalView() {
         size="md"
       >
         <form className="space-y-3" onSubmit={handleManualJournal}>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Post a balanced debit/credit entry. For adjustments, corrections, or
             entries not captured by the auto-journal triggers.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Date *</label>
+              <label className="block text-sm text-foreground mb-1">Date *</label>
               <input
                 required
                 type="date"
                 value={manualForm.entry_date}
                 onChange={(e) => setManualForm({ ...manualForm, entry_date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input
                 required
                 type="number"
@@ -617,16 +617,16 @@ export default function JournalView() {
                 step="0.01"
                 value={manualForm.amount}
                 onChange={(e) => setManualForm({ ...manualForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Debit Account *</label>
+              <label className="block text-sm text-foreground mb-1">Debit Account *</label>
               <ThemedSelect
                 required
                 value={manualForm.debit_account_id}
                 onChange={(e) => setManualForm({ ...manualForm, debit_account_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">— Select —</option>
                 {accounts
@@ -639,14 +639,14 @@ export default function JournalView() {
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Credit Account *</label>
+              <label className="block text-sm text-foreground mb-1">Credit Account *</label>
               <ThemedSelect
                 required
                 value={manualForm.credit_account_id}
                 onChange={(e) =>
                   setManualForm({ ...manualForm, credit_account_id: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">— Select —</option>
                 {accounts
@@ -659,17 +659,17 @@ export default function JournalView() {
               </ThemedSelect>
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Description</label>
+              <label className="block text-sm text-foreground mb-1">Description</label>
               <input
                 type="text"
                 value={manualForm.description}
                 onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 placeholder="e.g., Reclassify security deposit"
               />
             </div>
           </div>
-          <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
+          <div className="flex items-center gap-2 pt-3 border-t border-border">
             <Button variant="primary" size="md" disabled={manualSubmitting} className="flex-1">
               {manualSubmitting ? (
                 <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -693,12 +693,12 @@ function EntryBlock({ entry }: { entry: Entry }) {
   const totalDebit = entry.lines.reduce((s, l) => s + Number(l.debit), 0);
 
   return (
-    <div className={`p-4 md:p-5 ${entry.is_reversed ? "bg-slate-50/60" : ""}`}>
+    <div className={`p-4 md:p-5 ${entry.is_reversed ? "bg-muted/50/60" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-mono text-slate-500">{entry.entry_date}</span>
-            <span className="text-sm text-slate-900">
+            <span className="text-xs font-mono text-muted-foreground">{entry.entry_date}</span>
+            <span className="text-sm text-foreground">
               {entry.description ?? "—"}
             </span>
 
@@ -714,12 +714,12 @@ function EntryBlock({ entry }: { entry: Entry }) {
               </span>
             )}
             {entry.manual && (
-              <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-600">
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-muted text-muted-foreground">
                 Manual
               </span>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>Period {monthLabel(entry.posting_period)}</span>
             {entry.region_name && <span>{entry.region_name}</span>}
             {source && entry.source_id ? (
@@ -735,7 +735,7 @@ function EntryBlock({ entry }: { entry: Entry }) {
               </Link>
             ) : entry.source_table && NO_DOCUMENT[entry.source_table] ? (
               // Said plainly, with the reason. Not a link.
-              <span className="text-slate-500" title={NO_DOCUMENT[entry.source_table]}>
+              <span className="text-muted-foreground" title={NO_DOCUMENT[entry.source_table]}>
                 {entry.source_table} · no document to open
               </span>
             ) : (
@@ -743,25 +743,25 @@ function EntryBlock({ entry }: { entry: Entry }) {
             )}
           </div>
         </div>
-        <div className="text-sm text-slate-900 font-medium whitespace-nowrap">
+        <div className="text-sm text-foreground font-medium whitespace-nowrap">
           {fmtPKR(totalDebit)}
         </div>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full">
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border">
             {entry.lines.map((l) => (
               <tr key={l.id}>
-                <td className="py-1.5 pr-3 text-xs font-mono text-slate-500 w-20">
+                <td className="py-1.5 pr-3 text-xs font-mono text-muted-foreground w-20">
                   {l.account_code}
                 </td>
-                <td className="py-1.5 pr-3 text-sm text-slate-800">
+                <td className="py-1.5 pr-3 text-sm text-foreground">
                   <span className={Number(l.credit) > 0 ? "pl-6 inline-block" : ""}>
                     {l.account_name}
                   </span>
                 </td>
-                <td className="py-1.5 pr-3 text-xs text-slate-400 hidden md:table-cell">
+                <td className="py-1.5 pr-3 text-xs text-muted-foreground/70 hidden md:table-cell">
                   {l.region_name ?? ""}
                 </td>
                 <td className="py-1.5 text-right text-sm w-32">

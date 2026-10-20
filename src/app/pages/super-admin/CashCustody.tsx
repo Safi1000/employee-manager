@@ -704,14 +704,14 @@ export function CashCustodyPanel({ onReady, onSummary }: {
 
   const typeIcon = (t: CashLocation["location_type"]) => {
     if (t === "BANK") return <Building2 className="w-4 h-4 text-brand-600" strokeWidth={1.5} />;
-    return <Wallet className="w-4 h-4 text-amber-600" strokeWidth={1.5} />;
+    return <Wallet className="w-4 h-4 text-warning-600" strokeWidth={1.5} />;
   };
 
   const typeLabel = (t: CashLocation["location_type"]) =>
     ({ BANK: "Bank", PETTY_CASH: "Petty Cash", CUSTODIAN: "Custodian" })[t];
 
 
-  if (loading) return <div className="py-12 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
+  if (loading) return <div className="py-12 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground/70" /></div>;
 
   return (
     <>
@@ -733,9 +733,9 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             header button and read back in the Transaction Log. */}
         <div className="space-y-4">
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
-            <div className="p-4 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">Cash Holdings</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+            <div className="p-4 border-b border-border">
+              <h3 className="text-base text-foreground">Cash Holdings</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Where company cash sits right now. Each custodian's held cash is opening balance
                 plus what they have taken in, less what they have paid out — and the sum of them
                 must equal Total Cash in Hand. Bank balances live on the Bank Accounts tab.
@@ -743,7 +743,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             </div>
 
             {Math.round(custodyRecon.discrepancy) !== 0 && (
-              <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
+              <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200 rounded-md text-sm">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
                 <div>
                   <span className="font-medium">Discrepancy: {fmt(Math.abs(custodyRecon.discrepancy))}</span> {custodyRecon.discrepancy > 0
@@ -756,68 +756,68 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Opening</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Held Cash</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Location</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Type</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Holder</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Opening</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Held Cash</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {/* Treasury total first — the figure every custodian row rolls up to. */}
-                  <tr className="bg-slate-50/60">
+                  <tr className="bg-muted/50/60">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         {typeIcon("PETTY_CASH")}
-                        <span className="text-sm text-slate-900">Cash in Hand</span>
+                        <span className="text-sm text-foreground">Cash in Hand</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">Cash / Treasury</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">—</td>
-                    <td className="px-6 py-4 text-right text-sm font-mono text-slate-400">—</td>
-                    <td className={`px-6 py-4 text-right text-sm font-mono ${cashInHand < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(cashInHand)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-400">—</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">Cash / Treasury</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">—</td>
+                    <td className="px-6 py-4 text-right text-sm font-mono text-muted-foreground/70">—</td>
+                    <td className={`px-6 py-4 text-right text-sm font-mono ${cashInHand < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(cashInHand)}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground/70">—</td>
                     <td className="px-6 py-4 text-right">
-                      <span className="text-xs text-slate-400" title="The company treasury total — derived, not editable">Derived</span>
+                      <span className="text-xs text-muted-foreground/70" title="The company treasury total — derived, not editable">Derived</span>
                     </td>
                   </tr>
 
                   {/* Banks are managed on the Bank Accounts tab — only cash custodians here. */}
                   {locationsWithBalance.filter((l) => l.location_type !== "BANK").length === 0 && (
-                    <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">No cash custodians yet. Add one with "Add Location" above and set its office-staff holder.</td></tr>
+                    <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">No cash custodians yet. Add one with "Add Location" above and set its office-staff holder.</td></tr>
                   )}
                   {locationsWithBalance.filter((l) => l.location_type !== "BANK").map((loc) => (
-                    <tr key={loc.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={loc.id} className="hover:bg-muted/50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           {typeIcon(loc.location_type)}
-                          <span className="text-sm text-slate-900">{loc.name}</span>
+                          <span className="text-sm text-foreground">{loc.name}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{typeLabel(loc.location_type)}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{typeLabel(loc.location_type)}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
                         {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
                       </td>
-                      <td className="px-6 py-4 text-right text-sm font-mono text-slate-600">{fmt(loc.opening_balance)}</td>
+                      <td className="px-6 py-4 text-right text-sm font-mono text-muted-foreground">{fmt(loc.opening_balance)}</td>
                       {(() => {
                         const shown = heldCash(loc);
-                        return <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</td>;
+                        return <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(shown)}</td>;
                       })()}
                       <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${loc.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${loc.is_active ? "bg-success-50 text-success-700" : "bg-muted text-muted-foreground"}`}>
                           {loc.is_active ? "Active" : "Inactive"}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
+                          <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                             <Pencil className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                           {canDelete && (
-                            <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded hover:bg-danger-50 text-slate-500 hover:text-danger-600 transition-colors">
+                            <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded hover:bg-danger-50 text-muted-foreground hover:text-danger-600 transition-colors">
                               <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                             </button>
                           )}
@@ -828,19 +828,19 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 </tbody>
                 {/* The reconciliation check, sitting under the numbers it checks. */}
                 <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50">
-                    <td className="px-6 py-3 text-sm font-medium text-slate-700" colSpan={4}>Sum of custodians</td>
-                    <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">{fmt(custodyRecon.sumHeld)}</td>
+                  <tr className="border-t border-border bg-muted/50">
+                    <td className="px-6 py-3 text-sm font-medium text-foreground" colSpan={4}>Sum of custodians</td>
+                    <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-foreground">{fmt(custodyRecon.sumHeld)}</td>
                     <td colSpan={2} />
                   </tr>
-                  <tr className="bg-slate-50">
-                    <td className="px-6 py-2 text-sm text-slate-500" colSpan={4}>Total Cash in Hand</td>
-                    <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
+                  <tr className="bg-muted/50">
+                    <td className="px-6 py-2 text-sm text-muted-foreground" colSpan={4}>Total Cash in Hand</td>
+                    <td className="px-6 py-2 text-right text-sm font-mono text-foreground">{fmt(cashInHand)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
-                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`} colSpan={4}>Unattributed (should be 0)</td>
-                    <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
+                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700"}`} colSpan={4}>Unattributed (should be 0)</td>
+                    <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>
@@ -849,19 +849,19 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           </div>
 
           <div className="bg-card rounded-2xl border border-border p-6">
-            <h3 className="text-base text-slate-900 mb-1">Cash vs Liabilities</h3>
-            <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
+            <h3 className="text-base text-foreground mb-1">Cash vs Liabilities</h3>
+            <p className="text-xs text-muted-foreground mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
             <div className="space-y-2">
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-700">Total Cash in Hand</span>
-                <span className="text-sm font-mono font-semibold text-slate-900">{fmt(totalCash)}</span>
+              <div className="flex items-center justify-between py-2 border-b border-border">
+                <span className="text-sm text-foreground">Total Cash in Hand</span>
+                <span className="text-sm font-mono font-semibold text-foreground">{fmt(totalCash)}</span>
               </div>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-500 ml-4">− Undrawn partner entitlements (positive balances)</span>
+              <div className="flex items-center justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground ml-4">− Undrawn partner entitlements (positive balances)</span>
                 <span className="text-sm font-mono text-warning-700">({fmt(totalPartnerOwed)})</span>
               </div>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-500 ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
+              <div className="flex items-center justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
                 <span className="text-sm font-mono text-warning-700">({fmt(investorLiabilities)})</span>
               </div>
               <div className={`flex items-center justify-between py-3 rounded-md px-3 ${freeCash >= 0 ? "bg-success-50" : "bg-danger-50"}`}>
@@ -875,41 +875,41 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               second "Partner Balances" table whose only addition was the cash-impact
               wording — that is the last column here instead. */}
           <div className="bg-card rounded-2xl border border-border overflow-x-auto">
-            <div className="p-4 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">Partners Summary</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+            <div className="p-4 border-b border-border">
+              <h3 className="text-base text-foreground">Partners Summary</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Running balance per partner. Positive = company owes the partner (cash tied up); negative (red) = overdrawn.
               </p>
             </div>
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Allocated</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Contributed</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Drawn</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Net Balance</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Impact</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Partner</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Allocated</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Contributed</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Drawn</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Net Balance</th>
+                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Cash Impact</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {summaryPartners.length === 0 && (
-                  <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 text-sm">No partners.</td></tr>
+                  <tr><td colSpan={6} className="px-6 py-8 text-center text-muted-foreground text-sm">No partners.</td></tr>
                 )}
                 {summaryPartners.map((p) => {
                   const s = partnerStats.get(p.id) ?? { allocated: 0, drawn: 0, contributed: 0, balance: 0 };
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={p.id} className="hover:bg-muted/50 transition-colors">
                       <td className="px-6 py-4">
-                        <p className="text-sm text-slate-900 font-medium">{p.name}</p>
-                        <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700"}`}>
+                        <p className="text-sm text-foreground font-medium">{p.name}</p>
+                        <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-warning-50 text-warning-700"}`}>
                           {p.scope === "COMPANY" ? "Owner" : (branches.find((b) => b.id === p.branch_id)?.name ?? "Branch")}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm font-mono text-success-600">{fmt(s.allocated)}</td>
                       <td className="px-6 py-4 text-right text-sm font-mono text-brand-600">{fmt(s.contributed)}</td>
                       <td className="px-6 py-4 text-right text-sm font-mono text-danger-600">{fmt(s.drawn)}</td>
-                      <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s.balance < 0 ? "text-danger-700" : "text-slate-900"}`}>{fmt(s.balance)}</td>
+                      <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s.balance < 0 ? "text-danger-700" : "text-foreground"}`}>{fmt(s.balance)}</td>
                       <td className={`px-6 py-4 text-right text-sm font-mono ${s.balance > 0 ? "text-warning-600" : "text-success-600"}`}>
                         {s.balance > 0 ? `(${fmt(s.balance)}) tied up` : s.balance < 0 ? "— overdrawn" : "—"}
                       </td>
@@ -929,44 +929,44 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           px-3 py-2 text-xs table with colored Δ. Opened from the header button. */}
       <Modal isOpen={isTxOpen} onClose={() => setIsTxOpen(false)} title="Transaction Log" size="lg">
         <div className="space-y-3">
-          <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-slate-200">
+          <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-border">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">Custodian</label>
+              <label className="text-xs text-muted-foreground">Custodian</label>
               <ThemedSelect value={ledgerStaffFilter} onChange={(e) => setLedgerStaffFilter(e.target.value)}
-                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="all">All custodians</option>
                 {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </ThemedSelect>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">Month</label>
+              <label className="text-xs text-muted-foreground">Month</label>
               <ThemedSelect value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)}
-                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="all">All</option>
                 {ledgerMonthOptions.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
               </ThemedSelect>
             </div>
-            <span className="ml-auto text-xs text-slate-500">{filteredLedger.length} entr{filteredLedger.length === 1 ? "y" : "ies"}</span>
+            <span className="ml-auto text-xs text-muted-foreground">{filteredLedger.length} entr{filteredLedger.length === 1 ? "y" : "ies"}</span>
           </div>
 
           {/* Same table chrome as the Bank Accounts Transaction Log (HistoryBody):
               sticky header, plain-text Kind, colored Δ, labeled Before → After. */}
           <div className="max-h-[60vh] overflow-auto">
             {filteredLedger.length === 0 ? (
-              <p className="text-sm text-slate-500 py-6 text-center">No transactions yet.</p>
+              <p className="text-sm text-muted-foreground py-6 text-center">No transactions yet.</p>
             ) : (
               <table className="w-full">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                    <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
-                    <th className="text-left px-3 py-2 text-xs text-slate-500">Custodian</th>
-                    <th className="text-right px-3 py-2 text-xs text-slate-500">Δ</th>
-                    <th className="text-right px-3 py-2 text-xs text-slate-500">Before → After</th>
-                    <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
+                <thead className="sticky top-0 bg-card">
+                  <tr className="border-b border-border">
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground">Kind</th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground">Custodian</th>
+                    <th className="text-right px-3 py-2 text-xs text-muted-foreground">Δ</th>
+                    <th className="text-right px-3 py-2 text-xs text-muted-foreground">Before → After</th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground">Description</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {filteredLedger.map((e) => {
                     const delta = e.cashIn - e.cashOut;
                     return (
@@ -975,14 +975,14 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                         ref={isFocusRow(e.id) ? focusTransferRow : undefined}
                         className={isFocusRow(e.id) ? FOCUS_ROW_CLASS : undefined}
                       >
-                        <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{e.date}</td>
-                        <td className="px-3 py-2 text-xs text-slate-700">{LEDGER_KIND_LABEL[e.kind]}</td>
-                        <td className="px-3 py-2 text-xs text-slate-700">{staffName(e.employeeId)}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{e.date}</td>
+                        <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[e.kind]}</td>
+                        <td className="px-3 py-2 text-xs text-foreground">{staffName(e.employeeId)}</td>
                         <td className={`px-3 py-2 text-right text-xs font-mono ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-slate-700 whitespace-nowrap">
-                          <span className="text-slate-400">Cash </span>{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}
+                        <td className="px-3 py-2 text-right text-xs font-mono text-foreground whitespace-nowrap">
+                          <span className="text-muted-foreground/70">Cash </span>{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}
                         </td>
-                        <td className="px-3 py-2 text-xs text-slate-600">{e.detail}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{e.detail}</td>
                       </tr>
                     );
                   })}
@@ -991,7 +991,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             )}
           </div>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+          <div className="flex items-center gap-3 pt-4 border-t border-border">
             <Button variant="secondary" size="md" className="ml-auto" onClick={() => setIsTxOpen(false)}>Close</Button>
           </div>
         </div>
@@ -1001,12 +1001,12 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       <Modal isOpen={isLocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Office Staff</label>
+            <label className="block text-sm text-foreground mb-1">Office Staff</label>
             {/* The custodian is an office-staff member OR a partner — pick one. On Add,
                 people who already hold a custody are hidden so nobody gets a duplicate. */}
             <ThemedSelect value={locForm.custodian_employee_id}
               onChange={(e) => setLocForm({ ...locForm, custodian_employee_id: e.target.value, custodian_partner_id: e.target.value ? "" : locForm.custodian_partner_id })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               <option value="">Select office-staff member…</option>
               {(editLoc
                 // Editing keeps whoever this custody already names, even if they
@@ -1023,35 +1023,35 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">…or Partner</label>
+            <label className="block text-sm text-foreground mb-1">…or Partner</label>
             <ThemedSelect value={locForm.custodian_partner_id}
               onChange={(e) => setLocForm({ ...locForm, custodian_partner_id: e.target.value, custodian_employee_id: e.target.value ? "" : locForm.custodian_employee_id })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               <option value="">Select partner…</option>
               {(editLoc
                 ? partners
                 : partners.filter((p) => !locations.some((l) => l.custodian_partner_id === p.id && l.location_type === "CUSTODIAN"))
               ).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </ThemedSelect>
-            <p className="text-[11px] text-slate-500 mt-1">Cash a partner holds is company custody (activity), not a capital drawing.</p>
+            <p className="text-[11px] text-muted-foreground mt-1">Cash a partner holds is company custody (activity), not a capital drawing.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
+              <label className="block text-sm text-foreground mb-1">Opening Balance (PKR)</label>
               <input type="number" value={locForm.opening_balance} onChange={(e) => setLocForm({ ...locForm, opening_balance: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
+              <label className="block text-sm text-foreground mb-1">Branch (optional)</label>
               <ThemedSelect value={locForm.branch_id} onChange={(e) => setLocForm({ ...locForm, branch_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">All / Company-wide</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-            <input type="checkbox" checked={locForm.is_active} onChange={(e) => setLocForm({ ...locForm, is_active: e.target.checked })} className="rounded border-slate-300" />
+          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <input type="checkbox" checked={locForm.is_active} onChange={(e) => setLocForm({ ...locForm, is_active: e.target.checked })} className="rounded border-border" />
             Active
           </label>
           <div className="flex gap-2 pt-2">
@@ -1066,32 +1066,32 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       {/* ── Custody Transfer Modal ── */}
       <Modal isOpen={isTransferOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsTransferOpen(false)} title="Record Custody Transfer" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {transferForm.from_type === "bank"
               ? "Withdraw cash from a bank to an office-staff custodian. This raises Cash in Hand and reduces the bank."
               : "Move cash from one office-staff custodian to another. Cash in Hand is unchanged — only who holds it."}
           </p>
           {/* From-source toggle */}
-          <div className="flex gap-1 bg-slate-100 rounded-md p-1 w-fit max-w-full overflow-x-auto">
+          <div className="flex gap-1 bg-muted rounded-md p-1 w-fit max-w-full overflow-x-auto">
             {([["staff", "From Office Staff"], ["bank", "From Bank"]] as const).map(([k, l]) => (
               <button key={k} type="button"
                 onClick={() => setTransferForm({ ...transferForm, from_type: k, from_location_id: "", from_bank_id: "" })}
-                className={`px-3 py-1.5 text-sm rounded transition-colors ${transferForm.from_type === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+                className={`px-3 py-1.5 text-sm rounded transition-colors ${transferForm.from_type === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 {l}
               </button>
             ))}
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Date *</label>
+            <label className="block text-sm text-foreground mb-1">Date *</label>
             <input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">{transferForm.from_type === "bank" ? "From (bank) *" : "From (office staff) *"}</label>
+              <label className="block text-sm text-foreground mb-1">{transferForm.from_type === "bank" ? "From (bank) *" : "From (office staff) *"}</label>
               {transferForm.from_type === "bank" ? (
                 <ThemedSelect value={transferForm.from_bank_id} onChange={(e) => setTransferForm({ ...transferForm, from_bank_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                   <option value="">Select bank…</option>
                   {banks.filter((b) => b.active).map((b) => (
                     <option key={b.id} value={b.id}>{b.bank_name}{b.account_number ? ` ••${String(b.account_number).slice(-4)}` : ""} — {fmt(b.balance)}</option>
@@ -1099,7 +1099,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 </ThemedSelect>
               ) : (
                 <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                   <option value="">Select…</option>
                   {/* Same list as To: every active custodian, staff or partner. */}
                   {locations.filter((l) => l.is_active && l.location_type !== "BANK" && (l.custodian_employee_id || l.custodian_partner_id)).map((l) => (
@@ -1109,9 +1109,9 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               )}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">To (office staff) *</label>
+              <label className="block text-sm text-foreground mb-1">To (office staff) *</label>
               <ThemedSelect value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select…</option>
                 {locations.filter((l) => l.is_active && l.location_type !== "BANK" && (l.custodian_employee_id || l.custodian_partner_id)).map((l) => (
                   <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id ?? l.custodian_partner_id)} — holds {fmt(heldCash(l))}</option>
@@ -1120,14 +1120,14 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+            <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
             <input type="number" min="0" placeholder="0" value={transferForm.amount} onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <label className="block text-sm text-foreground mb-1">Notes</label>
             <input type="text" placeholder="e.g. Cash handed to CEO for salaries" value={transferForm.notes} onChange={(e) => setTransferForm({ ...transferForm, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" onClick={saveTransfer} disabled={transferSaving}>

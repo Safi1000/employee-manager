@@ -48,12 +48,12 @@ type ToneSet = {
 
 // Amber/warning read best with dark text on the fill; the rest take white.
 const SOLID_TEXT: Record<string, string> = {
-  brand: "text-[#241a06]",
-  warning: "text-[#241a06]",
+  brand: "text-on-brand",
+  warning: "text-on-brand",
 };
 
 const make = (key: Exclude<Tone, "neutral">): ToneSet => {
-  const onSolid = SOLID_TEXT[key] ?? "text-[#fff]";
+  const onSolid = SOLID_TEXT[key] ?? "text-on-fill";
   return {
     softBg: `bg-${key}-50`,
     text: `text-${key}-700 dark:text-${key}-500`,
@@ -71,17 +71,17 @@ const make = (key: Exclude<Tone, "neutral">): ToneSet => {
 };
 
 const neutral: ToneSet = {
-  softBg: "bg-slate-50",
-  text: "text-slate-700",
-  icon: "text-slate-600",
-  border: "border-slate-200",
-  borderStrong: "border-slate-400",
-  badge: "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200",
-  card: "bg-slate-50 border border-slate-200 border-l-4 border-l-slate-400 rounded-lg",
+  softBg: "bg-muted/50",
+  text: "text-foreground",
+  icon: "text-muted-foreground",
+  border: "border-border",
+  borderStrong: "border-muted-foreground/50",
+  badge: "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap bg-muted text-foreground border border-border",
+  card: "bg-muted/50 border border-border border-l-4 border-l-muted-foreground/50 rounded-lg",
   statCard: "bg-card border border-border rounded-2xl",
   // Inverted neutral button: dark in light mode, light in dark mode.
   solidButton: "bg-foreground text-background hover:opacity-90",
-  subtleButton: "bg-slate-100 hover:bg-slate-200 text-slate-700",
+  subtleButton: "bg-muted hover:bg-border text-foreground",
   chartStroke: "var(--color-slate-600)",
   chartFill: "var(--color-slate-400)",
 };

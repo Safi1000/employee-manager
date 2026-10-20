@@ -18,7 +18,7 @@ import { formatDate } from "../lib/date";
 import { supabase, type DisciplinaryWarning } from "../lib/supabase";
 
 const FIELD =
-  "w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 
 export type WarningTarget = {
   id: string;
@@ -87,31 +87,31 @@ export default function DisciplinaryWarningsModal({
       size="sm"
     >
       <div className="space-y-3">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           {codeIndex.byId.get(guard.id) ?? guard.employee_code} ·{" "}
-          <span className={activeWarnings >= 3 ? "text-danger-700 font-medium" : "text-slate-700"}>
+          <span className={activeWarnings >= 3 ? "text-danger-700 font-medium" : "text-foreground"}>
             {activeWarnings}/3 active
           </span>
         </p>
 
         {loading ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         ) : warnings.length === 0 ? (
-          <p className="text-sm text-slate-500">No warnings issued.</p>
+          <p className="text-sm text-muted-foreground">No warnings issued.</p>
         ) : (
           <ul className="space-y-1.5 max-h-64 overflow-y-auto">
             {warnings.map((w) => (
               <li key={w.id} className="flex items-start justify-between gap-2 text-sm">
-                <span className={w.rescinded ? "text-slate-400 line-through" : "text-slate-700"}>
+                <span className={w.rescinded ? "text-muted-foreground/70 line-through" : "text-foreground"}>
                   #{w.warning_number} · {formatDate(w.issued_on)} · {w.reason}
                 </span>
                 {!w.rescinded && (
                   <button
                     type="button"
                     onClick={() => rescindWarning(w.id)}
-                    className="text-xs text-slate-500 hover:text-slate-700 underline shrink-0"
+                    className="text-xs text-muted-foreground hover:text-foreground underline shrink-0"
                   >
                     Rescind
                   </button>

@@ -214,7 +214,7 @@ export default function Licences() {
                   {buckets.map((b) => (
                     <div key={b.label} className="flex flex-col items-center gap-1 h-full justify-end">
                       <span className="font-ledger text-xs font-semibold">{b.n || ""}</span>
-                      <span className={`w-full rounded-t ${b.lapsed ? "bg-[#d4674a]" : "bg-brand-500"} ${b.n ? "" : "opacity-20"}`} style={{ height: `${Math.max(4, (b.n / max) * 70)}%` }} />
+                      <span className={`w-full rounded-t ${b.lapsed ? "bg-danger-500" : "bg-brand-500"} ${b.n ? "" : "opacity-20"}`} style={{ height: `${Math.max(4, (b.n / max) * 70)}%` }} />
                     </div>
                   ))}
                 </div>
@@ -240,19 +240,19 @@ export default function Licences() {
         {/* Filters */}
         <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-2 relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by employee, contract code, or title…"
-              className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full pl-10 pr-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <ThemedSelect
             value={kindFilter}
             onChange={(e) => setKindFilter(e.target.value as "all" | RowKind)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           >
             <option value="all">All categories</option>
             {(Object.keys(KIND_LABEL) as RowKind[]).map((k) => (
@@ -326,35 +326,35 @@ export default function Licences() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Item</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Category</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Expiry Date</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Item</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Category</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Expiry Date</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">
                     <button
                       type="button"
                       onClick={() => setSortDesc(!sortDesc)}
-                      className="inline-flex items-center gap-1 hover:text-slate-900"
+                      className="inline-flex items-center gap-1 hover:text-foreground"
                     >
                       Days Remaining
                       <ArrowUpDown className="w-3 h-3" />
                     </button>
                   </th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Action</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Status</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">
                       Nothing matches the current filters. Add expiry dates on Employees, Contracts, or the Compliance Calendar.
                     </td>
                   </tr>
@@ -362,15 +362,15 @@ export default function Licences() {
                 {!loading && filteredRows.map((row) => {
                   const c = colourFor(row.days_remaining);
                   return (
-                    <tr key={`${row.kind}-${row.ref_id}`} className={`hover:bg-slate-50 transition-colors ${c.row}`}>
+                    <tr key={`${row.kind}-${row.ref_id}`} className={`hover:bg-muted/50 transition-colors ${c.row}`}>
                       <td className="px-4 py-3 text-sm">
-                        <div className="text-slate-900">{row.label}</div>
-                        <div className="text-xs text-slate-500">{row.sublabel}</div>
+                        <div className="text-foreground">{row.label}</div>
+                        <div className="text-xs text-muted-foreground">{row.sublabel}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">{KIND_LABEL[row.kind]}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{KIND_LABEL[row.kind]}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-slate-400" />
+                          <Calendar className="w-3 h-3 text-muted-foreground/70" />
                           {formatDate(row.due_date)}
                         </span>
                       </td>

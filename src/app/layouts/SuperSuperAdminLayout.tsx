@@ -12,7 +12,7 @@ export default function SuperSuperAdminLayout() {
     { to: "/super-super-admin", label: "Companies", icon: Building2 },
   ];
   return (
-    <div className="app-shell flex h-dvh bg-slate-50">
+    <div className="app-shell flex h-dvh bg-muted/50">
       <Sidebar title="Super Super Admin" links={links} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <TopBar />

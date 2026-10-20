@@ -122,7 +122,7 @@ const REVIEW_KINDS: Record<string, { title: string; note: string }> = {
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: "bg-warning-50 text-warning-700 border-warning-200",
   POSTED: "bg-success-50 text-success-700 border-success-200",
-  REVERSED: "bg-slate-100 text-slate-600 border-slate-200",
+  REVERSED: "bg-muted text-muted-foreground border-border",
 };
 
 export default function PartnershipRun() {
@@ -294,15 +294,15 @@ export default function PartnershipRun() {
         <div className="bg-card border border-border rounded-2xl p-4 md:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">Month:</label>
+              <label className="text-sm text-muted-foreground">Month:</label>
               <ThemedSelect
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-md text-sm"
               >
                 {periodOptions.map((p) => <option key={p} value={p}>{monthName(p)}</option>)}
               </ThemedSelect>
-              {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+              {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/70" />}
             </div>
 
             <div className="flex items-center gap-2">
@@ -311,7 +311,7 @@ export default function PartnershipRun() {
                   {run.status}
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded text-xs border bg-slate-50 text-slate-500 border-slate-200">
+                <span className="px-2 py-0.5 rounded text-xs border bg-muted/50 text-muted-foreground border-border">
                   NOT DRAFTED
                 </span>
               )}
@@ -319,8 +319,8 @@ export default function PartnershipRun() {
           </div>
 
           {deadline && (
-            <div className="mt-3 pt-3 border-t border-slate-100 text-xs flex items-start gap-1.5">
-              <CalendarClock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+            <div className="mt-3 pt-3 border-t border-border text-xs flex items-start gap-1.5">
+              <CalendarClock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground/70" />
               {deadline.posted ? (
                 <span className="text-success-700">Posted. It was due {longDate(deadline.due_date)}.</span>
               ) : deadline.days_late > 0 ? (
@@ -329,7 +329,7 @@ export default function PartnershipRun() {
                   due {longDate(deadline.due_date)} and not posted.
                 </span>
               ) : (
-                <span className="text-slate-600">Due {longDate(deadline.due_date)}.</span>
+                <span className="text-muted-foreground">Due {longDate(deadline.due_date)}.</span>
               )}
             </div>
           )}
@@ -353,7 +353,7 @@ export default function PartnershipRun() {
         {blocker && (
           <div className="bg-warning-50 border border-warning-200 rounded-lg px-4 py-3 flex gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning-700" />
-            <div className="text-sm text-warning-800">
+            <div className="text-sm text-warning-700 dark:text-warning-500">
               <p className="font-medium">{monthName(period)} cannot be drafted yet.</p>
               <p className="mt-0.5">{blocker}</p>
             </div>
@@ -386,12 +386,12 @@ export default function PartnershipRun() {
           )}
 
           {!canPost && run?.status === "DRAFT" && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted-foreground">
               Posting needs the <code className="text-[11px]">partnership.post</code> permission.
             </span>
           )}
           {run?.status === "DRAFT" && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted-foreground">
               Re-drafting overwrites the draft. Nothing reaches the ledger until it is posted.
             </span>
           )}
@@ -409,12 +409,12 @@ export default function PartnershipRun() {
         {/* ── What it would pay ───────────────────────────────────────────── */}
         {run && partnerRows.length > 0 && (
           <section className="bg-card border border-border rounded-2xl overflow-hidden">
-            <h3 className="text-sm text-slate-900 px-4 py-3 border-b border-slate-200">
+            <h3 className="text-sm text-foreground px-4 py-3 border-b border-border">
               What this run pays
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="text-left px-4 py-2">Partner</th>
                     <th className="text-left px-4 py-2">Kind</th>
@@ -424,18 +424,18 @@ export default function PartnershipRun() {
                     <th className="text-right px-4 py-2">Net position</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {partnerRows.map((r, i) => (
                     <tr key={`${r.partner_id ?? i}`}>
-                      <td className="px-4 py-2 text-slate-900">{r.partner_name ?? "—"}</td>
-                      <td className="px-4 py-2 text-slate-500 text-xs">
+                      <td className="px-4 py-2 text-foreground">{r.partner_name ?? "—"}</td>
+                      <td className="px-4 py-2 text-muted-foreground text-xs">
                         {r.row_kind === "REGIONAL_PARTNER"
                           ? `Regional · ${r.region_name ?? "no region"}`
                           : "Equity"}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums">{r.share_pct != null ? `${r.share_pct}%` : "—"}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-slate-500">{acct(r.base_amount)}</td>
-                      <td className={`px-4 py-2 text-right tabular-nums ${Number(r.amount ?? 0) < 0 ? "text-danger-700" : "text-slate-900"}`}>
+                      <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{acct(r.base_amount)}</td>
+                      <td className={`px-4 py-2 text-right tabular-nums ${Number(r.amount ?? 0) < 0 ? "text-danger-700" : "text-foreground"}`}>
                         {acct(r.amount)}
                       </td>
                       {/* One net figure, with its two components under it. A
@@ -443,10 +443,10 @@ export default function PartnershipRun() {
                           cash against 80,000 of profit share, and the net alone
                           hides that. */}
                       <td className="px-4 py-2 text-right">
-                        <div className="tabular-nums text-slate-900">
+                        <div className="tabular-nums text-foreground">
                           {acct(positions.get(r.partner_id ?? "")?.balance ?? 0)}
                         </div>
-                        <div className="text-[11px] text-slate-500 tabular-nums">
+                        <div className="text-[11px] text-muted-foreground tabular-nums">
                           profit {acct(positions.get(r.partner_id ?? "")?.remuneration ?? 0)}
                           {" · agency "}
                           {acct(-(positions.get(r.partner_id ?? "")?.agency ?? 0))}
@@ -458,7 +458,7 @@ export default function PartnershipRun() {
               </table>
             </div>
             {otherRows.length > 0 && (
-              <div className="px-4 py-2 border-t border-slate-100 text-[11px] text-slate-500">
+              <div className="px-4 py-2 border-t border-border text-[11px] text-muted-foreground">
                 {otherRows.length} further row{otherRows.length === 1 ? "" : "s"} in the allocation
                 (region subtotals, head-office apportionment and any unallocated pool) — the review
                 below names an unallocated pool if there is one.
@@ -469,12 +469,12 @@ export default function PartnershipRun() {
 
         {/* ── Review ──────────────────────────────────────────────────────── */}
         <section className="bg-card border border-border rounded-2xl">
-          <h3 className="text-sm text-slate-900 px-4 py-3 border-b border-slate-200">
+          <h3 className="text-sm text-foreground px-4 py-3 border-b border-border">
             Review — {monthName(period)}
           </h3>
           <div className="p-4 space-y-4">
             {review.length === 0 ? (
-              <p className="text-sm text-slate-500 flex items-center gap-1.5">
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-success-600" />
                 Nothing flagged. This is not "the month is right" — it is "none of the four things
                 the review looks for is present".
@@ -482,17 +482,17 @@ export default function PartnershipRun() {
             ) : (
               [...reviewByKind.entries()].map(([kind, rows]) => (
                 <div key={kind}>
-                  <h4 className="text-xs uppercase text-slate-500">
-                    {REVIEW_KINDS[kind]?.title ?? kind} <span className="text-slate-400">({rows.length})</span>
+                  <h4 className="text-xs uppercase text-muted-foreground">
+                    {REVIEW_KINDS[kind]?.title ?? kind} <span className="text-muted-foreground/70">({rows.length})</span>
                   </h4>
                   {REVIEW_KINDS[kind] && (
-                    <p className="text-[11px] text-slate-500 mt-0.5">{REVIEW_KINDS[kind].note}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{REVIEW_KINDS[kind].note}</p>
                   )}
-                  <ul className="mt-1.5 divide-y divide-slate-100 border border-slate-100 rounded">
+                  <ul className="mt-1.5 divide-y divide-border border border-border rounded">
                     {rows.map((r, i) => (
                       <li key={`${r.subject_id ?? i}`} className="px-3 py-1.5 flex justify-between gap-3 text-sm">
-                        <span className="text-slate-700">{r.subject}</span>
-                        <span className={`tabular-nums ${r.amount < 0 ? "text-danger-700" : "text-slate-600"}`}>
+                        <span className="text-foreground">{r.subject}</span>
+                        <span className={`tabular-nums ${r.amount < 0 ? "text-danger-700" : "text-muted-foreground"}`}>
                           {acct(r.amount)}
                         </span>
                       </li>
@@ -506,11 +506,11 @@ export default function PartnershipRun() {
                 never a block, because a hard block is worked around by
                 back-dating an invoice, which is worse (0358 item 5). */}
             <div>
-              <h4 className="text-xs uppercase text-slate-500">
-                Live but never billed <span className="text-slate-400">({uninvoiced.length})</span>
+              <h4 className="text-xs uppercase text-muted-foreground">
+                Live but never billed <span className="text-muted-foreground/70">({uninvoiced.length})</span>
               </h4>
               {uninvoiced.length === 0 ? (
-                <p className="text-[11px] text-slate-500 mt-0.5">
+                <p className="text-[11px] text-muted-foreground mt-0.5">
                   Every client with a contract live in {monthName(period)} has a primary invoice for it.
                 </p>
               ) : (
@@ -519,13 +519,13 @@ export default function PartnershipRun() {
                     Their cost is in the pool and their revenue is not, so every partner's share is
                     understated. Posting will ask you to confirm.
                   </p>
-                  <ul className="mt-1.5 divide-y divide-slate-100 border border-warning-200 rounded">
+                  <ul className="mt-1.5 divide-y divide-border border border-warning-200 rounded">
                     {uninvoiced.map((u) => (
-                      <li key={u.client_id} className="px-3 py-1.5 text-sm text-slate-700">
+                      <li key={u.client_id} className="px-3 py-1.5 text-sm text-foreground">
                         {u.client_name}
-                        <span className="text-slate-400 text-xs"> · {u.client_code}</span>
-                        {u.region_name && <span className="text-slate-400 text-xs"> · {u.region_name}</span>}
-                        <div className="text-[11px] text-slate-500">{u.reason}</div>
+                        <span className="text-muted-foreground/70 text-xs"> · {u.client_code}</span>
+                        {u.region_name && <span className="text-muted-foreground/70 text-xs"> · {u.region_name}</span>}
+                        <div className="text-[11px] text-muted-foreground">{u.reason}</div>
                       </li>
                     ))}
                   </ul>
@@ -542,8 +542,8 @@ export default function PartnershipRun() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-card border border-border rounded-2xl p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-lg text-slate-900 tabular-nums mt-1">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg text-foreground tabular-nums mt-1">{value}</div>
     </div>
   );
 }

@@ -141,10 +141,10 @@ const STATUS_CHOICES: {
   dot: string;
   selectedCls: string;
 }[] = [
-  { value: "draft", hint: "Not signed yet", dot: "bg-slate-400", selectedCls: "border-slate-400 bg-slate-50 ring-1 ring-slate-300" },
-  { value: "active", hint: "Running and billable", dot: "bg-success-500", selectedCls: "border-success-400 bg-success-50 ring-1 ring-success-300" },
-  { value: "expired", hint: "Reached its end date", dot: "bg-warning-500", selectedCls: "border-warning-400 bg-warning-50 ring-1 ring-warning-300" },
-  { value: "terminated", hint: "Ended before its term", dot: "bg-danger-500", selectedCls: "border-danger-400 bg-danger-50 ring-1 ring-danger-300" },
+  { value: "draft", hint: "Not signed yet", dot: "bg-muted-foreground/40", selectedCls: "border-muted-foreground/50 bg-muted/50 ring-1 ring-border" },
+  { value: "active", hint: "Running and billable", dot: "bg-success-500", selectedCls: "border-success-200 bg-success-50 ring-1 ring-success-200" },
+  { value: "expired", hint: "Reached its end date", dot: "bg-warning-500", selectedCls: "border-warning-200 bg-warning-50 ring-1 ring-warning-200" },
+  { value: "terminated", hint: "Ended before its term", dot: "bg-danger-500", selectedCls: "border-danger-200 bg-danger-50 ring-1 ring-danger-200" },
 ];
 
 // Date helpers on YYYY-MM-DD strings, in local time — a contract date is a
@@ -214,7 +214,7 @@ function TerminationPanel({
         <div className="flex items-start gap-2">
           <CalendarX className="w-4 h-4 mt-0.5 text-danger-600 shrink-0" strokeWidth={1.75} />
           <div>
-            <p className="text-sm font-medium text-danger-800">
+            <p className="text-sm font-medium text-danger-700 dark:text-danger-500">
               {wasTerminated ? "This contract is terminated" : "Terminate this contract"}
             </p>
             <p className="text-[11px] text-danger-700/80">
@@ -225,7 +225,7 @@ function TerminationPanel({
         <button
           type="button"
           onClick={onCancel}
-          className="text-xs text-slate-600 hover:text-slate-900 underline underline-offset-2 shrink-0"
+          className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 shrink-0"
         >
           {wasTerminated ? "Reinstate as active" : "Don't terminate"}
         </button>
@@ -233,20 +233,20 @@ function TerminationPanel({
 
       <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,220px)_1fr] gap-3 items-start">
         <div>
-          <label className="block text-xs text-slate-600 mb-1">Termination date *</label>
+          <label className="block text-xs text-muted-foreground mb-1">Termination date *</label>
           <input
             required
             type="date"
             min={form.start_date || undefined}
             value={d}
             onChange={(e) => onDate(e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md text-sm bg-white ${
-              beforeStart ? "border-danger-400" : "border-slate-200"
+            className={`w-full px-3 py-2 border rounded-md text-sm bg-card ${
+              beforeStart ? "border-danger-200" : "border-border"
             }`}
           />
         </div>
         <div>
-          <span className="block text-xs text-slate-600 mb-1">Quick pick</span>
+          <span className="block text-xs text-muted-foreground mb-1">Quick pick</span>
           <div className="flex flex-wrap gap-1.5">
             {presets.map((p) => (
               <button
@@ -255,12 +255,12 @@ function TerminationPanel({
                 onClick={() => onDate(p.date)}
                 className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
                   d === p.date
-                    ? "border-danger-400 bg-white text-danger-800"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    ? "border-danger-200 bg-card text-danger-700 dark:text-danger-500"
+                    : "border-border bg-card text-foreground hover:border-border"
                 }`}
               >
                 {p.label}
-                <span className="text-slate-400"> · {formatDate(p.date)}</span>
+                <span className="text-muted-foreground/70"> · {formatDate(p.date)}</span>
               </button>
             ))}
           </div>
@@ -273,23 +273,23 @@ function TerminationPanel({
           This is before the contract's start date ({formatDate(form.start_date)}).
         </p>
       ) : d ? (
-        <ul className="text-xs text-slate-700 space-y-1 border-t border-danger-200/70 pt-2">
+        <ul className="text-xs text-foreground space-y-1 border-t border-danger-200/70 pt-2">
           <li>
-            <span className="text-slate-500">Takes effect: </span>
+            <span className="text-muted-foreground">Takes effect: </span>
             {rel === 0 ? "today" : rel > 0 ? `in ${plural(rel, "day")}` : `${plural(-rel, "day")} ago`}
             {vsEnd != null && vsEnd > 0 && (
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 {" "}· {plural(vsEnd, "day")} before the scheduled end ({formatDate(form.end_date)})
               </span>
             )}
           </li>
           <li>
-            <span className="text-slate-500">Billing: </span>
+            <span className="text-muted-foreground">Billing: </span>
             months up to and including <strong className="font-medium">{monthName(d)}</strong> can
             still be invoiced; later months are blocked.
           </li>
           <li>
-            <span className="text-slate-500">Guards: </span>
+            <span className="text-muted-foreground">Guards: </span>
             not moved automatically — reassign or separate anyone still posted here.
           </li>
         </ul>
@@ -338,12 +338,12 @@ function EscalationPanel({
   const next = steps[0];
 
   return (
-    <div className="col-span-full rounded-md border border-slate-200 p-3">
+    <div className="col-span-full rounded-md border border-border p-3">
       <div className="flex items-center gap-2 mb-2">
         <TrendingUp className="w-4 h-4 text-brand-600" strokeWidth={1.75} />
-        <span className="text-sm text-slate-800">Annual escalation</span>
+        <span className="text-sm text-foreground">Annual escalation</span>
         {locked && (
-          <span className="ml-auto text-[11px] text-slate-500">Locked while active — change by addendum</span>
+          <span className="ml-auto text-[11px] text-muted-foreground">Locked while active — change by addendum</span>
         )}
       </div>
 
@@ -356,18 +356,18 @@ function EscalationPanel({
             disabled={locked}
             value={pct}
             onChange={(e) => onPct(e.target.value)}
-            className="w-full pl-3 pr-7 py-2 border border-slate-200 rounded-md text-sm tabular-nums"
+            className="w-full pl-3 pr-7 py-2 border border-border rounded-md text-sm tabular-nums"
             placeholder="0"
             aria-label="Annual escalation percent"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/70">%</span>
         </div>
         <button
           type="button"
           disabled={locked}
           onClick={() => onPct("")}
           className={`px-2.5 py-1 rounded-full text-xs border ${
-            rate === 0 ? "border-brand-400 bg-brand-50 text-brand-800" : "border-slate-200 text-slate-600 hover:border-slate-300"
+            rate === 0 ? "border-brand-200 bg-brand-50 text-brand-700 dark:text-brand-500" : "border-border text-muted-foreground hover:border-border"
           }`}
         >
           None
@@ -380,8 +380,8 @@ function EscalationPanel({
             onClick={() => onPct(p)}
             className={`px-2.5 py-1 rounded-full text-xs border tabular-nums ${
               rate === Number(p)
-                ? "border-brand-400 bg-brand-50 text-brand-800"
-                : "border-slate-200 text-slate-600 hover:border-slate-300"
+                ? "border-brand-200 bg-brand-50 text-brand-700 dark:text-brand-500"
+                : "border-border text-muted-foreground hover:border-border"
             }`}
           >
             {p}%
@@ -392,14 +392,14 @@ function EscalationPanel({
       {rate > 0 && (
         <div className="mt-3">
           {!startDate ? (
-            <p className="text-xs text-slate-500">Set a start date to see when the increases fall.</p>
+            <p className="text-xs text-muted-foreground">Set a start date to see when the increases fall.</p>
           ) : steps.length === 0 ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               No anniversary falls before the contract ends, so this rate never applies.
             </p>
           ) : (
             <>
-              <p className="text-xs text-slate-700 mb-2">
+              <p className="text-xs text-foreground mb-2">
                 Next increase on <strong className="font-medium">{formatDate(next.date)}</strong>
                 {" "}({plural(daysFromTo(today, next.date), "day")} away)
                 {monthlyValue > 0 && (
@@ -410,21 +410,21 @@ function EscalationPanel({
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-slate-500">
+                      <tr className="text-muted-foreground">
                         <th className="text-left font-normal py-1 pr-3">From</th>
                         <th className="text-left font-normal py-1 pr-3">Contract year</th>
                         <th className="text-right font-normal py-1 pr-3">Monthly value</th>
                         <th className="text-right font-normal py-1">Increase</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 tabular-nums">
+                    <tbody className="divide-y divide-border tabular-nums">
                       {steps.map((s, i) => {
                         const prev = i === 0 ? monthlyValue * Math.pow(1 + rate / 100, s.year - 2) : steps[i - 1].value;
                         return (
                           <tr key={s.date}>
-                            <td className="py-1 pr-3 text-slate-700">{formatDate(s.date)}</td>
-                            <td className="py-1 pr-3 text-slate-700">Year {s.year}</td>
-                            <td className="py-1 pr-3 text-right text-slate-800">{pkr(s.value)}</td>
+                            <td className="py-1 pr-3 text-foreground">{formatDate(s.date)}</td>
+                            <td className="py-1 pr-3 text-foreground">Year {s.year}</td>
+                            <td className="py-1 pr-3 text-right text-foreground">{pkr(s.value)}</td>
                             <td className="py-1 text-right text-success-700">+{pkr(s.value - prev)}</td>
                           </tr>
                         );
@@ -435,7 +435,7 @@ function EscalationPanel({
               )}
             </>
           )}
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500">
+          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <Info className="w-3.5 h-3.5 mt-px shrink-0" />
             Rates do not rise on their own. On each anniversary, add a Rate Change addendum with the new
             rates. Figures are based on the current contract lines and compound yearly.
@@ -552,9 +552,9 @@ const blankAddendum = (): AddendumForm => ({
 // chrome + keep the form's vertical rhythm inside.
 const LOCK_CLS =
   "min-w-0 border-0 p-0 m-0 space-y-3 " +
-  "[&_input:disabled]:bg-slate-100 [&_input:disabled]:text-slate-500 [&_input:disabled]:cursor-not-allowed " +
-  "[&_textarea:disabled]:bg-slate-100 [&_textarea:disabled]:text-slate-500 [&_textarea:disabled]:cursor-not-allowed " +
-  "[&_button:disabled]:bg-slate-100 [&_button:disabled]:text-slate-500 [&_button:disabled]:cursor-not-allowed [&_button:disabled]:opacity-100";
+  "[&_input:disabled]:bg-muted [&_input:disabled]:text-muted-foreground [&_input:disabled]:cursor-not-allowed " +
+  "[&_textarea:disabled]:bg-muted [&_textarea:disabled]:text-muted-foreground [&_textarea:disabled]:cursor-not-allowed " +
+  "[&_button:disabled]:bg-muted [&_button:disabled]:text-muted-foreground [&_button:disabled]:cursor-not-allowed [&_button:disabled]:opacity-100";
 
 export default function ContractEditorModal({
   isOpen,
@@ -1295,7 +1295,7 @@ export default function ContractEditorModal({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {showClientPicker && (
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Client *</label>
+              <label className="block text-sm text-foreground mb-1">Client *</label>
               {/* Searchable — the client list runs long. An empty selection is
                * caught by the "Select a client." check in handleSubmit, which is
                * why the native `required` isn't needed here. */}
@@ -1311,13 +1311,13 @@ export default function ContractEditorModal({
           )}
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Contract Type *</label>
+            <label className="block text-sm text-foreground mb-1">Contract Type *</label>
             <ThemedSelect
               required
               disabled={termsLocked}
               value={form.contract_type}
               onChange={(e) => onContractTypeChange(e.target.value as ContractType)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             >
               {(["guard_deployment", "services"] as const).map((t) => (
                 <option key={t} value={t}>{CONTRACT_TYPE_LABEL[t]}</option>
@@ -1328,7 +1328,7 @@ export default function ContractEditorModal({
               difference between Expired and Terminated is the thing people get
               wrong, so each says what it means. */}
           <div className="col-span-full">
-            <label className="block text-sm text-slate-700 mb-1">Status</label>
+            <label className="block text-sm text-foreground mb-1">Status</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {STATUS_CHOICES.map((s) => {
                 const selected = form.status === s.value;
@@ -1339,14 +1339,14 @@ export default function ContractEditorModal({
                     aria-pressed={selected}
                     onClick={() => setForm({ ...form, status: s.value })}
                     className={`text-left px-3 py-2 rounded-md border transition-colors ${
-                      selected ? s.selectedCls : "border-slate-200 hover:bg-slate-50"
+                      selected ? s.selectedCls : "border-border hover:bg-muted/50"
                     }`}
                   >
-                    <span className="flex items-center gap-1.5 text-sm text-slate-800">
+                    <span className="flex items-center gap-1.5 text-sm text-foreground">
                       <span className={`w-2 h-2 rounded-full ${s.dot}`} />
                       {CONTRACT_STATUS_LABEL[s.value]}
                     </span>
-                    <span className="block text-[11px] text-slate-500 mt-0.5">{s.hint}</span>
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">{s.hint}</span>
                   </button>
                 );
               })}
@@ -1371,20 +1371,20 @@ export default function ContractEditorModal({
           )}
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Start Date *</label>
+            <label className="block text-sm text-foreground mb-1">Start Date *</label>
             <input
               required
               type="date"
               disabled={termsLocked}
               value={form.start_date}
               onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div>
             {form.is_infinite ? (
               <>
-                <label className="block text-sm text-slate-700 mb-1">Notice Period (days) *</label>
+                <label className="block text-sm text-foreground mb-1">Notice Period (days) *</label>
                 <input
                   required
                   type="number"
@@ -1392,28 +1392,28 @@ export default function ContractEditorModal({
                   step="1"
                   value={form.notice_period_days}
                   onChange={(e) => setForm({ ...form, notice_period_days: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                   placeholder="e.g. 30"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-muted-foreground mt-1">
                   Advance notice the client must give to end this contract.
                 </p>
               </>
             ) : (
               <>
-                <label className="block text-sm text-slate-700 mb-1">End Date</label>
+                <label className="block text-sm text-foreground mb-1">End Date</label>
                 <input
                   type="date"
                   value={form.end_date}
                   onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 />
               </>
             )}
           </div>
 
           <div className="col-span-full -mt-1">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
+            <label className="flex items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
                 checked={form.is_infinite}
@@ -1430,7 +1430,7 @@ export default function ContractEditorModal({
               />
               No end date / Infinite
             </label>
-            <p className="text-[11px] text-slate-500 mt-1 ml-6">
+            <p className="text-[11px] text-muted-foreground mt-1 ml-6">
               {form.is_infinite
                 ? "Runs indefinitely — still worth reviewing at the 1-year mark, but it will not expire on its own."
                 : "Contracts are typically reviewed at the 1-year mark."}
@@ -1450,17 +1450,17 @@ export default function ContractEditorModal({
             branches — which rarely staff identically. Shift detail is never typed
             in separately: it is the per-shift sum of the personnel lines beneath
             it, so the two cannot disagree. */}
-        <div className="border border-slate-200 rounded-md overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+        <div className="border border-border rounded-md overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-muted/50 border-b border-border">
             <div>
-              <span className="text-sm font-medium text-slate-700">
+              <span className="text-sm font-medium text-foreground">
                 {isServices
                   ? "Contract Lines"
                   : hasSites
                     ? "Sites, Shift Detail & Contract Lines"
                     : "Shift Detail & Contract Lines"}
               </span>
-              <span className="block text-[11px] text-slate-500">
+              <span className="block text-[11px] text-muted-foreground">
                 {isServices
                   ? "Weapons and equipment — nothing to staff."
                   : hasSites
@@ -1470,13 +1470,13 @@ export default function ContractEditorModal({
             </div>
             <div className="flex items-center gap-3">
               {!isServices && (
-              <label className="flex items-center gap-2 text-xs text-slate-600">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Split by site?</span>
                 <ThemedSelect
                   value={hasSites ? "yes" : "no"}
                   disabled={termsLocked}
                   onChange={(e) => setUsesSites(e.target.value === "yes")}
-                  className="px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="px-2 py-1.5 border border-border rounded text-sm"
                 >
                   <option value="no">No</option>
                   <option value="yes">Yes</option>
@@ -1499,24 +1499,24 @@ export default function ContractEditorModal({
           </div>
 
           {termsLocked && (
-            <p className="px-3 py-2 text-xs text-slate-600 bg-amber-50 border-b border-amber-200">
+            <p className="px-3 py-2 text-xs text-muted-foreground bg-warning-50 border-b border-warning-200">
               This contract is Active. Committed counts and rates change through a dated
               addendum below; names, notes and sites can still be edited here.
             </p>
           )}
 
           {hasSites && !effectiveClientId && (
-            <p className="px-3 py-4 text-sm text-slate-500">
+            <p className="px-3 py-4 text-sm text-muted-foreground">
               Select a client above to add sites.
             </p>
           )}
 
           {loadingLines ? (
-            <div className="px-3 py-6 text-center text-sm text-slate-500">
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading sites &amp; lines…
             </div>
           ) : (
-            <div className="divide-y divide-slate-200">
+            <div className="divide-y divide-border">
               {/* Not split by site: one plain block, which is also where legacy
                   lines with no site_id live. */}
               {!hasSites && (
@@ -1540,26 +1540,26 @@ export default function ContractEditorModal({
                 <div key={site.key} className="p-3 space-y-3">
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="flex-1 min-w-48">
-                      <label className="block text-xs text-slate-500 mb-1">Site name *</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Site name *</label>
                       <input
                         type="text"
                         value={site.name}
                         onChange={(e) => updateSite(site.key, { name: e.target.value })}
                         placeholder="e.g. Main Gate"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                        className="w-full px-3 py-2 border border-border rounded-md text-sm"
                       />
                     </div>
                     <div className="flex-1 min-w-48">
-                      <label className="block text-xs text-slate-500 mb-1">Location</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Location</label>
                       <input
                         type="text"
                         value={site.location}
                         onChange={(e) => updateSite(site.key, { location: e.target.value })}
                         placeholder="Optional"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                        className="w-full px-3 py-2 border border-border rounded-md text-sm"
                       />
                     </div>
-                    <label className="flex items-center gap-2 text-xs text-slate-600 pb-2.5" title="Postings made without naming a site land here">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground pb-2.5" title="Postings made without naming a site land here">
                       <input
                         type="checkbox"
                         checked={site.is_default}
@@ -1618,23 +1618,23 @@ export default function ContractEditorModal({
               ))}
 
               {hasSites && sites.length === 0 && effectiveClientId && (
-                <p className="px-3 py-4 text-sm text-slate-500">
+                <p className="px-3 py-4 text-sm text-muted-foreground">
                   No sites yet. Add one to record what this contract staffs.
                 </p>
               )}
             </div>
           )}
 
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200 text-sm">
-            <span className="text-slate-600">
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-t border-border text-sm">
+            <span className="text-muted-foreground">
               {totalCommitted} committed
             </span>
-            <span className="font-medium text-slate-800 tabular-nums">
+            <span className="font-medium text-foreground tabular-nums">
               PKR {totalValue.toLocaleString()}
             </span>
           </div>
           <AmountInWords value={totalValue} className="px-3" />
-          <p className="px-3 py-2 text-[11px] text-slate-500">
+          <p className="px-3 py-2 text-[11px] text-muted-foreground">
             Contract value = Σ (committed count × rate). Only rows with a count or rate are saved.
           </p>
         </div>
@@ -1642,10 +1642,10 @@ export default function ContractEditorModal({
 
         {/* Addendums — only for existing contracts (can't addend what isn't created) */}
         {contract && (
-          <div className="border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-              <span className="text-sm font-medium text-slate-700">Addendums</span>
-              <span className="text-[11px] text-slate-500 ml-2">
+          <div className="border border-border rounded-md overflow-hidden">
+            <div className="px-3 py-2 bg-muted/50 border-b border-border">
+              <span className="text-sm font-medium text-foreground">Addendums</span>
+              <span className="text-[11px] text-muted-foreground ml-2">
                 Dated changes to committed count / rate — the contract's base lines are never altered.
               </span>
             </div>
@@ -1655,13 +1655,13 @@ export default function ContractEditorModal({
             )}
 
             {/* Add-addendum form — the line fields mirror the contract lines table. */}
-            <div className="p-3 border-t border-slate-200 bg-slate-50/50 grid grid-cols-2 gap-2">
+            <div className="p-3 border-t border-border bg-muted/50/50 grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">Change type</label>
+                <label className="block text-[11px] text-muted-foreground mb-1">Change type</label>
                 <ThemedSelect
                   value={addForm.change_type}
                   onChange={(e) => setAddForm({ ...addForm, change_type: e.target.value as AddendumChangeType })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm"
                 >
                   {(["ADD_HEADCOUNT", "REDUCE_HEADCOUNT", "RATE_CHANGE", "EXTEND_END_DATE"] as const).map((t) => (
                     <option key={t} value={t}>{ADDENDUM_CHANGE_TYPE_LABEL[t]}</option>
@@ -1670,15 +1670,15 @@ export default function ContractEditorModal({
               </div>
               {addForm.change_type === "EXTEND_END_DATE" ? (
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">New end date</label>
+                  <label className="block text-[11px] text-muted-foreground mb-1">New end date</label>
                   <input
                     type="date"
                     value={addForm.new_end_date}
                     disabled={addForm.new_is_infinite}
                     onChange={(e) => setAddForm({ ...addForm, new_end_date: e.target.value })}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                    className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted disabled:text-muted-foreground"
                   />
-                  <label className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                  <label className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
                     <input
                       type="checkbox"
                       checked={addForm.new_is_infinite}
@@ -1691,11 +1691,11 @@ export default function ContractEditorModal({
                 <>
                   {addendumPicksSite ? (
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1">Site *</label>
+                      <label className="block text-[11px] text-muted-foreground mb-1">Site *</label>
                       <ThemedSelect
                         value={addendumSiteKey}
                         onChange={(e) => setAddForm({ ...addForm, site_key: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm"
                       >
                         {addendumIsAdd && <option value={NEW_SITE}>+ New site…</option>}
                         {!hasSites && <option value={NO_SITE}>No site (contract-wide)</option>}
@@ -1711,37 +1711,37 @@ export default function ContractEditorModal({
                   {addendumSiteKey === NEW_SITE && (
                     <>
                       <div>
-                        <label className="block text-[11px] text-slate-600 mb-1">New site name *</label>
+                        <label className="block text-[11px] text-muted-foreground mb-1">New site name *</label>
                         <input
                           type="text"
                           value={addForm.new_site_name}
                           onChange={(e) => setAddForm({ ...addForm, new_site_name: e.target.value })}
                           placeholder="e.g. Main Gate"
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm"
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] text-slate-600 mb-1">Location</label>
+                        <label className="block text-[11px] text-muted-foreground mb-1">Location</label>
                         <input
                           type="text"
                           value={addForm.new_site_location}
                           onChange={(e) => setAddForm({ ...addForm, new_site_location: e.target.value })}
                           placeholder="Optional"
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm"
                         />
                       </div>
-                      <p className="col-span-2 text-[10px] text-slate-500 -mt-1">
+                      <p className="col-span-2 text-[10px] text-muted-foreground -mt-1">
                         The site is added to this client with no contract lines — the addendum carries
                         its headcount. It is then available to the contract lines like any other site.
                       </p>
                     </>
                   )}
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-1">Category *</label>
+                    <label className="block text-[11px] text-muted-foreground mb-1">Category *</label>
                     <ThemedSelect
                       value={addendumCategory}
                       onChange={(e) => setAddForm({ ...addForm, category: e.target.value as ContractLineCategory })}
-                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="w-full px-2 py-1.5 border border-border rounded text-sm"
                     >
                       {allowedCategories.map((cat) => (
                         <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
@@ -1750,11 +1750,11 @@ export default function ContractEditorModal({
                   </div>
                   {!addendumIsAdd && addendumMatches.length > 1 ? (
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1">Line *</label>
+                      <label className="block text-[11px] text-muted-foreground mb-1">Line *</label>
                       <ThemedSelect
                         value={addendumLine?.id ?? ""}
                         onChange={(e) => setAddForm({ ...addForm, line_id: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm"
                       >
                         <option value="">— Select —</option>
                         {addendumMatches.map((l) => (
@@ -1767,7 +1767,7 @@ export default function ContractEditorModal({
                   )}
                   {addForm.change_type !== "RATE_CHANGE" && (
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1">
+                      <label className="block text-[11px] text-muted-foreground mb-1">
                         {addendumIsAdd ? "Headcount to add *" : "Headcount to reduce *"}
                       </label>
                       <input
@@ -1775,26 +1775,26 @@ export default function ContractEditorModal({
                         min="1"
                         value={addForm.count_delta}
                         onChange={(e) => setAddForm({ ...addForm, count_delta: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm text-right"
                       />
                     </div>
                   )}
                   {addendumIsAdd && (
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1">Rate / month *</label>
+                      <label className="block text-[11px] text-muted-foreground mb-1">Rate / month *</label>
                       <input
                         type="number"
                         min="0"
                         step="0.01"
                         value={addForm.line_rate}
                         onChange={(e) => setAddForm({ ...addForm, line_rate: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm text-right"
                       />
                     </div>
                   )}
                   {addForm.change_type === "RATE_CHANGE" && (
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1">New rate / month *</label>
+                      <label className="block text-[11px] text-muted-foreground mb-1">New rate / month *</label>
                       <input
                         type="number"
                         min="0"
@@ -1802,23 +1802,23 @@ export default function ContractEditorModal({
                         value={addForm.new_rate}
                         placeholder={addendumLine ? `Current: ${num(addendumLine.unit_rate).toLocaleString()}` : ""}
                         onChange={(e) => setAddForm({ ...addForm, new_rate: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm text-right"
                       />
                     </div>
                   )}
                   {addendumIsAdd && (
                     <>
                       <div>
-                        <label className="block text-[11px] text-slate-600 mb-1">Notes</label>
+                        <label className="block text-[11px] text-muted-foreground mb-1">Notes</label>
                         <input
                           type="text"
                           value={addForm.line_notes}
                           onChange={(e) => setAddForm({ ...addForm, line_notes: e.target.value })}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm"
                         />
                       </div>
                       <div className="flex items-end justify-between gap-2 pb-1.5">
-                        <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                        <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
                           <input
                             type="checkbox"
                             checked={addForm.line_taxable}
@@ -1826,14 +1826,14 @@ export default function ContractEditorModal({
                           />
                           Taxable
                         </label>
-                        <span className="text-xs text-slate-600 tabular-nums">
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           Line value: PKR {(Math.max(0, Math.floor(num(addForm.count_delta))) * num(addForm.line_rate)).toLocaleString()}
                         </span>
                       </div>
                     </>
                   )}
                   {!addendumIsAdd && (
-                    <p className="col-span-2 text-[10px] text-slate-500 -mt-1">
+                    <p className="col-span-2 text-[10px] text-muted-foreground -mt-1">
                       {addendumLine
                         ? `Changes: ${lineChoiceLabel(addendumLine)}${hasSites ? " at this site" : ""}.`
                         : addendumMatches.length > 1
@@ -1844,23 +1844,23 @@ export default function ContractEditorModal({
                 </>
               )}
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">Effective from *</label>
+                <label className="block text-[11px] text-muted-foreground mb-1">Effective from *</label>
                 <input
                   type="date"
                   value={addForm.effective_from}
                   onChange={(e) => setAddForm({ ...addForm, effective_from: e.target.value })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm"
                 />
-                <p className="text-[10px] text-slate-500 mt-0.5">
+                <p className="text-[10px] text-muted-foreground mt-0.5">
                   The date the change takes effect — counts before it are unchanged.
                 </p>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">Source</label>
+                <label className="block text-[11px] text-muted-foreground mb-1">Source</label>
                 <ThemedSelect
                   value={addForm.source}
                   onChange={(e) => setAddForm({ ...addForm, source: e.target.value as AddendumSource })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm"
                 >
                   {(["SIGNED_CONTRACT", "EMAIL", "VERBAL", "OTHER"] as const).map((s) => (
                     <option key={s} value={s}>{ADDENDUM_SOURCE_LABEL[s]}</option>
@@ -1868,17 +1868,17 @@ export default function ContractEditorModal({
                 </ThemedSelect>
               </div>
               <div className="col-span-2">
-                <label className="block text-[11px] text-slate-600 mb-1">Reference (text)</label>
+                <label className="block text-[11px] text-muted-foreground mb-1">Reference (text)</label>
                 <input
                   type="text"
                   value={addForm.reference}
                   onChange={(e) => setAddForm({ ...addForm, reference: e.target.value })}
                   placeholder="e.g. Email dated 2026-05-01, or note"
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm"
                 />
               </div>
               <div className="col-span-2 flex items-center justify-between gap-2">
-                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 text-xs border border-dashed border-slate-300 rounded hover:bg-slate-50">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 text-xs border border-dashed border-border rounded hover:bg-muted/50">
                   <Upload className="w-3.5 h-3.5" />
                   {addFile ? addFile.name : "Attach reference document (optional)"}
                   <input
@@ -1909,22 +1909,22 @@ export default function ContractEditorModal({
         <fieldset disabled={locked} className={LOCK_CLS}>
         {/* Contract terms — leave allowance and EOBI are the values payroll and
             attendance read for every employee on this contract. */}
-        <div className="border border-slate-200 rounded-md p-3">
-          <div className="text-sm font-medium text-slate-700 mb-2">Contract terms</div>
+        <div className="border border-border rounded-md p-3">
+          <div className="text-sm font-medium text-foreground mb-2">Contract terms</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Allowed Leaves / month</label>
+              <label className="block text-xs text-muted-foreground mb-1">Allowed Leaves / month</label>
               <input
                 type="number"
                 min="0"
                 value={form.allowed_leaves_per_month}
                 onChange={(e) => setForm({ ...form, allowed_leaves_per_month: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 placeholder="Inherits client default if blank"
               />
             </div>
             <div>
-              <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
+              <label className="flex items-center gap-2 text-sm text-foreground mb-1">
                 <input
                   type="checkbox"
                   disabled={termsLocked}
@@ -1940,7 +1940,7 @@ export default function ContractEditorModal({
                   disabled={termsLocked}
                   value={form.eobi_amount}
                   onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                   placeholder="Per-employee EOBI"
                 />
               )}
@@ -1954,12 +1954,12 @@ export default function ContractEditorModal({
               monthlyValue={totalValue}
             />
             <div className="col-span-full">
-              <label className="block text-xs text-slate-500 mb-1">Renewal Terms</label>
+              <label className="block text-xs text-muted-foreground mb-1">Renewal Terms</label>
               <textarea
                 value={form.renewal_terms}
                 onChange={(e) => setForm({ ...form, renewal_terms: e.target.value })}
                 rows={2}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 placeholder="Free text for special clauses"
               />
             </div>
@@ -1968,9 +1968,9 @@ export default function ContractEditorModal({
 
         {enableDocument && (
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Contract Document</label>
+            <label className="block text-sm text-foreground mb-1">Contract Document</label>
             {contract?.drive_view_url && !pendingFile ? (
-              <div className="flex items-center justify-between gap-2 px-3 py-2 border border-slate-200 rounded-md">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border border-border rounded-md">
                 <a
                   href={contract.drive_view_url}
                   target="_blank"
@@ -1980,7 +1980,7 @@ export default function ContractEditorModal({
                   <FileText className="w-4 h-4" />
                   {contract.contract_file_name ?? "Current document"}
                 </a>
-                <label className="cursor-pointer px-2 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50">
+                <label className="cursor-pointer px-2 py-1 text-xs border border-border rounded hover:bg-muted/50">
                   Replace
                   <input
                     type="file"
@@ -1994,7 +1994,7 @@ export default function ContractEditorModal({
                 </label>
               </div>
             ) : (
-              <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 text-sm border border-dashed border-slate-300 rounded hover:bg-slate-50 w-full">
+              <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 text-sm border border-dashed border-border rounded hover:bg-muted/50 w-full">
                 <Upload className="w-4 h-4" />
                 {pendingFile ? pendingFile.name : "Choose scanned contract (uploads to Drive on Save)"}
                 <input
@@ -2022,7 +2022,7 @@ export default function ContractEditorModal({
         size="sm"
       >
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             {clientName ?? "This client"} already has {duplicateCount}{" "}
             {duplicateCount === 1 ? "contract" : "contracts"}. Adding another is allowed —
             confirm that this is a genuinely separate contract and not a duplicate.
@@ -2076,11 +2076,11 @@ function SiteLinesBlock({
   const indexOf = (l: LineDraft) => allLines.indexOf(l);
 
   return (
-    <div className="border border-slate-200 rounded-md overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+    <div className="border border-border rounded-md overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-muted/50 border-b border-border">
         <div className="min-w-0">
-          <span className="text-sm font-medium text-slate-700">{title}</span>
-          {subtitle && <span className="text-[11px] text-slate-500 ml-2">{subtitle}</span>}
+          <span className="text-sm font-medium text-foreground">{title}</span>
+          {subtitle && <span className="text-[11px] text-muted-foreground ml-2">{subtitle}</span>}
         </div>
         {!termsLocked && (
           <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>
@@ -2090,12 +2090,12 @@ function SiteLinesBlock({
       </div>
 
       {lines.length === 0 ? (
-        <p className="px-3 py-4 text-sm text-slate-500">No lines yet.</p>
+        <p className="px-3 py-4 text-sm text-muted-foreground">No lines yet.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
+              <tr className="text-xs text-muted-foreground uppercase border-b border-border">
                 <th className="text-left px-3 py-2">Category</th>
                 <th className="text-left px-3 py-2">Notes</th>
                 <th className="text-right px-3 py-2 w-28">Committed</th>
@@ -2104,7 +2104,7 @@ function SiteLinesBlock({
                 <th className="px-2 py-2 w-8"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {lines.map((l) => {
                 const idx = indexOf(l);
                 return (
@@ -2125,7 +2125,7 @@ function SiteLinesBlock({
                             shift_code: isPersonnelCategory(cat) ? l.shift_code || "day" : "",
                           });
                         }}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm"
                       >
                         {allowedCategories.map((cat) => (
                           <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
@@ -2137,7 +2137,7 @@ function SiteLinesBlock({
                         type="text"
                         value={l.location}
                         onChange={(e) => onUpdateLine(idx, { location: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm"
                       />
                     </td>
                     <td className="px-3 py-1.5">
@@ -2147,7 +2147,7 @@ function SiteLinesBlock({
                         disabled={termsLocked}
                         value={l.committed_count}
                         onChange={(e) => onUpdateLine(idx, { committed_count: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm text-right"
                       />
                     </td>
                     <td className="px-3 py-1.5">
@@ -2158,10 +2158,10 @@ function SiteLinesBlock({
                         disabled={termsLocked}
                         value={l.unit_rate}
                         onChange={(e) => onUpdateLine(idx, { unit_rate: e.target.value })}
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm text-right"
                       />
                     </td>
-                    <td className="px-3 py-1.5 text-right text-slate-600 tabular-nums">
+                    <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums">
                       {(num(l.committed_count) * num(l.unit_rate)).toLocaleString()}
                     </td>
                     <td className="px-2 py-1.5 text-right">

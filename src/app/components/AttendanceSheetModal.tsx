@@ -461,7 +461,7 @@ export default function AttendanceSheetModal({
               <h2 className="font-semibold text-foreground truncate flex items-center gap-2">
                 Monthly Board — {label}
                 {dayLocked(0) && dayLocked(daysInMonth - 1) && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-900/20 px-1.5 py-0.5 rounded" title="Both halves verified — the month's attendance is locked">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-500/10 px-1.5 py-0.5 rounded" title="Both halves verified — the month's attendance is locked">
                     <ShieldCheck className="w-3 h-3" /> Verified <Lock className="w-3 h-3" />
                   </span>
                 )}
@@ -628,7 +628,7 @@ export default function AttendanceSheetModal({
                     <td style={leadCell(1)} className="sticky z-10 bg-card border border-border px-2 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
                       {row.name}
                       {row.isReliever && (
-                        <span className="ml-1.5 inline-flex items-center rounded-sm border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-900/20 dark:text-brand-400">
+                        <span className="ml-1.5 inline-flex items-center rounded-sm border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-500">
                           Reliever
                         </span>
                       )}
@@ -686,8 +686,8 @@ export default function AttendanceSheetModal({
                         // Reliever days get a brand tint so the reliever segment is
                         // visible at a glance; the flagged (unconfirmed regular)
                         // red always wins.
-                        const cellBg = isPrimary && flagged ? "bg-danger-100 dark:bg-danger-900/30"
-                          : isPrimary && isRelieverDay ? "bg-brand-50 dark:bg-brand-900/20"
+                        const cellBg = isPrimary && flagged ? "bg-danger-100 dark:bg-danger-500/15"
+                          : isPrimary && isRelieverDay ? "bg-brand-50 dark:bg-brand-500/10"
                           : isCleared ? `bg-info-100${clickable ? " cursor-pointer hover:bg-info-200" : ""}`
                           : clickable ? "cursor-pointer hover:bg-accent" : "";
                         return (
@@ -704,7 +704,7 @@ export default function AttendanceSheetModal({
                           >
                             {cellStatus}
                             {isPrimary && isRelieverDay && cellStatus && (
-                              <sup className="ml-0.5 text-[8px] font-semibold text-brand-600 dark:text-brand-400" title="Reliever day">R</sup>
+                              <sup className="ml-0.5 text-[8px] font-semibold text-brand-600 dark:text-brand-500" title="Reliever day">R</sup>
                             )}
                           </td>
                         );
@@ -743,7 +743,7 @@ export default function AttendanceSheetModal({
               {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
               <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · allowed leaves = this employee's own allowance for the month (as payroll uses it) · pay days = presents + double duties + leaves taken, counted only up to allowed leaves</div>
               <div>
-                <span className="inline-block align-middle rounded-sm bg-brand-50 dark:bg-brand-900/20 px-1 mr-1">P<sup className="text-[8px] font-semibold text-brand-600 dark:text-brand-400">R</sup></span>
+                <span className="inline-block align-middle rounded-sm bg-brand-50 dark:bg-brand-500/10 px-1 mr-1">P<sup className="text-[8px] font-semibold text-brand-600 dark:text-brand-500">R</sup></span>
                 = reliever day (the guard covered as a reliever that day) — gaps in a reliever segment are expected and never block verification.
               </div>
               <div className="text-muted-foreground">
@@ -753,7 +753,7 @@ export default function AttendanceSheetModal({
                   : " Until the month ends, this view is read-only — edit on the Attendance board."}
               </div>
               <div>Whole month / 1st half / 2nd half changes what the grid shows; HR's verify button acts on it. In a half view the counts are that half's, and pay days stay the month's. A half HR has verified is locked and waits in Review on the Attendance Run for Ops.</div>
-              {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> not yet confirmed (blocks HR Verify of its half)</div>}
+              {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-500/15 mr-1" /> not yet confirmed (blocks HR Verify of its half)</div>}
             </div>
           )}
         </div>

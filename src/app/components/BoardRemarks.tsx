@@ -158,11 +158,11 @@ export default function BoardRemarks({
 
 function RemarkBubble({ r }: { r: BoardRemark }) {
   return (
-    <div className={`rounded-md border px-2.5 py-1.5 ${r.kind === "returned" ? "border-warning-300 bg-warning-50 dark:bg-warning-900/20" : "border-border bg-card"}`}>
+    <div className={`rounded-md border px-2.5 py-1.5 ${r.kind === "returned" ? "border-warning-200 bg-warning-50 dark:bg-warning-500/10" : "border-border bg-card"}`}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium text-foreground">
           {r.author_name ?? "Unknown"}
-          {r.kind === "returned" && <span className="ml-1.5 text-[10px] font-normal text-warning-800 dark:text-warning-400">sent back</span>}
+          {r.kind === "returned" && <span className="ml-1.5 text-[10px] font-normal text-warning-700 dark:text-warning-500">sent back</span>}
         </span>
         <span className="text-[10px] text-muted-foreground shrink-0">{remarkWhen(r.created_at)}</span>
       </div>

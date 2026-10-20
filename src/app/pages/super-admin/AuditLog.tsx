@@ -317,8 +317,8 @@ export default function AuditLog() {
 
   if (!isAdmin) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-500">
-        <ShieldOff className="w-10 h-10 text-slate-300" strokeWidth={1.5} />
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+        <ShieldOff className="w-10 h-10 text-muted-foreground/50" strokeWidth={1.5} />
         <p className="text-sm">Audit Log is restricted to Super Admin and above.</p>
       </div>
     );
@@ -354,11 +354,11 @@ export default function AuditLog() {
               <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
                 <span className="lbl">{entries.length.toLocaleString()} changes loaded</span>
                 <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
-                  <span className="h-full bg-[#9ad1a3]" style={{ width: `${(byAction.insert / entries.length) * 100}%` }} title={`${byAction.insert} created`} />
+                  <span className="h-full bg-up" style={{ width: `${(byAction.insert / entries.length) * 100}%` }} title={`${byAction.insert} created`} />
                   <span className="h-full bg-brand-500" style={{ width: `${(byAction.update / entries.length) * 100}%` }} title={`${byAction.update} edited`} />
-                  <span className="h-full bg-[#d4674a]" style={{ width: `${(byAction.delete / entries.length) * 100}%` }} title={`${byAction.delete} deleted`} />
+                  <span className="h-full bg-danger-500" style={{ width: `${(byAction.delete / entries.length) * 100}%` }} title={`${byAction.delete} deleted`} />
                 </div>
-                <div className="flex gap-3 text-xs text-muted-foreground"><span>{byAction.insert} created</span><span>{byAction.update} edited</span><span className={byAction.delete ? "text-[#f0a99a]" : ""}>{byAction.delete} deleted</span></div>
+                <div className="flex gap-3 text-xs text-muted-foreground"><span>{byAction.insert} created</span><span>{byAction.update} edited</span><span className={byAction.delete ? "text-down" : ""}>{byAction.delete} deleted</span></div>
               </div>
               <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
                 <span className="lbl">Most changed</span>
@@ -393,35 +393,35 @@ export default function AuditLog() {
 
         {/* Filters */}
         <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-          <div className="flex items-center gap-2 text-sm text-slate-700">
+          <div className="flex items-center gap-2 text-sm text-foreground">
             <Filter className="w-4 h-4" />
             <span className="font-medium">Filters</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-slate-600 mb-1">From</label>
+              <label className="block text-xs text-muted-foreground mb-1">From</label>
               <input
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                className="w-full px-3 py-2 border border-border rounded text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">To</label>
+              <label className="block text-xs text-muted-foreground mb-1">To</label>
               <input
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                className="w-full px-3 py-2 border border-border rounded text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">Table</label>
+              <label className="block text-xs text-muted-foreground mb-1">Table</label>
               <ThemedSelect
                 value={tableFilter}
                 onChange={(e) => setTableFilter(e.target.value as "all" | AuditedTable)}
-                className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                className="w-full px-3 py-2 border border-border rounded text-sm"
               >
                 <option value="all">All tables</option>
                 {AUDITED_TABLES.map((t) => (
@@ -430,11 +430,11 @@ export default function AuditLog() {
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">Action</label>
+              <label className="block text-xs text-muted-foreground mb-1">Action</label>
               <ThemedSelect
                 value={actionFilter}
                 onChange={(e) => setActionFilter(e.target.value as "all" | AuditAction)}
-                className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                className="w-full px-3 py-2 border border-border rounded text-sm"
               >
                 <option value="all">All actions</option>
                 <option value="insert">Insert</option>
@@ -443,11 +443,11 @@ export default function AuditLog() {
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">User</label>
+              <label className="block text-xs text-muted-foreground mb-1">User</label>
               <ThemedSelect
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                className="w-full px-3 py-2 border border-border rounded text-sm"
               >
                 <option value="all">Anyone</option>
                 {userList.map((p) => (
@@ -458,28 +458,28 @@ export default function AuditLog() {
               </ThemedSelect>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs text-slate-600 mb-1">Record ID</label>
+              <label className="block text-xs text-muted-foreground mb-1">Record ID</label>
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
                 <input
                   type="text"
                   value={recordIdSearch}
                   onChange={(e) => setRecordIdSearch(e.target.value)}
                   placeholder="Paste a UUID to trace one record's full history"
-                  className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded text-sm font-mono"
+                  className="w-full pl-10 pr-3 py-2 border border-border rounded text-sm font-mono"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">Field / value search</label>
+              <label className="block text-xs text-muted-foreground mb-1">Field / value search</label>
               <input
                 type="text"
                 value={fieldSearch}
                 onChange={(e) => setFieldSearch(e.target.value)}
                 placeholder="e.g., final_salary, 50000…"
-                className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                className="w-full px-3 py-2 border border-border rounded text-sm"
               />
-              <p className="text-[10px] text-slate-500 mt-1">Filters loaded page; refine other filters first.</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Filters loaded page; refine other filters first.</p>
             </div>
           </div>
         </div>
@@ -489,27 +489,27 @@ export default function AuditLog() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
+                <tr className="border-b border-border bg-muted/50">
                   <th className="w-8 px-2 py-3"></th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">When</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">User</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Action</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Table</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Record</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Fields changed</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">When</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">User</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Action</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Table</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Record</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Fields changed</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredEntries.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-sm">
                       No audit entries match the current filters.
                     </td>
                   </tr>
@@ -520,16 +520,16 @@ export default function AuditLog() {
                   return (
                     <Fragment key={e.id}>
                       <tr
-                        className="hover:bg-slate-50 cursor-pointer"
+                        className="hover:bg-muted/50 cursor-pointer"
                         onClick={() => toggleExpanded(e.id)}
                       >
                         <td className="w-8 px-2 py-3 text-center">
-                          {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400 inline" /> : <ChevronRight className="w-4 h-4 text-slate-400 inline" />}
+                          {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground/70 inline" /> : <ChevronRight className="w-4 h-4 text-muted-foreground/70 inline" />}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
+                        <td className="px-4 py-3 text-xs text-foreground whitespace-nowrap">
                           {formatDateTime(e.changed_at)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-900 whitespace-nowrap">
+                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
                           {userName(e.changed_by)}
                         </td>
                         <td className="px-4 py-3 text-sm">
@@ -538,16 +538,16 @@ export default function AuditLog() {
                             {e.action}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700">
+                        <td className="px-4 py-3 text-sm text-foreground">
                           {TABLE_LABEL[e.table_name] ?? e.table_name}
                         </td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-500 max-w-[180px] truncate">
+                        <td className="px-4 py-3 text-xs font-mono text-muted-foreground max-w-[180px] truncate">
                           {e.record_id ?? "—"}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-700">{summary(e.changes)}</td>
+                        <td className="px-4 py-3 text-xs text-foreground">{summary(e.changes)}</td>
                       </tr>
                       {isOpen && (
-                        <tr className="bg-slate-50/60">
+                        <tr className="bg-muted/50/60">
                           <td colSpan={7} className="px-4 py-3">
                             <ChangesDiff changes={e.changes} action={e.action} />
                           </td>
@@ -561,8 +561,8 @@ export default function AuditLog() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between p-3 border-t border-slate-200 text-sm">
-            <div className="text-xs text-slate-500">
+          <div className="flex items-center justify-between p-3 border-t border-border text-sm">
+            <div className="text-xs text-muted-foreground">
               Page {page + 1} · {filteredEntries.length} entr{filteredEntries.length === 1 ? "y" : "ies"} on this page
               {fieldSearch && entries.length !== filteredEntries.length && (
                 <span className="ml-1">(of {entries.length} loaded — narrow filters for more)</span>
@@ -572,14 +572,14 @@ export default function AuditLog() {
               <button
                 disabled={page === 0}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="px-3 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1 text-xs border border-border rounded hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
               <button
                 disabled={!hasMore}
                 onClick={() => setPage((p) => p + 1)}
-                className="px-3 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1 text-xs border border-border rounded hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Next
               </button>
@@ -598,20 +598,20 @@ function ChangesDiff({ changes, action }: { changes: AuditChanges; action: Audit
   const entries = visibleEntries.length > 0 ? visibleEntries : allEntries;
 
   if (entries.length === 0) {
-    return <div className="text-xs text-slate-500 italic">No field-level changes recorded.</div>;
+    return <div className="text-xs text-muted-foreground italic">No field-level changes recorded.</div>;
   }
   return (
-    <div className="rounded-md border border-slate-200 overflow-hidden">
-      <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-400 bg-slate-100 border-b border-slate-200">
+    <div className="rounded-md border border-border overflow-hidden">
+      <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground/70 bg-muted border-b border-border">
         <div className="col-span-3">Field</div>
         {action !== "insert" && <div className="col-span-4">Before</div>}
         {action !== "delete" && <div className={action === "insert" ? "col-span-9" : "col-span-5"}>After</div>}
       </div>
       {entries.map(([field, v]) => (
-        <div key={field} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs items-start border-b border-slate-100 last:border-b-0 hover:bg-white">
-          <div className="col-span-3 text-slate-800 font-medium leading-5">
+        <div key={field} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs items-start border-b border-border last:border-b-0 hover:bg-card">
+          <div className="col-span-3 text-foreground font-medium leading-5">
             {fieldLabel(field)}
-            <div className="text-[10px] text-slate-400 font-mono font-normal">{field}</div>
+            <div className="text-[10px] text-muted-foreground/70 font-mono font-normal">{field}</div>
           </div>
           {action !== "insert" && (
             <div className="col-span-4">
@@ -626,7 +626,7 @@ function ChangesDiff({ changes, action }: { changes: AuditChanges; action: Audit
         </div>
       ))}
       {hiddenCount > 0 && (
-        <div className="px-3 py-1.5 text-[10px] text-slate-400 bg-slate-50 border-t border-slate-100">
+        <div className="px-3 py-1.5 text-[10px] text-muted-foreground/70 bg-muted/50 border-t border-border">
           {hiddenCount} system field{hiddenCount > 1 ? "s" : ""} hidden (IDs, timestamps)
         </div>
       )}
@@ -636,14 +636,14 @@ function ChangesDiff({ changes, action }: { changes: AuditChanges; action: Audit
 
 function ValueCell({ value, field, variant }: { value: unknown; field: string; variant: "before" | "after" }) {
   if (value === undefined || value === null) {
-    return <span className="text-slate-400 italic text-[11px]">—</span>;
+    return <span className="text-muted-foreground/70 italic text-[11px]">—</span>;
   }
   const display = formatFieldValue(field, value);
   const isLong = display.length > 120;
   const isJson = typeof value === "object";
   const styleBase = variant === "before"
     ? "text-danger-700 bg-danger-50 border border-danger-100"
-    : "text-success-800 bg-success-50 border border-success-100";
+    : "text-success-700 dark:text-success-500 bg-success-50 border border-success-100";
 
   if (isJson || isLong) {
     return (

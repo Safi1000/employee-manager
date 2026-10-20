@@ -377,9 +377,9 @@ export default function Contracts() {
               {[
                 { label: "Live contracts", v: book.live.toLocaleString(), sub: "active today", tone: "text-foreground", on: false, click: () => setStatusFilter("active") },
                 { label: "Contracted value", v: <><span className="cur">PKR</span>{Math.round(book.value).toLocaleString()}</>, sub: "per month, live contracts", tone: "text-foreground", on: false, click: undefined },
-                { label: "Guards", v: `${book.posted} / ${book.committed}`, sub: "posted against committed", tone: book.posted < book.committed ? "text-[#f6d79b]" : "text-[#9ad1a3]", on: false, click: undefined },
-                { label: "Ending in 60 days", v: book.ending60.toLocaleString(), sub: "renew or let go", tone: book.ending60 ? "text-[#f6d79b]" : "text-foreground", on: false, click: undefined },
-                { label: "Needs renewal", v: book.needsRenewal.toLocaleString(), sub: "past their end date", tone: book.needsRenewal ? "text-[#f0a99a]" : "text-[#9ad1a3]", on: statusFilter === "needs_renewal", click: () => setStatusFilter(statusFilter === "needs_renewal" ? "all" : "needs_renewal") },
+                { label: "Guards", v: `${book.posted} / ${book.committed}`, sub: "posted against committed", tone: book.posted < book.committed ? "text-heed" : "text-up", on: false, click: undefined },
+                { label: "Ending in 60 days", v: book.ending60.toLocaleString(), sub: "renew or let go", tone: book.ending60 ? "text-heed" : "text-foreground", on: false, click: undefined },
+                { label: "Needs renewal", v: book.needsRenewal.toLocaleString(), sub: "past their end date", tone: book.needsRenewal ? "text-down" : "text-up", on: statusFilter === "needs_renewal", click: () => setStatusFilter(statusFilter === "needs_renewal" ? "all" : "needs_renewal") },
               ].map((t) => {
                 const body = (<><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></>);
                 const cls = `text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 min-w-0 ${t.on ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"} ${t.click ? "hover:border-brand-500/70" : ""}`;
@@ -399,7 +399,7 @@ export default function Contracts() {
                     return (
                       <button key={x.id} type="button" onClick={() => setSearch(x.code)} title={`${x.client} · ${x.code} · ${x.days < 0 ? `ended ${-x.days} days ago` : `${x.days} days left`}`}
                         aria-label={`${x.client}, ${x.days} days left`}
-                        className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#191a10] hover:scale-125 transition-transform ${x.days < 0 ? "bg-danger-500" : x.days <= 60 ? "bg-brand-500" : "bg-[#9ad1a3]"}`}
+                        className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink hover:scale-125 transition-transform ${x.days < 0 ? "bg-danger-500" : x.days <= 60 ? "bg-brand-500" : "bg-up"}`}
                         style={{ left: `${(Math.max(0, x.days) / 180) * 100}%`, top: 26, width: sz, height: sz }} />
                     );
                   })}
@@ -423,13 +423,13 @@ export default function Contracts() {
 
         <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by client or code…"
-              className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full pl-10 pr-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <ClientFilterSelect
@@ -443,7 +443,7 @@ export default function Contracts() {
           <ThemedSelect
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as "all" | "needs_renewal" | ContractStatus)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           >
             <option value="all">All statuses</option>
             <option value="needs_renewal">Expired / needs renewal</option>
@@ -524,7 +524,7 @@ export default function Contracts() {
               return (
                 <>
                   {expired && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-800 border border-warning-200">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200">
                       <AlertCircle className="w-3 h-3" /> Needs renewal
                     </span>
                   )}
@@ -563,30 +563,30 @@ export default function Contracts() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Code</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase min-w-[15rem]">Client</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Type</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Period</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards (active/allotted)</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Weapons &amp; equipment</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Value/mo</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Document</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Code</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase min-w-[15rem]">Client</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Type</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Period</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Guards (active/allotted)</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Weapons &amp; equipment</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Value/mo</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Status</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Document</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground text-sm">
                       No contracts match the current filters.
                     </td>
                   </tr>
@@ -598,33 +598,33 @@ export default function Contracts() {
                     activeGuards, looseActive, valuePerMonth, overStaffed,
                   } = deriveContract(row);
                   return (
-                    <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.contract_code}</td>
-                      <td className="px-4 py-3 text-sm text-slate-900">
+                    <tr key={row.id} className={`hover:bg-muted/50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
+                      <td className="px-4 py-3 text-xs font-mono text-foreground">{row.contract_code}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-foreground">{row.client_name}</span>
                           {expired && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-800 border border-warning-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200">
                               <AlertCircle className="w-3 h-3" /> Needs renewal
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-slate-500 font-mono">{row.client_code}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{row.client_code}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
                         {/* Period reads MM/DD/YYYY; the rest of the app is DD/MM/YYYY. */}
                         <div>{formatDateUS(row.start_date)}</div>
                         {eff.isInfinite ? (
                           // No end date (base or via renewal) — can never read "ending soon".
-                          <div className="text-xs text-slate-500">
+                          <div className="text-xs text-muted-foreground">
                             → No end date
                             {renewed && " (renewed)"}
                             {row.notice_period_days != null && ` (${row.notice_period_days}d notice)`}
                           </div>
                         ) : (
                           effEndDate && (
-                            <div className={endingSoon ? "text-warning-700 text-xs" : expired ? "text-danger-700 text-xs" : "text-xs text-slate-500"}>
+                            <div className={endingSoon ? "text-warning-700 text-xs" : expired ? "text-danger-700 text-xs" : "text-xs text-muted-foreground"}>
                               → {formatDateUS(effEndDate)}
                               {renewed && " (renewed)"}
                               {endingSoon && ` (${dleft}d)`}
@@ -634,14 +634,14 @@ export default function Contracts() {
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
                         {totalCommitted === 0 && activeGuards === 0 ? (
-                          <span className="text-slate-400 text-xs">—</span>
+                          <span className="text-muted-foreground/70 text-xs">—</span>
                         ) : (
                           <>
-                            <span className={overStaffed ? "text-danger-700 font-medium" : "text-slate-900"}>
+                            <span className={overStaffed ? "text-danger-700 font-medium" : "text-foreground"}>
                               {activeGuards} / {totalCommitted}
                             </span>
                             {looseActive > 0 && (
-                              <div className="text-[10px] text-slate-500" title="Posted to the client but not pinned to a contract line">
+                              <div className="text-[10px] text-muted-foreground" title="Posted to the client but not pinned to a contract line">
                                 {looseActive} not on a line
                               </div>
                             )}
@@ -653,19 +653,19 @@ export default function Contracts() {
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
                         {hardwareCommitted === 0 ? (
-                          <span className="text-slate-400 text-xs">—</span>
+                          <span className="text-muted-foreground/70 text-xs">—</span>
                         ) : (
                           <div className="flex flex-col items-end gap-0.5">
                             {HARDWARE_LINE_CATEGORIES.filter((cat) => committedByCat.has(cat)).map((cat) => (
                               <span key={cat} className="text-xs">
-                                <span className="text-slate-500">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                                <span className="text-slate-900 font-medium">{committedByCat.get(cat) ?? 0}</span>
+                                <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
+                                <span className="text-foreground font-medium">{committedByCat.get(cat) ?? 0}</span>
                               </span>
                             ))}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-900">
+                      <td className="px-4 py-3 text-sm text-right text-foreground">
                         PKR {valuePerMonth.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -690,7 +690,7 @@ export default function Contracts() {
                             View
                           </a>
                         ) : canEdit ? (
-                          <label className="cursor-pointer text-xs text-slate-500 hover:text-slate-900">
+                          <label className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                             {uploadingId === row.id ? "Uploading…" : "Upload"}
                             <input
                               type="file"
@@ -703,7 +703,7 @@ export default function Contracts() {
                             />
                           </label>
                         ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          <span className="text-xs text-muted-foreground/70">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -711,7 +711,7 @@ export default function Contracts() {
                           <button
                             type="button"
                             onClick={() => setViewingRow(row)}
-                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                            className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                             title="View"
                           >
                             <Eye className="w-4 h-4" />
@@ -719,7 +719,7 @@ export default function Contracts() {
                           <button
                             type="button"
                             onClick={() => setCyclesRow(row)}
-                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                            className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                             title="Billing and payroll cycles"
                           >
                             <CalendarRange className="w-4 h-4" />
@@ -740,7 +740,7 @@ export default function Contracts() {
                             <button
                               type="button"
                               onClick={() => setEditingRow(row)}
-                              className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                              className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                               title="Edit"
                             >
                               <Pencil className="w-4 h-4" />

@@ -126,7 +126,7 @@ function Card({
   tone?: "slate" | "success" | "warning" | "brand";
 }) {
   const bar = {
-    slate: "border-l-slate-400",
+    slate: "border-l-muted-foreground/50",
     success: "border-l-success-500",
     warning: "border-l-warning-500",
     brand: "border-l-brand-500",
@@ -295,7 +295,7 @@ export default function MyProfile() {
       <>
         <Header title="My Profile" subtitle="Your own record" />
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
-          <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
               This login is not linked to an employee record, so there is nothing personal to show.
@@ -440,12 +440,12 @@ export default function MyProfile() {
                   {attendance.map((a) => {
                     const s = (a.status ?? "").toLowerCase();
                     const tone = s.startsWith("present") || s === "double_duty"
-                      ? "bg-success-100 text-success-800 border-success-200"
+                      ? "bg-success-100 text-success-700 dark:text-success-500 border-success-200"
                       : s.startsWith("absent")
                         ? "bg-danger-50 text-danger-700 border-danger-200"
                         : s.startsWith("leave")
-                          ? "bg-warning-50 text-warning-800 border-warning-200"
-                          : "bg-slate-50 text-slate-600 border-slate-200";
+                          ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                          : "bg-muted/50 text-muted-foreground border-border";
                     return (
                       <span
                         key={a.attendance_date}

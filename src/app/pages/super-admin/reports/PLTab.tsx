@@ -49,11 +49,11 @@ export default function PLTab({ period, basis, cmp, pl, loading, error }: {
     return (
       <tr key={label} className={big ? "" : "border-t border-border"}>
         <td colSpan={5} className={big ? "px-3 py-1.5" : "p-0"}>
-          <div className={`grid grid-cols-[minmax(220px,2.2fr)_repeat(4,minmax(110px,1fr))] gap-3 items-center font-semibold text-sm ${big ? "rounded-xl bg-[#191a10] text-[#f3eee2] px-4 py-3" : "px-6 py-2.5"}`}>
+          <div className={`grid grid-cols-[minmax(220px,2.2fr)_repeat(4,minmax(110px,1fr))] gap-3 items-center font-semibold text-sm ${big ? "rounded-xl bg-ink text-ink-foreground px-4 py-3" : "px-6 py-2.5"}`}>
             <span>{label}</span>
             <span className="font-ledger text-right">{money(a)}</span>
             <span className={`font-ledger text-right ${big ? "opacity-70" : "text-muted-foreground"}`}>{money(b)}</span>
-            <span className={`font-ledger text-right ${Math.abs(d) < 0.5 ? "opacity-60" : good ? (big ? "text-[#9ad1a3]" : "text-success-700 dark:text-success-500") : big ? "text-[#f0a99a]" : "text-danger-700 dark:text-danger-500"}`}>{sgn(d)}</span>
+            <span className={`font-ledger text-right ${Math.abs(d) < 0.5 ? "opacity-60" : good ? (big ? "text-up" : "text-success-700 dark:text-success-500") : big ? "text-down" : "text-danger-700 dark:text-danger-500"}`}>{sgn(d)}</span>
             <span className={`font-ledger text-right ${big ? "opacity-70" : "text-muted-foreground"}`}>{pct(a / (cur.revenue || 1))}</span>
           </div>
         </td>

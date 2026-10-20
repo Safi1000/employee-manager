@@ -96,10 +96,10 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`w-full ${buttonClassName} flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-md text-sm bg-white text-left hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900`}
+        className={`w-full ${buttonClassName} flex items-center gap-2 px-3 py-2 border border-border rounded-md text-sm bg-card text-left hover:border-border focus:outline-none focus:ring-2 focus:ring-brand-500/40`}
       >
-        <Search className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
-        <span className={`flex-1 truncate ${value === allValue ? "text-slate-500" : "text-slate-900"}`}>
+        <Search className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" strokeWidth={1.5} />
+        <span className={`flex-1 truncate ${value === allValue ? "text-muted-foreground" : "text-foreground"}`}>
           {selectedLabel}
         </span>
         {value !== allValue && !hideAll && (
@@ -110,25 +110,25 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
               e.stopPropagation();
               select(allValue);
             }}
-            className="text-slate-400 hover:text-slate-700"
+            className="text-muted-foreground/70 hover:text-foreground"
             aria-label="Clear filter"
           >
             <X className="w-3.5 h-3.5" />
           </span>
         )}
-        <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" strokeWidth={1.5} />
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-full md:w-72 bg-white border border-slate-200 rounded-md shadow-lg">
-          <div className="p-2 border-b border-slate-200">
+        <div className="absolute z-30 mt-1 w-full md:w-72 bg-card border border-border rounded-md shadow-lg">
+          <div className="p-2 border-b border-border">
             <input
               autoFocus
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Type to filter…"
-              className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              className="w-full px-2 py-1.5 border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
             />
           </div>
           <div className="max-h-64 overflow-y-auto py-1">
@@ -136,7 +136,7 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
               <button
                 type="button"
                 onClick={() => select(allValue)}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === allValue ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 ${value === allValue ? "bg-brand-50 text-brand-700" : "text-foreground"}`}
               >
                 {allLabel}
               </button>
@@ -145,24 +145,24 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
               <button
                 type="button"
                 onClick={() => select(extraOption.value)}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === extraOption.value ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 ${value === extraOption.value ? "bg-brand-50 text-brand-700" : "text-foreground"}`}
               >
                 {extraOption.label}
               </button>
             )}
             {matches.length === 0 && (
-              <div className="px-3 py-2 text-xs text-slate-500">No matches.</div>
+              <div className="px-3 py-2 text-xs text-muted-foreground">No matches.</div>
             )}
             {matches.map((c) => (
               <button
                 type="button"
                 key={c.id}
                 onClick={() => select(c.id)}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === c.id ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 ${value === c.id ? "bg-brand-50 text-brand-700" : "text-foreground"}`}
               >
                 <span>{c.name}</span>
                 {c.client_code && (
-                  <span className="text-xs text-slate-500 ml-2 font-mono">{c.client_code}</span>
+                  <span className="text-xs text-muted-foreground ml-2 font-mono">{c.client_code}</span>
                 )}
                 {renderBadge && <span className="ml-2">{renderBadge(c)}</span>}
               </button>

@@ -113,11 +113,11 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
 
   const setWatermark = (v: string | null) => setSettings((s) => ({ ...s, watermark_url: v ?? "" }));
 
-  const label = "block text-sm text-slate-700 mb-1";
-  const input = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const label = "block text-sm text-foreground mb-1";
+  const input = "w-full px-3 py-2 border border-border rounded-md text-sm";
 
   const Toggle = ({ k, title, hint }: { k: keyof InvoiceStructureSettings; title: string; hint: string }) => (
-    <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-md cursor-pointer hover:bg-slate-50">
+    <label className="flex items-start gap-3 p-3 border border-border rounded-md cursor-pointer hover:bg-muted/50">
       <input
         type="checkbox"
         checked={!!settings[k]}
@@ -125,8 +125,8 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
         className="mt-0.5 accent-brand-500"
       />
       <span>
-        <span className="block text-sm text-slate-800">{title}</span>
-        <span className="block text-xs text-slate-500">{hint}</span>
+        <span className="block text-sm text-foreground">{title}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
       </span>
     </label>
   );
@@ -145,15 +145,15 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
     <div>
       <label className={label}>{title}</label>
       <div className="flex items-center gap-3">
-        <div className="h-16 w-16 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+        <div className="h-16 w-16 rounded-md border border-border bg-muted/50 flex items-center justify-center overflow-hidden shrink-0">
           {value ? (
             <img src={value} alt={title} className="h-full w-full object-contain" />
           ) : (
-            <ImageUp className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
+            <ImageUp className="w-5 h-5 text-muted-foreground/70" strokeWidth={1.5} />
           )}
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs px-3 py-1.5 border border-slate-200 rounded-md cursor-pointer hover:bg-slate-50">
+          <label className="text-xs px-3 py-1.5 border border-border rounded-md cursor-pointer hover:bg-muted/50">
             Upload
             <input
               type="file"
@@ -200,7 +200,7 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
 
         {/* ── Company Branding ── */}
         <section className="space-y-4">
-          <h4 className="text-sm font-semibold text-slate-900">Company Branding</h4>
+          <h4 className="text-sm font-semibold text-foreground">Company Branding</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ImageField title="Company Logo" value={logoUrl} onPick={(f) => pickImage(f, setLogoUrl)} onClear={() => setLogoUrl(null)} />
             <ImageField title="Company Stamp / Seal (optional)" value={stampUrl} onPick={(f) => pickImage(f, setStampUrl)} onClear={() => setStampUrl(null)} />
@@ -245,9 +245,9 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
               <input className={input} value={signatureLabel} onChange={(e) => setSignatureLabel(e.target.value)} placeholder="Accounts Manager" />
             </div>
             <div>
-              <label className={label}>Company Prefix {prefixLocked && <span className="text-slate-400">(locked)</span>}</label>
+              <label className={label}>Company Prefix {prefixLocked && <span className="text-muted-foreground/70">(locked)</span>}</label>
               <input
-                className={`${input} ${prefixLocked ? "bg-slate-100 text-slate-500 cursor-not-allowed" : ""}`}
+                className={`${input} ${prefixLocked ? "bg-muted text-muted-foreground cursor-not-allowed" : ""}`}
                 value={settings.company_prefix ?? ""}
                 onChange={(e) => setSettings((s) => ({ ...s, company_prefix: e.target.value.toUpperCase() }))}
                 placeholder="e.g. GGS"
@@ -255,11 +255,11 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
                 readOnly={prefixLocked}
               />
               {prefixLocked ? (
-                <p className="text-[10px] text-slate-500 mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   🔒 Locked — guards now have permanent codes under this prefix, so it can no longer be changed.
                 </p>
               ) : (
-                <p className="text-[10px] text-amber-700 mt-1">
+                <p className="text-[10px] text-warning-700 mt-1">
                   ⚠️ Set carefully — used for both permanent guard codes and invoice Ref ({"{Prefix}-{YY}-{ClientPrefix}-{MM}"}). Once the first employee is added it becomes <strong>permanent</strong>.
                 </p>
               )}
@@ -271,7 +271,7 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
                   type="color"
                   value={settings.brand_color || "#1e40af"}
                   onChange={(e) => setSettings((s) => ({ ...s, brand_color: e.target.value }))}
-                  className="h-9 w-12 rounded border border-slate-200 p-0.5 shrink-0"
+                  className="h-9 w-12 rounded border border-border p-0.5 shrink-0"
                 />
                 <input
                   className={input}
@@ -284,7 +284,7 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
           </div>
 
           {/* ── Watermark ── */}
-          <div className="border-t border-slate-100 pt-4 space-y-3">
+          <div className="border-t border-border pt-4 space-y-3">
             <ImageField
               title="Watermark Mark (optional — faded, behind the invoice text)"
               value={settings.watermark_url || null}
@@ -343,7 +343,7 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
 
         {/* ── Template Options ── */}
         <section className="space-y-3">
-          <h4 className="text-sm font-semibold text-slate-900">Template Options</h4>
+          <h4 className="text-sm font-semibold text-foreground">Template Options</h4>
           <Toggle k="fixed_show_previous_balance" title="Fixed — show Previous Balance row when applicable" hint="Adds a Previous Balance row when this contract's prior invoice is still unpaid." />
           <Toggle k="variable_show_previous_balance" title="Variable — show Previous Balance row when applicable" hint="Same per-contract carry-forward as Fixed, for attendance-billed invoices." />
           <Toggle k="sla_taxes_dynamic" title="SLA — tax columns from the client's tax profile" hint="Render one tax column per entry in the client's tax_profile (recommended)." />

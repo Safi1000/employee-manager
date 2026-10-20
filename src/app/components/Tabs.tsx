@@ -46,7 +46,7 @@ export default function Tabs<T extends string>({
             {it.count != null && (
               <span
                 className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold rounded-full ${
-                  active ? "bg-brand-500 text-[#241a06]" : "bg-background text-muted-foreground"
+                  active ? "bg-brand-500 text-on-brand" : "bg-background text-muted-foreground"
                 }`}
               >
                 {it.count}

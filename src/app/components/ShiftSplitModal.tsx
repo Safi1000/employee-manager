@@ -178,57 +178,57 @@ export default function ShiftSplitModal({
             <button type="button" onClick={() => setError(null)}><X className="w-4 h-4" /></button>
           </div>
         )}
-        <p className="text-[13px] text-slate-500">
+        <p className="text-[13px] text-muted-foreground">
           Split each category's committed headcount between Day and Night. The total is
           set on the contract and can't be changed here — Day + Night must equal it.
         </p>
 
         {!canEdit && (
-          <div className="p-2 bg-slate-50 border border-slate-200 rounded text-[12px] text-slate-500">
+          <div className="p-2 bg-muted/50 border border-border rounded text-[12px] text-muted-foreground">
             You can view the split but need the Assignments (HR) permission to change it.
           </div>
         )}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-slate-500 text-sm py-8 justify-center">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         ) : groups.length === 0 ? (
-          <div className="text-center text-slate-500 text-sm py-8">This contract has no personnel lines to split.</div>
+          <div className="text-center text-muted-foreground text-sm py-8">This contract has no personnel lines to split.</div>
         ) : (
-          <div className="border border-slate-200 rounded-md overflow-hidden divide-y divide-slate-100">
+          <div className="border border-border rounded-md overflow-hidden divide-y divide-border">
             {groups.map((g) => {
               const sum = num(g.day) + num(g.night);
               const ok = sum === g.total;
               return (
                 <div key={g.key} className="p-3">
                   <div className="flex items-center justify-between gap-3 mb-2">
-                    <span className="text-sm font-medium text-slate-700">{g.label}</span>
-                    <span className="text-xs text-slate-500">{g.total} committed</span>
+                    <span className="text-sm font-medium text-foreground">{g.label}</span>
+                    <span className="text-xs text-muted-foreground">{g.total} committed</span>
                   </div>
                   <div className="flex items-end gap-3">
                     <label className="flex-1">
-                      <span className="block text-[11px] text-slate-500 mb-1">Day</span>
+                      <span className="block text-[11px] text-muted-foreground mb-1">Day</span>
                       <input
                         type="number" min="0" inputMode="numeric"
                         disabled={!canEdit}
                         value={g.day}
                         onChange={(e) => update(g.key, { day: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-3 py-2 border border-border rounded-md text-sm text-right disabled:bg-muted disabled:text-muted-foreground"
                       />
                     </label>
                     <label className="flex-1">
-                      <span className="block text-[11px] text-slate-500 mb-1">Night</span>
+                      <span className="block text-[11px] text-muted-foreground mb-1">Night</span>
                       <input
                         type="number" min="0" inputMode="numeric"
                         disabled={!canEdit}
                         value={g.night}
                         onChange={(e) => update(g.key, { night: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-3 py-2 border border-border rounded-md text-sm text-right disabled:bg-muted disabled:text-muted-foreground"
                       />
                     </label>
                   </div>
-                  <p className={`mt-1 text-[11px] ${ok ? "text-emerald-600" : "text-danger-600"}`}>
+                  <p className={`mt-1 text-[11px] ${ok ? "text-success-600" : "text-danger-600"}`}>
                     {ok
                       ? `✓ ${num(g.day)} + ${num(g.night)} = ${g.total}`
                       : `Day + Night must equal ${g.total} — currently ${sum}`}

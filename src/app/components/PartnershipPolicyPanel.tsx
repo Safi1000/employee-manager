@@ -175,7 +175,7 @@ export default function PartnershipPolicyPanel({
 
   if (loading) {
     return (
-      <div className="border border-slate-200 rounded-md p-4 mb-6 text-sm text-slate-500">
+      <div className="border border-border rounded-md p-4 mb-6 text-sm text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading partnership policy…
       </div>
     );
@@ -184,11 +184,11 @@ export default function PartnershipPolicyPanel({
   return (
     <section
       id="partnership-policy"
-      className="border border-slate-200 rounded-md p-4 md:p-5 mb-6 bg-white scroll-mt-6"
+      className="border border-border rounded-md p-4 md:p-5 mb-6 bg-card scroll-mt-6"
     >
       <div className="mb-3">
-        <h4 className="text-sm text-slate-900">Partnership policy</h4>
-        <p className="text-xs text-slate-500 mt-0.5">
+        <h4 className="text-sm text-foreground">Partnership policy</h4>
+        <p className="text-xs text-muted-foreground mt-0.5">
           Company-wide, not per partner. One decides what every partner is paid on; the other
           decides when the month has to be paid by.
         </p>
@@ -204,17 +204,17 @@ export default function PartnershipPolicyPanel({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* ── Remuneration basis ─────────────────────────────────────────── */}
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Remuneration basis</label>
+          <label className="block text-sm text-foreground mb-1">Remuneration basis</label>
           <ThemedSelect
             value={basis}
             disabled={!canEdit || busy}
             onChange={(e) => setBasis(e.target.value as "cash" | "revenue")}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground"
           >
             <option value="cash">Net Cash — cash basis</option>
             <option value="revenue">Total Income — revenue basis</option>
           </ThemedSelect>
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-[11px] text-muted-foreground mt-1">
             The Client Statements column every partner&apos;s share is taken from.
           </p>
           {basisChanged && (
@@ -231,7 +231,7 @@ export default function PartnershipPolicyPanel({
 
         {/* ── Posting deadline ───────────────────────────────────────────── */}
         <div>
-          <label className="block text-sm text-slate-700 mb-1">
+          <label className="block text-sm text-foreground mb-1">
             Posting deadline (day of the following month)
           </label>
           <input
@@ -243,15 +243,15 @@ export default function PartnershipPolicyPanel({
             disabled={!canEdit || busy}
             placeholder="No deadline"
             onChange={(e) => setDay(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground"
           />
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-[11px] text-muted-foreground mt-1">
             The day of the month <em>after</em> the one being allocated by which the run must be
             <strong> posted</strong> — a drafted run does not satisfy it. Capped at 28 so every
             month has the day. Blank means no deadline, and nothing is raised.
           </p>
           {dayNum !== null && Number.isInteger(dayNum) && dayNum >= 1 && dayNum <= 28 && (
-            <p className="text-[11px] text-slate-600 mt-1">
+            <p className="text-[11px] text-muted-foreground mt-1">
               {monthName(period)} would be due on the {ordinal(dayNum)} of {monthName(nextMonth(period))}.
             </p>
           )}
@@ -259,16 +259,16 @@ export default function PartnershipPolicyPanel({
       </div>
 
       {/* ── What the deadline says today, straight from 0358 ─────────────── */}
-      <div className="mt-4 pt-3 border-t border-slate-100 text-xs flex items-start gap-1.5">
-        <CalendarClock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+      <div className="mt-4 pt-3 border-t border-border text-xs flex items-start gap-1.5">
+        <CalendarClock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground/70" />
         {deadlineUnavailable ? (
-          <span className="text-slate-500">
+          <span className="text-muted-foreground">
             Deadline status unavailable on this database —{" "}
             <code className="text-[10px]">partnership_posting_deadline()</code> answered:{" "}
             {deadlineUnavailable}
           </span>
         ) : deadline == null ? (
-          <span className="text-slate-500">
+          <span className="text-muted-foreground">
             No deadline configured, so {monthName(period)} raises no calendar entry and no reminder.
           </span>
         ) : deadline.posted ? (
@@ -282,7 +282,7 @@ export default function PartnershipPolicyPanel({
             was due {longDate(deadline.due_date)} and is not posted.
           </span>
         ) : (
-          <span className="text-slate-600">
+          <span className="text-muted-foreground">
             {monthName(period)} is not posted yet. Due {longDate(deadline.due_date)}.
           </span>
         )}
@@ -297,7 +297,7 @@ export default function PartnershipPolicyPanel({
           {dirty && (
             <button
               type="button"
-              className="text-xs text-slate-500 hover:text-slate-800"
+              className="text-xs text-muted-foreground hover:text-foreground"
               onClick={() => {
                 setBasis((row?.partner_remuneration_basis ?? "cash") as "cash" | "revenue");
                 setDay(row?.partnership_posting_day != null ? String(row.partnership_posting_day) : "");

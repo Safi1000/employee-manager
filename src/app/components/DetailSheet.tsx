@@ -31,7 +31,7 @@ export default function DetailSheet({ content, onClose }: { content: DetailConte
   if (!content) return null;
   return (
     <div className="fixed inset-0 z-50">
-      <button type="button" aria-label="Close details" onClick={onClose} className="absolute inset-0 bg-[#191a10]/45 cursor-default" />
+      <button type="button" aria-label="Close details" onClick={onClose} className="absolute inset-0 bg-ink/45 cursor-default" />
       <aside
         aria-label="Details"
         style={{ paddingTop: "calc(var(--safe-top, 0px) + 1.5rem)", paddingBottom: "calc(var(--safe-bottom, 0px) + 2rem)" }}

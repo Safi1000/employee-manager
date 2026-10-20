@@ -247,8 +247,8 @@ export default function PeriodClose() {
           return (
             <div className="flex flex-col gap-3">
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
-                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Months locked</span><span className="font-ledger text-2xl font-semibold leading-none text-[#9ad1a3]">{closedN} / {ordered.length}</span><span className="text-xs text-muted-foreground">since the ledger began</span></div>
-                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Oldest open month</span><span className={`font-display text-2xl font-bold leading-none ${firstOpen ? "text-[#f6d79b]" : "text-[#9ad1a3]"}`}>{firstOpen ? firstOpen.label : "None"}</span><span className="text-xs text-muted-foreground">{firstOpen ? `${firstOpen.total} postings in it` : "every month is locked"}</span></div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Months locked</span><span className="font-ledger text-2xl font-semibold leading-none text-up">{closedN} / {ordered.length}</span><span className="text-xs text-muted-foreground">since the ledger began</span></div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Oldest open month</span><span className={`font-display text-2xl font-bold leading-none ${firstOpen ? "text-heed" : "text-up"}`}>{firstOpen ? firstOpen.label : "None"}</span><span className="text-xs text-muted-foreground">{firstOpen ? `${firstOpen.total} postings in it` : "every month is locked"}</span></div>
                 <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 col-span-2 lg:col-span-1"><span className="lbl">Before you close</span><span className="text-sm leading-snug">Clear the red controls on the Accountant page's Checks, then lock the month here.</span></div>
               </div>
               <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
@@ -258,7 +258,7 @@ export default function PeriodClose() {
                     <button key={r.period_month} type="button" disabled={!canManage}
                       onClick={() => (r.closed_at ? askReopen(r) : askClose(r))}
                       title={`${r.label}: ${r.closed_at ? "locked" : "open"} · ${r.total} postings`}
-                      className={`rounded-[10px] px-2 py-2 flex flex-col gap-1.5 text-left min-h-[64px] disabled:cursor-default ${r.closed_at ? "bg-[#3d4a2b] text-[#f3eee2]" : "bg-brand-500 text-[#241a06] hover:brightness-105"}`}>
+                      className={`rounded-[10px] px-2 py-2 flex flex-col gap-1.5 text-left min-h-[64px] disabled:cursor-default ${r.closed_at ? "bg-settled text-ink-foreground" : "bg-brand-500 text-on-brand hover:brightness-105"}`}>
                       <span className="text-[11px] font-semibold leading-tight">{r.label.replace(/ (\d{4})$/, " ’$1").replace("’20", "’")}</span>
                       <span className="h-1 rounded-full bg-black/15 overflow-hidden"><span className="block h-full bg-current opacity-70" style={{ width: `${(r.total / max) * 100}%` }} /></span>
                       <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{r.closed_at ? "Locked" : "Open"}</span>
@@ -303,22 +303,22 @@ export default function PeriodClose() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Month</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Invoices</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Payments</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Expenses</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Payslips</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Advances</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Cheques</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Action</th>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Month</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Invoices</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Payments</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Expenses</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Payslips</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Advances</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Cheques</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Status</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
@@ -326,10 +326,10 @@ export default function PeriodClose() {
                 {!loading && rows.map((row) => {
                   const closed = !!row.closed_at;
                   return (
-                    <tr key={row.period_month} className={closed ? "bg-success-50/30" : "hover:bg-slate-50"}>
+                    <tr key={row.period_month} className={closed ? "bg-success-50/30" : "hover:bg-muted/50"}>
                       <td className="px-4 py-3 text-sm">
-                        <div className="text-slate-900">{row.label}</div>
-                        <div className="text-xs text-slate-500 font-mono">{row.period_month}</div>
+                        <div className="text-foreground">{row.label}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{row.period_month}</div>
                       </td>
                       <CountCell n={row.invoices} />
                       <CountCell n={row.payments} />
@@ -344,7 +344,7 @@ export default function PeriodClose() {
                               <Lock className="w-3 h-3" />
                               Closed
                             </span>
-                            <div className="text-[10px] text-slate-500 mt-1">
+                            <div className="text-[10px] text-muted-foreground mt-1">
                               {row.closed_by_name && <>by {row.closed_by_name} · </>}
                               {row.closed_at && formatDate(row.closed_at)}
                             </div>
@@ -356,12 +356,12 @@ export default function PeriodClose() {
                           </span>
                         )}
                         {row.note && (
-                          <div className="text-[10px] text-slate-500 mt-1 italic">"{row.note}"</div>
+                          <div className="text-[10px] text-muted-foreground mt-1 italic">"{row.note}"</div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {!canManage ? (
-                          <span className="text-xs text-slate-400">Admin only</span>
+                          <span className="text-xs text-muted-foreground/70">Admin only</span>
                         ) : closed ? (
                           <button
                             onClick={() => askReopen(row)}
@@ -372,7 +372,7 @@ export default function PeriodClose() {
                         ) : (
                           <button
                             onClick={() => askClose(row)}
-                            className="text-xs px-2 py-1 rounded bg-brand-600 text-[#fff] hover:bg-brand-700"
+                            className="text-xs px-2 py-1 rounded bg-brand-600 text-on-fill hover:bg-brand-700"
                           >
                             Close Month
                           </button>
@@ -400,14 +400,14 @@ export default function PeriodClose() {
           <div className="space-y-3">
             {actionKind === "close" ? (
               <>
-                <div className="text-sm text-slate-700">
+                <div className="text-sm text-foreground">
                   Closing this month will block any new or edited transaction
                   dated within <strong>{actionRow.label}</strong>. Existing
                   transactions stay; only future writes are rejected.
                 </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs text-slate-600 space-y-0.5">
+                <div className="bg-muted/50 border border-border rounded-md p-3 text-xs text-muted-foreground space-y-0.5">
                   <div><strong>{actionRow.total}</strong> transactions in this month</div>
-                  <div className="text-[10px] text-slate-500">
+                  <div className="text-[10px] text-muted-foreground">
                     {actionRow.invoices} invoices · {actionRow.payments} payments ·{" "}
                     {actionRow.expenses} expenses · {actionRow.payslips} payslips ·{" "}
                     {actionRow.advances} advances · {actionRow.cheques} cheques
@@ -415,25 +415,25 @@ export default function PeriodClose() {
                 </div>
               </>
             ) : (
-              <div className="text-sm text-slate-700">
+              <div className="text-sm text-foreground">
                 Re-opening allows edits to land in <strong>{actionRow.label}</strong> again.
                 This action is logged. Best practice is to close the month again
                 immediately after the correction.
               </div>
             )}
             <div>
-              <label className="block text-sm text-slate-700 mb-1">
+              <label className="block text-sm text-foreground mb-1">
                 Note {actionKind === "reopen" && <span className="text-danger-600">(recommended)</span>}
               </label>
               <textarea
                 value={actionNote}
                 onChange={(e) => setActionNote(e.target.value)}
                 rows={2}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 placeholder={actionKind === "close" ? "Optional: e.g., reviewed by external auditor" : "Why are you re-opening this month?"}
               />
             </div>
-            <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
+            <div className="flex items-center gap-2 pt-3 border-t border-border">
               <Button
                 variant={actionKind === "close" ? "primary" : "danger"}
                 size="md"
@@ -455,10 +455,10 @@ export default function PeriodClose() {
   );
 }
 
-function Tile({ label, value, colour = "text-slate-900" }: { label: string; value: number; colour?: string }) {
+function Tile({ label, value, colour = "text-foreground" }: { label: string; value: number; colour?: string }) {
   return (
-    <div className="bg-white p-3 rounded-lg border border-slate-200">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="bg-card p-3 rounded-lg border border-border">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`text-2xl ${colour}`}>{value}</div>
     </div>
   );
@@ -466,7 +466,7 @@ function Tile({ label, value, colour = "text-slate-900" }: { label: string; valu
 
 function CountCell({ n }: { n: number }) {
   return (
-    <td className={`px-4 py-3 text-right text-sm ${n === 0 ? "text-slate-300" : "text-slate-900"}`}>
+    <td className={`px-4 py-3 text-right text-sm ${n === 0 ? "text-muted-foreground/50" : "text-foreground"}`}>
       {n === 0 ? "—" : n}
     </td>
   );

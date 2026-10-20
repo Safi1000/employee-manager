@@ -685,7 +685,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
           </div>
         )}
 
-        <div className={embedded ? "p-4 md:p-6 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3" : "flex items-center gap-2 mb-6"}>
+        <div className={embedded ? "p-4 md:p-6 border-b border-border flex flex-wrap items-center justify-between gap-3" : "flex items-center gap-2 mb-6"}>
           <div className="flex items-center gap-2">
             {([
               { key: "cashflow", label: "Cash Flow" },
@@ -698,7 +698,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${
                   activeTab === t.key
                     ? "bg-foreground text-background font-semibold"
-                    : "text-slate-600 hover:bg-slate-100"
+                    : "text-muted-foreground hover:bg-muted"
                 }`}
               >
                 {t.label}
@@ -733,28 +733,28 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 cash-basis note) differ, so toggling never re-arranges the page. */}
             <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h3 className="text-lg text-slate-900 mb-1">Cash Flow Statement</h3>
-                <p className="text-sm text-slate-500">
+                <h3 className="text-lg text-foreground mb-1">Cash Flow Statement</h3>
+                <p className="text-sm text-muted-foreground">
                   For {formatPeriod(selMonth)} ({firstOfMonth(selMonth)} – {lastOfMonth(selMonth)}) · cash basis
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <label className="text-sm text-slate-600">Branch:</label>
+                <label className="text-sm text-muted-foreground">Branch:</label>
                 <ThemedSelect
                   value={branchFilter}
                   onChange={(e) => setBranchFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                 >
                   <option value="all">All Branches</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </ThemedSelect>
-                <label className="text-sm text-slate-600">Month:</label>
+                <label className="text-sm text-muted-foreground">Month:</label>
                 <ThemedSelect
                   value={selMonth}
                   onChange={(e) => setSelMonth(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                 >
                   {statementPeriodOptions.map((p) => (
                     <option key={p} value={p}>{formatPeriod(p)}</option>
@@ -764,33 +764,33 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             </div>
 
             {loading ? (
-              <div className="py-12 text-center text-slate-500">
+              <div className="py-12 text-center text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
               </div>
             ) : (
               <div className="space-y-6">
                 {/* Revenue */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Revenue</h4>
+                  <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Revenue</h4>
                   <div className="space-y-2 mb-3">
                     <div className="flex justify-between items-center pl-4">
-                      <span className="text-sm text-slate-600">Security Services Revenue</span>
+                      <span className="text-sm text-muted-foreground">Security Services Revenue</span>
                       <span className="text-sm text-success-600">{currency(cashPl.securityRevenue)}</span>
                     </div>
                     <div className="flex justify-between items-center pl-4">
-                      <span className="text-sm text-slate-600">Guard Deployment Revenue</span>
+                      <span className="text-sm text-muted-foreground">Guard Deployment Revenue</span>
                       <span className="text-sm text-success-600">{currency(cashPl.guardRevenue)}</span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                    <span className="text-sm text-slate-900">Total Revenue</span>
+                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-border">
+                    <span className="text-sm text-foreground">Total Revenue</span>
                     <span className="text-sm text-success-600">{currency(cashPl.totalRevenue)}</span>
                   </div>
                 </div>
 
                 {/* Cost of Services */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cost of Services</h4>
+                  <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Cost of Services</h4>
                   <div className="space-y-2 mb-3">
                     {[
                       { name: "Guard Payroll & Salaries", amount: cashPl.guardPayroll },
@@ -800,21 +800,21 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                       { name: "Other Cost of Services", amount: cashPl.cosOther },
                     ].map((item) => (
                       <div key={item.name} className="flex justify-between items-center pl-4">
-                        <span className="text-sm text-slate-600">{item.name}</span>
+                        <span className="text-sm text-muted-foreground">{item.name}</span>
                         <span className="text-sm text-danger-600">{currency(item.amount)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                    <span className="text-sm text-slate-900">Total Cost of Services</span>
+                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-border">
+                    <span className="text-sm text-foreground">Total Cost of Services</span>
                     <span className="text-sm text-danger-600">{currency(cashPl.totalCos)}</span>
                   </div>
                 </div>
 
                 {/* Gross Profit */}
-                <div className="pt-4 border-t-2 border-slate-300">
+                <div className="pt-4 border-t-2 border-border">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">{cashPl.grossProfit < 0 ? "Gross Loss" : "Gross Profit"}</span>
+                    <span className="text-base text-foreground">{cashPl.grossProfit < 0 ? "Gross Loss" : "Gross Profit"}</span>
                     <span className={`text-lg ${cashPl.grossProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
                       {currency(Math.abs(cashPl.grossProfit))}
                     </span>
@@ -823,7 +823,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
 
                 {/* Operating Expenses */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Operating Expenses</h4>
+                  <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Operating Expenses</h4>
                   <div className="space-y-2 mb-3">
                     {[
                       { name: "Office Salaries (non-billable staff)", amount: cashPl.officePayroll },
@@ -833,21 +833,21 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                       { name: "Other Operating Expenses", amount: cashPl.opOther },
                     ].map((item) => (
                       <div key={item.name} className="flex justify-between items-center pl-4">
-                        <span className="text-sm text-slate-600">{item.name}</span>
+                        <span className="text-sm text-muted-foreground">{item.name}</span>
                         <span className="text-sm text-danger-600">{currency(item.amount)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                    <span className="text-sm text-slate-900">Total Operating Expenses</span>
+                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-border">
+                    <span className="text-sm text-foreground">Total Operating Expenses</span>
                     <span className="text-sm text-danger-600">{currency(cashPl.totalOpex)}</span>
                   </div>
                 </div>
 
                 {/* Operating Profit */}
-                <div className="pt-4 border-t-2 border-slate-300">
+                <div className="pt-4 border-t-2 border-border">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">{cashPl.operatingProfit < 0 ? "Operating Loss" : "Operating Profit"}</span>
+                    <span className="text-base text-foreground">{cashPl.operatingProfit < 0 ? "Operating Loss" : "Operating Profit"}</span>
                     <span className={`text-lg ${cashPl.operatingProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
                       {currency(Math.abs(cashPl.operatingProfit))}
                     </span>
@@ -857,21 +857,21 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 {/* EBT / Tax */}
                 <div className="pt-2 space-y-2">
                   <div className="flex justify-between items-center pl-4">
-                    <span className="text-sm text-slate-600">Earnings Before Tax (EBT)</span>
-                    <span className={`text-sm ${cashPl.ebt >= 0 ? "text-slate-900" : "text-danger-600"}`}>
+                    <span className="text-sm text-muted-foreground">Earnings Before Tax (EBT)</span>
+                    <span className={`text-sm ${cashPl.ebt >= 0 ? "text-foreground" : "text-danger-600"}`}>
                       {currency(cashPl.ebt)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center pl-4">
-                    <span className="text-sm text-slate-600">Income Tax</span>
+                    <span className="text-sm text-muted-foreground">Income Tax</span>
                     <span className="text-sm text-danger-600">{currency(cashPl.taxes)}</span>
                   </div>
                 </div>
 
                 {/* Net Profit */}
-                <div className="pt-4 border-t-2 border-slate-300">
+                <div className="pt-4 border-t-2 border-border">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">Net Profit</span>
+                    <span className="text-base text-foreground">Net Profit</span>
                     <span className={`text-xl ${cashPl.netProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
                       {currency(cashPl.netProfit)}
                     </span>
@@ -881,18 +881,18 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 {/* Non-P&L cash movements — money that moved but isn't income/expense
                     (employee advances are loans, recovered later from salary). */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Non-Operating Cash Movements</h4>
+                  <h4 className="text-sm text-foreground mb-3 pb-2 border-b border-border">Non-Operating Cash Movements</h4>
                   <div className="flex justify-between items-center pl-4">
-                    <span className="text-sm text-slate-600">Employee Advances Paid</span>
+                    <span className="text-sm text-muted-foreground">Employee Advances Paid</span>
                     <span className="text-sm text-danger-600">({currency(cashPl.advancesPaid)})</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 pl-4 mt-1">A loan, not an expense — it lowers cash now and is recovered from later salary (which then pays out less).</p>
+                  <p className="text-[11px] text-muted-foreground/70 pl-4 mt-1">A loan, not an expense — it lowers cash now and is recovered from later salary (which then pays out less).</p>
                 </div>
 
                 {/* Net Cash Change = operating net + non-operating movements */}
-                <div className="pt-4 border-t-2 border-slate-300">
+                <div className="pt-4 border-t-2 border-border">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">Net Cash Change</span>
+                    <span className="text-base text-foreground">Net Cash Change</span>
                     <span className={`text-xl ${cashPl.netCashChange >= 0 ? "text-success-600" : "text-danger-600"}`}>
                       {currency(cashPl.netCashChange)}
                     </span>
@@ -913,10 +913,10 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       >
         {selectedStatement && (
           <div className="space-y-4">
-            <div className="pb-4 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">{selectedStatement.client.name}</h3>
-              <p className="text-xs text-slate-500 font-mono">{selectedStatement.client.client_code}</p>
-              <p className="text-xs text-slate-500 mt-1">Month: {formatPeriod(statementPeriod)}</p>
+            <div className="pb-4 border-b border-border">
+              <h3 className="text-base text-foreground">{selectedStatement.client.name}</h3>
+              <p className="text-xs text-muted-foreground font-mono">{selectedStatement.client.client_code}</p>
+              <p className="text-xs text-muted-foreground mt-1">Month: {formatPeriod(statementPeriod)}</p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -934,11 +934,11 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
               </div>
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Regional Overhead</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(selectedStatement.regionalOverhead)}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground">{currency(selectedStatement.regionalOverhead)}</p>
               </div>
               <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
                 <p className="lbl mb-1">Head Office</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(selectedStatement.hoShare)}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground">{currency(selectedStatement.hoShare)}</p>
               </div>
               <div
                 className={`p-3 rounded-lg border ${
@@ -956,25 +956,25 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">Payments Received</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm text-foreground mb-3">Payments Received</h4>
               {selectedStatement.payments.length === 0 ? (
-                <p className="text-sm text-slate-500">No payments received from this client in {formatPeriod(statementPeriod)}.</p>
+                <p className="text-sm text-muted-foreground">No payments received from this client in {formatPeriod(statementPeriod)}.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                        <th className="text-left px-3 py-2 text-xs text-slate-500">Mode</th>
-                        <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Date</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground">Mode</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground">Amount</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-border">
                       {selectedStatement.payments.map((p) => (
                         <tr key={p.id}>
-                          <td className="px-3 py-2 text-xs text-slate-600">{formatDate(p.date)}</td>
-                          <td className="px-3 py-2 text-xs text-slate-600">{p.mode ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(p.date)}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{p.mode ?? "—"}</td>
                           <td className="px-3 py-2 text-xs text-right text-success-600">{currency(p.amount)}</td>
                         </tr>
                       ))}
@@ -984,7 +984,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
               )}
             </div>
 
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button variant="primary" size="md" className="flex-1" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Print / Save PDF
@@ -1031,28 +1031,28 @@ function ClientStatementsTab({
     <div className={bare ? "" : "bg-card rounded-2xl border border-border"}>
       <div className={`${bare ? "pb-6" : "p-6"} flex flex-wrap items-end justify-between gap-3`}>
         <div>
-          <h3 className="text-lg text-slate-900 mb-1">Client Statements — Cash Basis</h3>
-          <p className="text-sm text-slate-500">
+          <h3 className="text-lg text-foreground mb-1">Client Statements — Cash Basis</h3>
+          <p className="text-sm text-muted-foreground">
             For {formatPeriod(period)} ({firstOfMonth(period)} – {lastOfMonth(period)})
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="text-sm text-slate-600">Branch:</label>
+          <label className="text-sm text-muted-foreground">Branch:</label>
           <ThemedSelect
             value={branchFilter}
             onChange={(e) => onBranchChange(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             <option value="all">All Branches</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </ThemedSelect>
-          <label className="text-sm text-slate-600">Month:</label>
+          <label className="text-sm text-muted-foreground">Month:</label>
           <ThemedSelect
             value={period}
             onChange={(e) => onPeriodChange(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             {periodOptions.map((p) => (
               <option key={p} value={p}>{formatPeriod(p)}</option>
@@ -1060,13 +1060,13 @@ function ClientStatementsTab({
           </ThemedSelect>
           {exportSlot}
         </div>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-muted-foreground">
           Net Cash = Received − (Payroll + Direct Expenses + Regional Overhead + Head Office).
           Overhead is apportioned pro-rata by cash received.
         </span>
       </div>
 
-      <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-slate-200">
+      <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-border">
         <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
           <p className="lbl mb-1">Cash Received</p>
           <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700 dark:text-brand-500">{currency(totals.received)}</p>
@@ -1081,11 +1081,11 @@ function ClientStatementsTab({
         </div>
         <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
           <p className="lbl mb-1">Regional Overhead</p>
-          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(totals.regional)}</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground">{currency(totals.regional)}</p>
         </div>
         <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
           <p className="lbl mb-1">Head Office</p>
-          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(totals.ho)}</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground">{currency(totals.ho)}</p>
         </div>
         <div
           className={`p-3 rounded-lg border ${
@@ -1102,41 +1102,41 @@ function ClientStatementsTab({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-slate-200">
-              <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Received</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Paid</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Direct Expenses</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Regional Overhead</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Net Cash</th>
-              <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+            <tr className="border-b border-border">
+              <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client</th>
+              <th className="text-right px-6 py-3 text-sm text-muted-foreground">Cash Received</th>
+              <th className="text-right px-6 py-3 text-sm text-muted-foreground">Payroll Paid</th>
+              <th className="text-right px-6 py-3 text-sm text-muted-foreground">Direct Expenses</th>
+              <th className="text-right px-6 py-3 text-sm text-muted-foreground">Regional Overhead</th>
+              <th className="text-right px-6 py-3 text-sm text-muted-foreground">Net Cash</th>
+              <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-200">
+          <tbody className="divide-y divide-border">
             {loading && (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                   No clients yet.
                 </td>
               </tr>
             )}
             {!loading && rows.map((r) => (
-              <tr key={r.client.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4 text-sm text-slate-900">
+              <tr key={r.client.id} className="hover:bg-muted/50 transition-colors">
+                <td className="px-6 py-4 text-sm text-foreground">
                   <div>{r.client.name}</div>
-                  <div className="text-xs text-slate-500 font-mono">{r.client.client_code}</div>
+                  <div className="text-xs text-muted-foreground font-mono">{r.client.client_code}</div>
                 </td>
                 <td className="px-6 py-4 text-sm text-brand-600 text-right">{currency(r.received)}</td>
                 <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.payrollPaid)}</td>
                 <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.expensesPaid)}</td>
-                <td className="px-6 py-4 text-sm text-slate-500 text-right">{currency(r.regionalOverhead)}</td>
+                <td className="px-6 py-4 text-sm text-muted-foreground text-right">{currency(r.regionalOverhead)}</td>
                 <td className="px-6 py-4 text-sm text-right">
                   <span className={r.netCash >= 0 ? "text-success-600" : "text-danger-600"}>
                     {currency(r.netCash)}
@@ -1153,15 +1153,15 @@ function ClientStatementsTab({
               </tr>
             ))}
             {!loading && hoUnallocated && (
-              <tr className="bg-slate-50">
-                <td className="px-6 py-4 text-sm text-slate-900">
+              <tr className="bg-muted/50">
+                <td className="px-6 py-4 text-sm text-foreground">
                   <div>Head office — unallocated</div>
-                  <div className="text-xs text-slate-500">Paid by head office, not apportioned to clients</div>
+                  <div className="text-xs text-muted-foreground">Paid by head office, not apportioned to clients</div>
                 </td>
-                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
-                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
-                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
-                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-muted-foreground/70 text-right">—</td>
                 <td className="px-6 py-4 text-sm text-right">
                   <span className={hoUnallocated.net >= 0 ? "text-success-600" : "text-danger-600"}>
                     {currency(hoUnallocated.net)}
@@ -1195,19 +1195,19 @@ function SummaryTile({
   onClick?: () => void;
 }) {
   const accentBg =
-    accent === "emerald" ? "bg-success-50" : accent === "rose" ? "bg-danger-50" : "bg-slate-100";
+    accent === "emerald" ? "bg-success-50" : accent === "rose" ? "bg-danger-50" : "bg-muted";
   const valueText =
     accent === "emerald"
       ? "text-success-700"
       : accent === "rose"
       ? "text-danger-700"
-      : "text-slate-900";
+      : "text-foreground";
   const borderL =
     accent === "emerald"
       ? "border-l-success-500"
       : accent === "rose"
       ? "border-l-danger-500"
-      : "border-l-slate-400";
+      : "border-l-muted-foreground/50";
   const clickable = !!onClick;
   return (
     <button
@@ -1222,7 +1222,7 @@ function SummaryTile({
         <div>
           <div className="lbl">{label}</div>
           <div className={`text-lg mt-1 ${valueText}`}>{value}</div>
-          {subtitle && <div className="text-xs text-slate-400 mt-1">{subtitle}</div>}
+          {subtitle && <div className="text-xs text-muted-foreground/70 mt-1">{subtitle}</div>}
           {clickable && (
             <div className="text-[11px] text-brand-600 mt-1">{active ? "Hide breakdown" : "View breakdown"}</div>
           )}

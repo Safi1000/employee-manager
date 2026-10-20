@@ -25,9 +25,9 @@ const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
 // as a distinct status without the heavy full-tint look. Tones don't repeat:
 // To Do = info (blue), In Progress = warning (amber), Done = success (green).
 const COLUMN_TONE: Record<TaskStatus, string> = {
-  todo: "bg-white border border-slate-200 border-t-4 border-t-info-500",
-  in_progress: "bg-white border border-slate-200 border-t-4 border-t-warning-500",
-  done: "bg-white border border-slate-200 border-t-4 border-t-success-500",
+  todo: "bg-card border border-border border-t-4 border-t-info-500",
+  in_progress: "bg-card border border-border border-t-4 border-t-warning-500",
+  done: "bg-card border border-border border-t-4 border-t-success-500",
 };
 
 const COLUMN_LABEL_TONE: Record<TaskStatus, string> = {
@@ -321,9 +321,9 @@ export default function Tasks() {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
               {[
                 { label: "To do", v: columns.todo.length, sub: "waiting to start", tone: "text-foreground" },
-                { label: "In progress", v: columns.in_progress.length, sub: "being worked", tone: "text-[#f6d79b]" },
-                { label: "Late", v: late, sub: dueToday ? `${dueToday} more due today` : "past their due date", tone: late ? "text-[#f0a99a]" : "text-[#9ad1a3]" },
-                { label: "Done this week", v: doneWeek, sub: `${columns.done.length} done in all`, tone: "text-[#9ad1a3]" },
+                { label: "In progress", v: columns.in_progress.length, sub: "being worked", tone: "text-heed" },
+                { label: "Late", v: late, sub: dueToday ? `${dueToday} more due today` : "past their due date", tone: late ? "text-down" : "text-up" },
+                { label: "Done this week", v: doneWeek, sub: `${columns.done.length} done in all`, tone: "text-up" },
               ].map((t) => (
                 <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
                   <span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span>
@@ -332,7 +332,7 @@ export default function Tasks() {
               <div className="col-span-2 lg:col-span-1 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2 justify-center">
                 <span className="flex justify-between"><span className="lbl">Through the board</span><span className="font-ledger text-sm font-semibold">{Math.round(pct * 100)}%</span></span>
                 <span className="h-2 rounded-full bg-muted overflow-hidden flex">
-                  <span className="h-full bg-[#9ad1a3]" style={{ width: `${pct * 100}%` }} />
+                  <span className="h-full bg-up" style={{ width: `${pct * 100}%` }} />
                   <span className="h-full bg-brand-500" style={{ width: `${filteredTasks.length ? (columns.in_progress.length / filteredTasks.length) * 100 : 0}%` }} />
                 </span>
               </div>
@@ -354,10 +354,10 @@ export default function Tasks() {
 
         {/* Alert address — every user, not just admins. This is the one control
             on the board that is about the viewer rather than about the work. */}
-        <div className="mb-6 border border-slate-200 rounded-lg bg-white p-3">
+        <div className="mb-6 border border-border rounded-lg bg-card p-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-slate-700 flex-shrink-0">
-              <Mail className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+            <div className="flex items-center gap-2 text-sm text-foreground flex-shrink-0">
+              <Mail className="w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
               Email me about my tasks
             </div>
             <input
@@ -366,7 +366,7 @@ export default function Tasks() {
               onChange={(e) => setAlertEmail(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveAlertEmail(); } }}
               placeholder="you@example.com"
-              className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+              className="flex-1 min-w-0 px-3 py-1.5 border border-border rounded-md text-sm"
             />
             <Button
               variant="secondary"
@@ -383,7 +383,7 @@ export default function Tasks() {
               )}
             </Button>
           </div>
-          <p className="text-[11px] text-slate-500 mt-2">
+          <p className="text-[11px] text-muted-foreground mt-2">
             You&apos;ll get a message when a task is assigned to you, and reminders as its due
             date approaches. Leave it empty to receive nothing. This is separate from the
             address you sign in with.
@@ -392,11 +392,11 @@ export default function Tasks() {
 
         {isAdmin && (
           <div className="flex items-center gap-3 mb-6">
-            <label className="text-xs text-slate-500">Filter by assignee:</label>
+            <label className="text-xs text-muted-foreground">Filter by assignee:</label>
             <ThemedSelect
               value={assigneeFilter}
               onChange={(e) => setAssigneeFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+              className="px-3 py-1.5 border border-border rounded-md text-sm"
             >
               <option value="all">All assignees</option>
               <option value="unassigned">Unassigned</option>
@@ -410,7 +410,7 @@ export default function Tasks() {
         )}
 
         {loading ? (
-          <div className="bg-card border border-border rounded-2xl p-10 text-center text-slate-500">
+          <div className="bg-card border border-border rounded-2xl p-10 text-center text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
           </div>
         ) : (
@@ -423,12 +423,12 @@ export default function Tasks() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h3 className={`text-sm uppercase tracking-wide ${COLUMN_LABEL_TONE[status]}`}>
                     {TASK_STATUS_LABEL[status]}{" "}
-                    <span className="text-xs text-slate-500 normal-case">({columns[status].length})</span>
+                    <span className="text-xs text-muted-foreground normal-case">({columns[status].length})</span>
                   </h3>
                 </div>
                 <div className="space-y-2">
                   {columns[status].length === 0 && (
-                    <div className="text-xs text-slate-400 text-center py-6 border border-dashed border-slate-200 rounded">
+                    <div className="text-xs text-muted-foreground/70 text-center py-6 border border-dashed border-border rounded">
                       No tasks here.
                     </div>
                   )}
@@ -440,15 +440,15 @@ export default function Tasks() {
                     return (
                       <div
                         key={t.id}
-                        className="bg-white rounded-md border border-slate-200 p-3 shadow-sm hover:shadow transition-shadow"
+                        className="bg-card rounded-md border border-border p-3 shadow-sm hover:shadow transition-shadow"
                       >
                         <div className="flex items-start justify-between gap-2 mb-1">
-                          <p className="text-sm text-slate-900 flex-1">{t.title}</p>
+                          <p className="text-sm text-foreground flex-1">{t.title}</p>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
                               type="button"
                               onClick={() => openEdit(t)}
-                              className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded"
+                              className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded"
                               title="Edit"
                             >
                               <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -466,7 +466,7 @@ export default function Tasks() {
                           </div>
                         </div>
                         {t.description && (
-                          <p className="text-xs text-slate-600 line-clamp-3 mb-2">{t.description}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-3 mb-2">{t.description}</p>
                         )}
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded border ${TASK_PRIORITY_BADGE[t.priority ?? "medium"]}`}>
@@ -478,7 +478,7 @@ export default function Tasks() {
                             </span>
                           )}
                           {assignee && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-foreground">
                               <UserIcon className="w-3 h-3" strokeWidth={1.5} />
                               {assignee.full_name ?? assignee.email}
                             </span>
@@ -490,7 +490,7 @@ export default function Tasks() {
                                   ? "bg-danger-50 text-danger-700"
                                   : soon
                                     ? "bg-warning-50 text-warning-700"
-                                    : "bg-slate-100 text-slate-700"
+                                    : "bg-muted text-foreground"
                               }`}
                             >
                               <CalendarIcon className="w-3 h-3" strokeWidth={1.5} />
@@ -499,13 +499,13 @@ export default function Tasks() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-2 pt-2 border-t border-slate-100 flex gap-1">
+                        <div className="mt-2 pt-2 border-t border-border flex gap-1">
                           {STATUSES.filter((s) => s !== t.status).map((s) => (
                             <button
                               key={s}
                               type="button"
                               onClick={() => moveTask(t, s)}
-                              className="text-[10px] px-2 py-0.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50"
+                              className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted/50"
                             >
                               → {TASK_STATUS_LABEL[s]}
                             </button>
@@ -680,43 +680,43 @@ function TaskFields({
   return (
     <>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Title</label>
+        <label className="block text-sm text-foreground mb-1">Title</label>
         <input
           type="text"
           required
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+          className="w-full px-3 py-2 border border-border rounded-md text-sm"
           placeholder="e.g. Reconcile Bank A for March"
         />
       </div>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Description / notes</label>
+        <label className="block text-sm text-foreground mb-1">Description / notes</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
-          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+          className="w-full px-3 py-2 border border-border rounded-md text-sm"
           placeholder="Details, links, ongoing notes…"
         />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Status</label>
+          <label className="block text-sm text-foreground mb-1">Status</label>
           <ThemedSelect
             value={status}
             onChange={(e) => setStatus(e.target.value as TaskStatus)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
           >
             <option value="todo">To Do</option>
             <option value="in_progress">In Progress</option>
             <option value="done">Done</option>
           </ThemedSelect>
-          <label className="block text-sm text-slate-700 mb-1 mt-3">Priority</label>
+          <label className="block text-sm text-foreground mb-1 mt-3">Priority</label>
           <ThemedSelect
             value={priority}
             onChange={(e) => setPriority(e.target.value as TaskPriority)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
           >
             {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
               <option key={p} value={p}>{TASK_PRIORITY_LABEL[p]}</option>
@@ -724,24 +724,24 @@ function TaskFields({
           </ThemedSelect>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Due date</label>
+          <label className="block text-sm text-foreground mb-1">Due date</label>
           <input
             type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
             disabled={!isAdmin}
             min={todayIso()}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50"
           />
         </div>
       </div>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Assignee</label>
+        <label className="block text-sm text-foreground mb-1">Assignee</label>
         <ThemedSelect
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           disabled={!isAdmin}
-          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+          className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50"
         >
           <option value="">Unassigned</option>
           {users.map((u) => (
@@ -751,7 +751,7 @@ function TaskFields({
           ))}
         </ThemedSelect>
         {!isAdmin && (
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-[11px] text-muted-foreground mt-1">
             Only admins can reassign tasks.
           </p>
         )}
@@ -782,32 +782,32 @@ function TaskReadOnlyFields({
 }) {
   return (
     <>
-      <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+      <div className="border border-border rounded-md divide-y divide-border">
         <div className="px-3 py-2">
-          <p className="text-xs text-slate-500">Title</p>
-          <p className="text-sm text-slate-900">{task.title}</p>
+          <p className="text-xs text-muted-foreground">Title</p>
+          <p className="text-sm text-foreground">{task.title}</p>
         </div>
         {task.description && (
           <div className="px-3 py-2">
-            <p className="text-xs text-slate-500">Description</p>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap">{task.description}</p>
+            <p className="text-xs text-muted-foreground">Description</p>
+            <p className="text-sm text-foreground whitespace-pre-wrap">{task.description}</p>
           </div>
         )}
         <div className="px-3 py-2 grid grid-cols-2 gap-3">
           <div>
-            <p className="text-xs text-slate-500">Priority</p>
-            <p className="text-sm text-slate-700">{TASK_PRIORITY_LABEL[task.priority ?? "medium"]}</p>
+            <p className="text-xs text-muted-foreground">Priority</p>
+            <p className="text-sm text-foreground">{TASK_PRIORITY_LABEL[task.priority ?? "medium"]}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-500">Due date</p>
-            <p className="text-sm text-slate-700">
+            <p className="text-xs text-muted-foreground">Due date</p>
+            <p className="text-sm text-foreground">
               {task.due_date ? formatDate(task.due_date) : "None"}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
         <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
         <span>
           Only an admin can change the title, description, priority, due date or assignee.
@@ -816,11 +816,11 @@ function TaskReadOnlyFields({
       </div>
 
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Status</label>
+        <label className="block text-sm text-foreground mb-1">Status</label>
         <ThemedSelect
           value={status}
           onChange={(e) => setStatus(e.target.value as TaskStatus)}
-          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+          className="w-full px-3 py-2 border border-border rounded-md text-sm"
         >
           <option value="todo">To Do</option>
           <option value="in_progress">In Progress</option>

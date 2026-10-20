@@ -45,7 +45,7 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-[#191a10]/55 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed inset-0 bg-ink/55 backdrop-blur-[2px]" onClick={onClose} />
       {/* Three regions in a bounded flex column: header (fixed), body (the only
           scroller), footer (fixed). min-h-0 lets the body actually shrink and
           scroll instead of pushing the footer off-screen. */}
@@ -75,7 +75,7 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
               {onDismissError && (
                 <button
                   onClick={onDismissError}
-                  className="text-danger-400 hover:text-danger-600 transition-colors flex-shrink-0"
+                  className="text-danger-500 hover:text-danger-600 transition-colors flex-shrink-0"
                   aria-label="Dismiss error"
                 >
                   <X className="w-4 h-4" strokeWidth={2} />

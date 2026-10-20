@@ -211,7 +211,7 @@ export default function RegionalPerformance() {
   };
 
   if (!companyId) {
-    return <p className="text-sm text-slate-600 p-6">Select a company to see regional performance.</p>;
+    return <p className="text-sm text-muted-foreground p-6">Select a company to see regional performance.</p>;
   }
 
   return (
@@ -220,22 +220,22 @@ export default function RegionalPerformance() {
           never move a control, and it must never mean re-finding your place. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-lg text-slate-900">Regional Performance</h3>
-          <p className="text-sm text-slate-500">
+          <h3 className="text-lg text-foreground">Regional Performance</h3>
+          <p className="text-sm text-muted-foreground">
             {basis === "cash" ? "Cash basis" : "Revenue basis"} · {period}
             {" · "}
-            <span className="text-slate-400">
+            <span className="text-muted-foreground/70">
               cost is apportioned by invoiced revenue on both bases
             </span>
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-md border border-slate-200 overflow-hidden">
+          <div className="inline-flex rounded-md border border-border overflow-hidden">
             {(["revenue", "cash"] as const).map((b) => (
               <button
                 key={b}
                 onClick={() => setBasis(b)}
-                className={`px-3 py-2 text-sm ${basis === b ? "bg-foreground text-background font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
+                className={`px-3 py-2 text-sm ${basis === b ? "bg-foreground text-background font-semibold" : "text-muted-foreground hover:bg-muted/50"}`}
               >
                 {b === "revenue" ? "Revenue" : "Cash"}
               </button>
@@ -245,7 +245,7 @@ export default function RegionalPerformance() {
             type="month"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           />
         </div>
       </div>
@@ -253,35 +253,35 @@ export default function RegionalPerformance() {
       {error && <p className="text-sm text-danger-600 whitespace-pre-line">{error}</p>}
 
       {loading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground/70" /></div>
       ) : (
         <>
           {/* THE POOL, AND ITS SHARES, SO THEY VISIBLY SUM TO IT. */}
-          <div className="border border-slate-200 rounded-lg p-5">
+          <div className="border border-border rounded-lg p-5">
             <p className="lbl">Head office pool</p>
             <button
               type="button"
               onClick={() => setPoolOpen((v) => !v)}
-              className="text-2xl text-slate-900 tabular-nums inline-flex items-center gap-1 hover:text-brand-700"
+              className="text-2xl text-foreground tabular-nums inline-flex items-center gap-1 hover:text-brand-700"
               title="What the pool is made of"
             >
               {money(pool)}
-              {poolOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+              {poolOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground/70" /> : <ChevronRight className="w-4 h-4 text-muted-foreground/70" />}
             </button>
             {/* THE POOL DECOMPOSED, the same way a region's own cost is. A pool
                 nobody can break down is a number people argue about. */}
             {poolOpen && (
-              <div className="mt-2 mb-3 pl-3 border-l-2 border-slate-200 space-y-1">
+              <div className="mt-2 mb-3 pl-3 border-l-2 border-border space-y-1">
                 {Array.from(categories.get("__HO__") ?? new Map())
                   .sort((a, b) => b[1] - a[1])
                   .map(([name, amt]) => (
                     <div key={name} className="flex justify-between text-xs">
-                      <span className="text-slate-500">{name}</span>
-                      <span className="tabular-nums text-slate-600">{money(amt)}</span>
+                      <span className="text-muted-foreground">{name}</span>
+                      <span className="tabular-nums text-muted-foreground">{money(amt)}</span>
                     </div>
                   ))}
                 {(categories.get("__HO__")?.size ?? 0) === 0 && (
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-muted-foreground/70">
                     No head office expenses on this basis for the month.
                   </p>
                 )}
@@ -290,16 +290,16 @@ export default function RegionalPerformance() {
             <div className="mt-4 space-y-1">
               {regions.map((r) => (
                 <div key={r.branch_id} className="flex justify-between text-sm">
-                  <span className="text-slate-600">
+                  <span className="text-muted-foreground">
                     {r.region_name}
-                    <span className="ml-2 text-[11px] text-slate-400">{driverLabel(r)}</span>
+                    <span className="ml-2 text-[11px] text-muted-foreground/70">{driverLabel(r)}</span>
                   </span>
-                  <span className="tabular-nums text-slate-800">{money(r.ho_allocated)}</span>
+                  <span className="tabular-nums text-foreground">{money(r.ho_allocated)}</span>
                 </div>
               ))}
-              <div className="flex justify-between text-sm pt-2 mt-2 border-t border-slate-200">
-                <span className="text-slate-900">Allocated</span>
-                <span className="tabular-nums text-slate-900 font-medium">{money(totals.ho)}</span>
+              <div className="flex justify-between text-sm pt-2 mt-2 border-t border-border">
+                <span className="text-foreground">Allocated</span>
+                <span className="tabular-nums text-foreground font-medium">{money(totals.ho)}</span>
               </div>
               {Math.abs(totals.ho - pool) >= 1 && (
                 <p className="text-xs text-warning-700 pt-2">
@@ -312,21 +312,21 @@ export default function RegionalPerformance() {
           </div>
 
           {/* NAMED COLUMNS THAT ADD UP. */}
-          <div className="border border-slate-200 rounded-lg overflow-x-auto">
+          <div className="border border-border rounded-lg overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-white">
-                  <th className="text-left px-4 py-2 text-[11px] uppercase text-slate-400">Region</th>
-                  <th className="text-right px-4 py-2 text-[11px] uppercase text-slate-400">Revenue</th>
-                  <th className="text-right px-4 py-2 text-[11px] uppercase text-slate-400">Own cost</th>
-                  <th className="text-right px-4 py-2 text-[11px] uppercase text-slate-400">HO allocated</th>
-                  <th className="text-right px-4 py-2 text-[11px] uppercase text-slate-400">Total cost</th>
-                  <th className="text-right px-4 py-2 text-[11px] uppercase text-slate-400">Net</th>
+                <tr className="border-b border-border bg-card">
+                  <th className="text-left px-4 py-2 text-[11px] uppercase text-muted-foreground/70">Region</th>
+                  <th className="text-right px-4 py-2 text-[11px] uppercase text-muted-foreground/70">Revenue</th>
+                  <th className="text-right px-4 py-2 text-[11px] uppercase text-muted-foreground/70">Own cost</th>
+                  <th className="text-right px-4 py-2 text-[11px] uppercase text-muted-foreground/70">HO allocated</th>
+                  <th className="text-right px-4 py-2 text-[11px] uppercase text-muted-foreground/70">Total cost</th>
+                  <th className="text-right px-4 py-2 text-[11px] uppercase text-muted-foreground/70">Net</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {regions.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">No regions.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">No regions.</td></tr>
                 )}
                 {regions.map((r) => {
                   const total = r.own_cost + r.ho_allocated;
@@ -335,13 +335,13 @@ export default function RegionalPerformance() {
                   const isOpen = open.has(r.branch_id);
                   return (
                     <>
-                      <tr key={r.branch_id} className="hover:bg-slate-50 cursor-pointer" onClick={() => toggle(r.branch_id)}>
-                        <td className="px-4 py-2 text-sm text-slate-900">
+                      <tr key={r.branch_id} className="hover:bg-muted/50 cursor-pointer" onClick={() => toggle(r.branch_id)}>
+                        <td className="px-4 py-2 text-sm text-foreground">
                           <span className="inline-flex items-center gap-1">
-                            {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground/70" /> : <ChevronRight className="w-4 h-4 text-muted-foreground/70" />}
                             {r.region_name}
                             {r.excluded && (
-                              <span className="ml-1 text-[10px] uppercase px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+                              <span className="ml-1 text-[10px] uppercase px-1.5 py-0.5 rounded bg-warning-50 text-warning-700">
                                 HO excluded
                               </span>
                             )}
@@ -351,10 +351,10 @@ export default function RegionalPerformance() {
                         <td className="px-4 py-2 text-right text-sm tabular-nums">{money(r.own_cost)}</td>
                         <td className="px-4 py-2 text-right text-sm tabular-nums">
                           {money(r.ho_allocated)}
-                          <span className="block text-[10px] text-slate-400">{driverLabel(r)}</span>
+                          <span className="block text-[10px] text-muted-foreground/70">{driverLabel(r)}</span>
                         </td>
                         <td className="px-4 py-2 text-right text-sm tabular-nums">{money(total)}</td>
-                        <td className={`px-4 py-2 text-right text-sm tabular-nums font-medium ${net < 0 ? "text-danger-700" : "text-slate-900"}`}>
+                        <td className={`px-4 py-2 text-right text-sm tabular-nums font-medium ${net < 0 ? "text-danger-700" : "text-foreground"}`}>
                           {money(net)}
                         </td>
                       </tr>
@@ -362,9 +362,9 @@ export default function RegionalPerformance() {
                           separate Regional Operating Expenses tab used to show,
                           now under the same basis toggle as everything else. */}
                       {isOpen && (categories.get(r.branch_id)?.size ?? 0) > 0 && (
-                        <tr key={`${r.branch_id}-cats`} className="bg-slate-50">
+                        <tr key={`${r.branch_id}-cats`} className="bg-muted/50">
                           <td colSpan={6} className="px-10 py-2">
-                            <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-1">
                               Own cost by category
                             </p>
                             <div className="grid sm:grid-cols-2 gap-x-8 gap-y-0.5">
@@ -372,8 +372,8 @@ export default function RegionalPerformance() {
                                 .sort((a, b) => b[1] - a[1])
                                 .map(([name, amt]) => (
                                   <div key={name} className="flex justify-between text-xs">
-                                    <span className="text-slate-500">{name}</span>
-                                    <span className="tabular-nums text-slate-600">{money(amt)}</span>
+                                    <span className="text-muted-foreground">{name}</span>
+                                    <span className="tabular-nums text-muted-foreground">{money(amt)}</span>
                                   </div>
                                 ))}
                             </div>
@@ -381,21 +381,21 @@ export default function RegionalPerformance() {
                         </tr>
                       )}
                       {isOpen && kids.length === 0 && (
-                        <tr key={`${r.branch_id}-none`} className="bg-slate-50">
-                          <td colSpan={6} className="px-10 py-2 text-xs text-slate-500">No clients in this region for the period.</td>
+                        <tr key={`${r.branch_id}-none`} className="bg-muted/50">
+                          <td colSpan={6} className="px-10 py-2 text-xs text-muted-foreground">No clients in this region for the period.</td>
                         </tr>
                       )}
                       {isOpen && kids.map((c) => {
                         const own = c.direct_payroll + c.direct_expenses + c.regional_overhead;
                         const tot = own + c.ho_share;
                         return (
-                          <tr key={`${r.branch_id}-${c.client_id}`} className="bg-slate-50">
-                            <td className="px-10 py-2 text-sm text-slate-700">{c.client_name}</td>
-                            <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-700">{money(c.revenue)}</td>
-                            <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-700">{money(own)}</td>
-                            <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-700">{money(c.ho_share)}</td>
-                            <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-700">{money(tot)}</td>
-                            <td className={`px-4 py-2 text-right text-sm tabular-nums ${c.net < 0 ? "text-danger-700" : "text-slate-800"}`}>
+                          <tr key={`${r.branch_id}-${c.client_id}`} className="bg-muted/50">
+                            <td className="px-10 py-2 text-sm text-foreground">{c.client_name}</td>
+                            <td className="px-4 py-2 text-right text-sm tabular-nums text-foreground">{money(c.revenue)}</td>
+                            <td className="px-4 py-2 text-right text-sm tabular-nums text-foreground">{money(own)}</td>
+                            <td className="px-4 py-2 text-right text-sm tabular-nums text-foreground">{money(c.ho_share)}</td>
+                            <td className="px-4 py-2 text-right text-sm tabular-nums text-foreground">{money(tot)}</td>
+                            <td className={`px-4 py-2 text-right text-sm tabular-nums ${c.net < 0 ? "text-danger-700" : "text-foreground"}`}>
                               {money(c.net)}
                             </td>
                           </tr>
@@ -410,13 +410,13 @@ export default function RegionalPerformance() {
                   {/* Folded from the rows above, per CLAUDE.md's stated
                       exception: a footer that is fetched separately can
                       contradict its own table. */}
-                  <tr className="border-t-2 border-slate-300 bg-slate-50">
-                    <td className="px-4 py-2 text-sm text-slate-900">Total</td>
+                  <tr className="border-t-2 border-border bg-muted/50">
+                    <td className="px-4 py-2 text-sm text-foreground">Total</td>
                     <td className="px-4 py-2 text-right text-sm tabular-nums font-medium">{money(totals.revenue)}</td>
                     <td className="px-4 py-2 text-right text-sm tabular-nums font-medium">{money(totals.own)}</td>
                     <td className="px-4 py-2 text-right text-sm tabular-nums font-medium">{money(totals.ho)}</td>
                     <td className="px-4 py-2 text-right text-sm tabular-nums font-medium">{money(totals.total)}</td>
-                    <td className={`px-4 py-2 text-right text-sm tabular-nums font-semibold ${totals.net < 0 ? "text-danger-700" : "text-slate-900"}`}>
+                    <td className={`px-4 py-2 text-right text-sm tabular-nums font-semibold ${totals.net < 0 ? "text-danger-700" : "text-foreground"}`}>
                       {money(totals.net)}
                     </td>
                   </tr>

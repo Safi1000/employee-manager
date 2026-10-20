@@ -12,7 +12,7 @@ import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 // ledger. This is what lifts GnG out of the red danger band.
 
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 export default function OpeningBalances() {
@@ -283,9 +283,9 @@ export default function OpeningBalances() {
     return (
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)" />
-        <div className="border border-slate-200 rounded-md p-6 max-w-xl">
-          <p className="text-sm text-slate-900 mb-2">No company selected.</p>
-          <p className="text-sm text-slate-600">
+        <div className="border border-border rounded-md p-6 max-w-xl">
+          <p className="text-sm text-foreground mb-2">No company selected.</p>
+          <p className="text-sm text-muted-foreground">
             Opening balances are entered against one company&rsquo;s chart of accounts. Choose a
             company with the &ldquo;Viewing as&rdquo; selector at the top of the page, then come back.
           </p>
@@ -304,35 +304,35 @@ export default function OpeningBalances() {
       <div className="grid md:grid-cols-3 gap-6">
         {/* Batch list + create */}
         <div className="space-y-4">
-          <section className="border border-slate-200 rounded-md p-3 space-y-2">
-            <h3 className="text-sm text-slate-900">New batch</h3>
+          <section className="border border-border rounded-md p-3 space-y-2">
+            <h3 className="text-sm text-foreground">New batch</h3>
             <input type="date" className={FIELD + " w-full"} value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             <input className={FIELD + " w-full"} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description" />
             <Button variant="primary" size="sm" disabled={busy} onClick={createBatch}>Create batch</Button>
           </section>
-          <section className="border border-slate-200 rounded-md divide-y divide-slate-100">
+          <section className="border border-border rounded-md divide-y divide-border">
             {batches.map((b) => (
               <button key={b.id} onClick={() => setSelected(b.id)}
                 ref={b.id === focusBatch ? focusBatchRow : undefined}
                 className={`w-full text-left px-3 py-2 text-sm ${
                   b.id === focusBatch
                     ? FOCUS_ROW_CLASS
-                    : selected === b.id ? "bg-brand-50" : "hover:bg-slate-50"
+                    : selected === b.id ? "bg-brand-50" : "hover:bg-muted/50"
                 }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-700">{b.as_of_date}</span>
-                  <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${String(b.status) === "draft" ? "bg-slate-100 text-slate-500" : "bg-success-50 text-success-700"}`}>{String(b.status)}</span>
+                  <span className="text-foreground">{b.as_of_date}</span>
+                  <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${String(b.status) === "draft" ? "bg-muted text-muted-foreground" : "bg-success-50 text-success-700"}`}>{String(b.status)}</span>
                 </div>
-                <div className="text-xs text-slate-500 truncate">{b.description}</div>
+                <div className="text-xs text-muted-foreground truncate">{b.description}</div>
               </button>
             ))}
-            {batches.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No batches yet.</p>}
+            {batches.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No batches yet.</p>}
           </section>
         </div>
 
         {/* Selected batch lines */}
         <div className="md:col-span-2 space-y-4">
-          {!selected && <p className="text-sm text-slate-500">Select or create a batch.</p>}
+          {!selected && <p className="text-sm text-muted-foreground">Select or create a batch.</p>}
           {selected && (
             <>
               {totals && (
@@ -343,27 +343,27 @@ export default function OpeningBalances() {
               )}
 
               {!posted && (
-                <section className="border border-slate-200 rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                <section className="border border-border rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                   <div className="col-span-2">
-                    <label className="text-xs text-slate-500 block mb-1">Account</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Account</label>
                     <ThemedSelect className={FIELD + " w-full"} value={accId} onChange={(e) => setAccId(e.target.value)}>
                       <option value="">— account —</option>
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.account_code} {a.account_name}</option>)}
                     </ThemedSelect>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 block mb-1">Region</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Region</label>
                     <ThemedSelect className={FIELD + " w-full"} value={brId} onChange={(e) => setBrId(e.target.value)}>
                       <option value="">—</option>
                       {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </ThemedSelect>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 block mb-1">Debit</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Debit</label>
                     <input className={FIELD + " w-full"} value={debit} onChange={(e) => setDebit(e.target.value)} placeholder="0" />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 block mb-1">Credit</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Credit</label>
                     <input className={FIELD + " w-full"} value={credit} onChange={(e) => setCredit(e.target.value)} placeholder="0" />
                   </div>
                   <Button variant="secondary" size="sm" disabled={busy || !accId} onClick={addLine}>Add line</Button>
@@ -375,7 +375,7 @@ export default function OpeningBalances() {
                   <Button variant="secondary" size="sm" disabled={busy || lines.length > 0} onClick={prefillFromOperational}>
                     Prefill from recorded balances
                   </Button>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-muted-foreground">
                     {lines.length > 0
                       ? "Prefill is available on an empty batch — remove the lines first, or add them by hand."
                       : "Reads bank, cash and client opening balances already recorded, one line each, with its source. Editable before posting."}
@@ -383,9 +383,9 @@ export default function OpeningBalances() {
                 </div>
               )}
 
-              <div className="overflow-x-auto border border-slate-200 rounded-md">
+              <div className="overflow-x-auto border border-border rounded-md">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                  <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
                       <th className="text-left px-3 py-2">Account</th>
                       <th className="text-left px-3 py-2">Region</th>
@@ -394,17 +394,17 @@ export default function OpeningBalances() {
                       {!posted && <th className="px-3 py-2"></th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border">
                     {lines.map((l) => (
                       <tr key={l.id}>
-                        <td className="px-3 py-1.5 text-slate-700">
+                        <td className="px-3 py-1.5 text-foreground">
                           {acctName.get(l.account_id) ?? "—"}
                           {/* Where the figure came from, per line — so a
                               prefilled batch can be checked against its source
                               without leaving the screen. */}
-                          {l.notes && <div className="text-[11px] text-slate-400">{l.notes}</div>}
+                          {l.notes && <div className="text-[11px] text-muted-foreground/70">{l.notes}</div>}
                         </td>
-                        <td className="px-3 py-1.5 text-slate-500">{l.branch_id ? brName.get(l.branch_id) : "—"}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{l.branch_id ? brName.get(l.branch_id) : "—"}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{Number(l.debit) ? money(l.debit) : ""}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{Number(l.credit) ? money(l.credit) : ""}</td>
                         {!posted && (
@@ -415,7 +415,7 @@ export default function OpeningBalances() {
                         )}
                       </tr>
                     ))}
-                    {lines.length === 0 && <tr><td colSpan={posted ? 4 : 5} className="px-3 py-3 text-slate-500">No lines.</td></tr>}
+                    {lines.length === 0 && <tr><td colSpan={posted ? 4 : 5} className="px-3 py-3 text-muted-foreground">No lines.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -436,11 +436,11 @@ export default function OpeningBalances() {
                     onClick={postBatch}>
                     Post opening balances
                   </Button>
-                  {!balanced && <span className="text-xs text-slate-400">Batch must balance before it can be posted.</span>}
+                  {!balanced && <span className="text-xs text-muted-foreground/70">Batch must balance before it can be posted.</span>}
                 </div>
               )}
               {!posted && lines.length > 0 && balanced && (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Post this before recording receipts against an opening balance — a receipt credits
                   the receivable control, so it would go negative if the opening is not in the ledger yet.
                 </p>

@@ -207,8 +207,8 @@ export default function Companies() {
       <div className="p-4 md:p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl text-slate-900">Companies</h1>
-            <p className="text-sm text-slate-500 mt-1">Manage all tenant companies, their admins, and access.</p>
+            <h1 className="text-2xl text-foreground">Companies</h1>
+            <p className="text-sm text-muted-foreground mt-1">Manage all tenant companies, their admins, and access.</p>
           </div>
           <Button variant="primary" onClick={() => setAddOpen((v) => !v)}>
             <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
@@ -218,10 +218,10 @@ export default function Companies() {
 
         {addOpen && (
           <form onSubmit={handleAdd} className="bg-card border border-border rounded-2xl p-6 mb-6 space-y-4">
-            <h3 className="text-base text-slate-900">Add Company</h3>
+            <h3 className="text-base text-foreground">Add Company</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Name *</label>
+                <label className="block text-sm text-foreground mb-1">Name *</label>
                 <input
                   value={name}
                   onChange={(e) => {
@@ -229,19 +229,19 @@ export default function Companies() {
                     if (!prefixTouched) setPrefix(suggestPrefix(e.target.value));
                   }}
                   required
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Company Prefix</label>
+                <label className="block text-sm text-foreground mb-1">Company Prefix</label>
                 <input
                   value={prefix}
                   onChange={(e) => { setPrefix(e.target.value.toUpperCase()); setPrefixTouched(true); }}
                   placeholder="e.g. GGS, DE"
                   maxLength={6}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm uppercase"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm uppercase"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-muted-foreground mt-1">
                   {name.trim() && !prefixTouched && prefix
                     ? <>Suggested from name — edit if needed. </>
                     : null}
@@ -249,15 +249,15 @@ export default function Companies() {
                 </p>
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Contact Email</label>
-                <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+                <label className="block text-sm text-foreground mb-1">Contact Email</label>
+                <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md text-sm" />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Contact Phone</label>
-                <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+                <label className="block text-sm text-foreground mb-1">Contact Phone</label>
+                <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md text-sm" />
               </div>
             </div>
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+            <div className="flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-[12px] text-warning-700">
               <span aria-hidden>⚠️</span>
               <span>Set the prefix carefully — once the first employee is added under this company, the prefix becomes <strong>permanent and cannot be changed</strong> (guard IDs depend on it).</span>
             </div>
@@ -274,16 +274,16 @@ export default function Companies() {
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+          <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
         ) : companies.length === 0 ? (
           <div className="bg-card border border-border rounded-2xl p-12 text-center">
-            <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-3" strokeWidth={1.5} />
-            <p className="text-slate-500">No companies yet. Create your first tenant above.</p>
+            <Building2 className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" strokeWidth={1.5} />
+            <p className="text-muted-foreground">No companies yet. Create your first tenant above.</p>
           </div>
         ) : (
           <div className="overflow-x-auto border-y border-border">
             <table className="w-full min-w-[880px]">
-              <thead className="bg-slate-50 border-b border-border">
+              <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Company</th>
                   <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Contact</th>
@@ -333,7 +333,7 @@ export default function Companies() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => openSubscription(c)}
-                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border text-foreground hover:bg-muted/50"
                           title="Manage subscription"
                         >
                           <CreditCard className="w-3 h-3" /> Subscription
@@ -342,7 +342,7 @@ export default function Companies() {
                           onClick={() => viewAs(c)}
                           disabled={busyId === c.id || !c.active}
                           title={c.active ? "View this company's data" : "Activate the company first to view"}
-                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border text-foreground hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Eye className="w-3 h-3" /> View
                         </button>
@@ -359,7 +359,7 @@ export default function Companies() {
                         </button>
                         <Link
                           to={`/super-super-admin/companies/${c.id}`}
-                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-brand-700 hover:bg-brand-50"
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border text-brand-700 hover:bg-brand-50"
                         >
                           Users <ArrowRight className="w-3 h-3" />
                         </Link>
@@ -379,12 +379,12 @@ export default function Companies() {
               positions against the viewport, not the inset-padded body. */}
           <div
             style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
-            className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90dvh] overflow-y-auto"
+            className="bg-card rounded-lg shadow-xl w-full max-w-3xl max-h-[90dvh] overflow-y-auto"
           >
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
               <div>
-                <h2 className="text-lg text-slate-900">{subCompany.name} — Subscription</h2>
-                <p className="text-xs text-slate-500 mt-1">
+                <h2 className="text-lg text-foreground">{subCompany.name} — Subscription</h2>
+                <p className="text-xs text-muted-foreground mt-1">
                   {subCompany.subscription_expires_at == null
                     ? "No subscription set yet."
                     : (() => {
@@ -397,7 +397,7 @@ export default function Companies() {
               </div>
               <button
                 onClick={() => setSubCompany(null)}
-                className="text-slate-400 hover:text-slate-700"
+                className="text-muted-foreground/70 hover:text-foreground"
                 title="Close"
               >
                 <X className="w-5 h-5" />
@@ -405,9 +405,9 @@ export default function Companies() {
             </div>
 
             <div className="p-6 space-y-6">
-              <form onSubmit={handleAddPayment} className="bg-slate-50 border border-slate-200 rounded p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+              <form onSubmit={handleAddPayment} className="bg-muted/50 border border-border rounded p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                 <div>
-                  <label className="block text-xs text-slate-700 mb-1">Amount (PKR) *</label>
+                  <label className="block text-xs text-foreground mb-1">Amount (PKR) *</label>
                   <input
                     type="number"
                     min="0"
@@ -415,11 +415,11 @@ export default function Companies() {
                     value={subAmount}
                     onChange={(e) => setSubAmount(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                    className="w-full px-3 py-2 border border-border rounded text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-700 mb-1">Days *</label>
+                  <label className="block text-xs text-foreground mb-1">Days *</label>
                   <input
                     type="number"
                     min="1"
@@ -427,26 +427,26 @@ export default function Companies() {
                     value={subDays}
                     onChange={(e) => setSubDays(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                    className="w-full px-3 py-2 border border-border rounded text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-700 mb-1">Payment Date</label>
+                  <label className="block text-xs text-foreground mb-1">Payment Date</label>
                   <input
                     type="date"
                     value={subDate}
                     onChange={(e) => setSubDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                    className="w-full px-3 py-2 border border-border rounded text-sm"
                   />
                 </div>
                 <div className="md:col-span-2 flex gap-2">
                   <div className="flex-1">
-                    <label className="block text-xs text-slate-700 mb-1">Notes</label>
+                    <label className="block text-xs text-foreground mb-1">Notes</label>
                     <input
                       type="text"
                       value={subNotes}
                       onChange={(e) => setSubNotes(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
+                      className="w-full px-3 py-2 border border-border rounded text-sm"
                       placeholder="Optional"
                     />
                   </div>
@@ -461,34 +461,34 @@ export default function Companies() {
               </form>
 
               <div>
-                <h3 className="text-sm text-slate-900 mb-3">Payment History</h3>
+                <h3 className="text-sm text-foreground mb-3">Payment History</h3>
                 {subLoading ? (
-                  <div className="text-sm text-slate-500 flex items-center gap-2">
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                   </div>
                 ) : subPayments.length === 0 ? (
-                  <p className="text-sm text-slate-500">No payments yet.</p>
+                  <p className="text-sm text-muted-foreground">No payments yet.</p>
                 ) : (
-                  <div className="border border-slate-200 rounded overflow-hidden">
+                  <div className="border border-border rounded overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
-                        <thead className="bg-slate-50">
+                        <thead className="bg-muted/50">
                           <tr>
-                            <th className="px-3 py-2 text-left text-xs uppercase text-slate-500">Date</th>
-                            <th className="px-3 py-2 text-right text-xs uppercase text-slate-500">Amount</th>
-                            <th className="px-3 py-2 text-right text-xs uppercase text-slate-500">Days</th>
-                            <th className="px-3 py-2 text-left text-xs uppercase text-slate-500">Notes</th>
+                            <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground">Date</th>
+                            <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground">Amount</th>
+                            <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground">Days</th>
+                            <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground">Notes</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 text-sm">
+                        <tbody className="divide-y divide-border text-sm">
                           {subPayments.map((p) => (
                             <tr key={p.id}>
-                              <td className="px-3 py-2 text-slate-700">{formatDate(p.payment_date)}</td>
-                              <td className="px-3 py-2 text-right text-slate-900">
+                              <td className="px-3 py-2 text-foreground">{formatDate(p.payment_date)}</td>
+                              <td className="px-3 py-2 text-right text-foreground">
                                 PKR {Number(p.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                               </td>
-                              <td className="px-3 py-2 text-right text-slate-700">{p.days_added}</td>
-                              <td className="px-3 py-2 text-slate-600">{p.notes ?? "—"}</td>
+                              <td className="px-3 py-2 text-right text-foreground">{p.days_added}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{p.notes ?? "—"}</td>
                             </tr>
                           ))}
                         </tbody>

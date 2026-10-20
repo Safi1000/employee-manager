@@ -50,6 +50,23 @@
   --color-info-500: #5f86a8;
   --color-info-600: #4d6f8d;
   --color-info-700: #3c5670;
+
+  /* Fixed tones (2026-10-21): the colours that must NOT flip with the mode,
+   * named so no screen carries a raw hex. On-fill text sits on a filled
+   * accent button; ink is the always-dark panel (bands, statement totals,
+   * scrims); up / down / heed are the readable green, rust and amber on ink;
+   * settled is the deep green of a confirmed or closed cell; calm the soft
+   * steel for neutral counts; rest the unclassified remainder of a bar. */
+  --color-on-fill: #ffffff;
+  --color-on-brand: #241a06;
+  --color-ink: #191a10;
+  --color-ink-foreground: #f3eee2;
+  --color-up: #9ad1a3;
+  --color-down: #f0a99a;
+  --color-heed: #f6d79b;
+  --color-settled: #3d4a2b;
+  --color-calm: #7fa3c4;
+  --color-rest: #4a4d3d;
 }
 
 /* Neutral ramp + surface + tint generation. `inline` so utilities resolve to

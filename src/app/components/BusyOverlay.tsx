@@ -14,11 +14,11 @@ export default function BusyOverlay({ show, message = "Working…", detail }: Pr
       aria-busy="true"
       role="alert"
     >
-      <div className="bg-white rounded-lg shadow-lg border border-slate-200 px-6 py-5 flex items-center gap-3 max-w-sm">
+      <div className="bg-card rounded-lg shadow-lg border border-border px-6 py-5 flex items-center gap-3 max-w-sm">
         <Loader2 className="w-6 h-6 animate-spin text-brand-600" strokeWidth={1.5} />
         <div>
-          <div className="text-sm text-slate-900">{message}</div>
-          {detail && <div className="text-xs text-slate-500 mt-0.5">{detail}</div>}
+          <div className="text-sm text-foreground">{message}</div>
+          {detail && <div className="text-xs text-muted-foreground mt-0.5">{detail}</div>}
         </div>
       </div>
     </div>

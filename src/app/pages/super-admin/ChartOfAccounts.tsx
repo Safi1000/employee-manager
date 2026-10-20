@@ -363,13 +363,13 @@ export default function ChartOfAccounts() {
         <div className="bg-card rounded-2xl border border-border p-4 md:p-6 space-y-4">
           <div className="flex flex-wrap items-center gap-2 justify-between">
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
               <input
                 type="text"
                 value={coaSearch}
                 onChange={(e) => setCoaSearch(e.target.value)}
                 placeholder="Search code or name…"
-                className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full pl-10 pr-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
             {isSuper && (
@@ -388,7 +388,7 @@ export default function ChartOfAccounts() {
           </div>
 
           {loading ? (
-            <div className="py-10 text-center text-slate-500">
+            <div className="py-10 text-center text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
             </div>
           ) : (
@@ -455,14 +455,14 @@ export default function ChartOfAccounts() {
             </div>
           )}
           {editingRow?.is_control && (
-            <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2">
+            <div className="text-xs text-muted-foreground bg-muted/50 border border-border rounded p-2">
               Control account. Entries post to its children; its balance is their
               total.
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Account Code *</label>
+              <label className="block text-sm text-foreground mb-1">Account Code *</label>
               <input
                 required
                 type="text"
@@ -470,17 +470,17 @@ export default function ChartOfAccounts() {
                 title={isSystemControl ? "System control account — other objects address it by this code." : undefined}
                 value={form.account_code}
                 onChange={(e) => setForm({ ...form, account_code: e.target.value })}
-                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono ${isSystemControl ? "bg-slate-50 text-slate-500" : ""}`}
+                className={`w-full px-3 py-2 border border-border rounded-md text-sm font-mono ${isSystemControl ? "bg-muted/50 text-muted-foreground" : ""}`}
                 placeholder="e.g., 6400"
               />
               {isSystemControl && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Fixed — other objects address this account by its code.
                 </p>
               )}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
+              <label className="block text-sm text-foreground mb-1">Account Type *</label>
               <ThemedSelect
                 value={form.account_type}
                 disabled={lockStructure}
@@ -499,7 +499,7 @@ export default function ChartOfAccounts() {
                     normal_side: t === "asset" || t === "expense" ? "debit" : "credit",
                   });
                 }}
-                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm ${lockStructure ? "bg-slate-50 text-slate-500" : ""}`}
+                className={`w-full px-3 py-2 border border-border rounded-md text-sm ${lockStructure ? "bg-muted/50 text-muted-foreground" : ""}`}
               >
                 {ACCOUNT_TYPE_ORDER.map((t) => (
                   <option key={t} value={t}>
@@ -508,7 +508,7 @@ export default function ChartOfAccounts() {
                 ))}
               </ThemedSelect>
               {lockStructure && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {isSystemControl
                     ? "Fixed — changing it would move every balance under this account to a different statement."
                     : "Fixed — this account carries posted entries, and retyping it moves a balance to the other side."}
@@ -516,17 +516,17 @@ export default function ChartOfAccounts() {
               )}
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Account Name *</label>
+              <label className="block text-sm text-foreground mb-1">Account Name *</label>
               <input
                 required
                 type="text"
                 value={form.account_name}
                 onChange={(e) => setForm({ ...form, account_name: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Parent Account</label>
+              <label className="block text-sm text-foreground mb-1">Parent Account</label>
               <ThemedSelect
                 value={form.parent_id}
                 disabled={lockStructure}
@@ -538,7 +538,7 @@ export default function ChartOfAccounts() {
                       : undefined
                 }
                 onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
-                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm ${lockStructure ? "bg-slate-50 text-slate-500" : ""}`}
+                className={`w-full px-3 py-2 border border-border rounded-md text-sm ${lockStructure ? "bg-muted/50 text-muted-foreground" : ""}`}
               >
                 <option value="">— None (top level) —</option>
                 {accounts
@@ -550,7 +550,7 @@ export default function ChartOfAccounts() {
                   ))}
               </ThemedSelect>
               {lockStructure && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {isSystemControl
                     ? "Fixed — a system control account belongs at the top level. Nesting it puts its whole subtree into another account's balance."
                     : "Fixed — this account carries posted entries, and moving it would move a balance with no entry behind the move."}
@@ -558,21 +558,21 @@ export default function ChartOfAccounts() {
               )}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Normal Side</label>
+              <label className="block text-sm text-foreground mb-1">Normal Side</label>
               <ThemedSelect
                 value={form.normal_side}
                 onChange={(e) =>
                   setForm({ ...form, normal_side: e.target.value as AccountNormalSide })
                 }
                 disabled={isSystemControl}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground"
               >
                 <option value="debit">Debit</option>
                 <option value="credit">Credit</option>
               </ThemedSelect>
             </div>
             <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={form.active}
@@ -582,7 +582,7 @@ export default function ChartOfAccounts() {
               </label>
             </div>
           </div>
-          <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
+          <div className="flex items-center gap-2 pt-3 border-t border-border">
             <Button variant="primary" size="md" disabled={submitting} className="flex-1">
               {submitting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
               {editingRow ? "Save Changes" : "Add Account"}
@@ -638,15 +638,15 @@ function CoaTypeSection({
   }, [roots, childrenOf]);
 
   return (
-    <div className="border border-slate-200 rounded-md overflow-hidden">
+    <div className="border border-border rounded-md overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-sm text-slate-900 transition-colors"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-muted/50 hover:bg-muted text-sm text-foreground transition-colors"
       >
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         <span className="flex-1 text-left">{ACCOUNT_TYPE_LABEL[type]}</span>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-muted-foreground">
           {count} account{count === 1 ? "" : "s"}
         </span>
       </button>
@@ -654,17 +654,17 @@ function CoaTypeSection({
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-100 bg-white">
-                <th className="text-left px-4 py-2 text-[11px] text-slate-400 uppercase w-24">
+              <tr className="border-b border-border bg-card">
+                <th className="text-left px-4 py-2 text-[11px] text-muted-foreground/70 uppercase w-24">
                   Code
                 </th>
-                <th className="text-left px-4 py-2 text-[11px] text-slate-400 uppercase">
+                <th className="text-left px-4 py-2 text-[11px] text-muted-foreground/70 uppercase">
                   Account
                 </th>
-                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-36">
+                <th className="text-right px-4 py-2 text-[11px] text-muted-foreground/70 uppercase w-36">
                   Debit
                 </th>
-                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-36">
+                <th className="text-right px-4 py-2 text-[11px] text-muted-foreground/70 uppercase w-36">
                   Credit
                 </th>
                 {/* The Debit and Credit columns are GROSS totals, and without
@@ -673,13 +673,13 @@ function CoaTypeSection({
                     on 2026-09-03 and was reported as a 4.1m receivable; it was
                     a 38,000 credit. A reader who cannot find a balance will use
                     the debit column as one. */}
-                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-40">
+                <th className="text-right px-4 py-2 text-[11px] text-muted-foreground/70 uppercase w-40">
                   Net
                 </th>
                 <th className="w-20" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {roots.map((a) => (
                 <CoaRows
                   key={a.id}
@@ -728,14 +728,14 @@ function CoaRows({
 
   return (
     <>
-      <tr className={account.active ? "hover:bg-slate-50" : "opacity-50"}>
-        <td className="px-4 py-2 text-xs font-mono text-slate-700 align-top">
+      <tr className={account.active ? "hover:bg-muted/50" : "opacity-50"}>
+        <td className="px-4 py-2 text-xs font-mono text-foreground align-top">
           {account.account_code}
         </td>
-        <td className="px-4 py-2 text-sm text-slate-900">
+        <td className="px-4 py-2 text-sm text-foreground">
           <span style={{ paddingLeft: depth * 18 }} className="inline-flex items-center gap-2">
-            {sub?.kind === "bank" && <Landmark className="w-3.5 h-3.5 text-slate-400" />}
-            {sub?.kind === "cash" && <Wallet className="w-3.5 h-3.5 text-slate-400" />}
+            {sub?.kind === "bank" && <Landmark className="w-3.5 h-3.5 text-muted-foreground/70" />}
+            {sub?.kind === "cash" && <Wallet className="w-3.5 h-3.5 text-muted-foreground/70" />}
             <span>{account.account_name}</span>
             {account.is_control && (
               <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200">
@@ -743,19 +743,19 @@ function CoaRows({
               </span>
             )}
             {account.system_account && (
-              <span className="text-[10px] uppercase tracking-wide text-slate-400">system</span>
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">system</span>
             )}
             {sub && (
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-muted-foreground/70">
                 {sub.kind === "bank" ? "bank" : "cash"} · {sub.name}
               </span>
             )}
           </span>
         </td>
-        <td className="px-4 py-2 text-right text-sm text-slate-800">
+        <td className="px-4 py-2 text-right text-sm text-foreground">
           {bal.debit !== 0 ? fmtPKR(bal.debit) : ""}
         </td>
-        <td className="px-4 py-2 text-right text-sm text-slate-800">
+        <td className="px-4 py-2 text-right text-sm text-foreground">
           {bal.credit !== 0 ? fmtPKR(bal.credit) : ""}
         </td>
         {/* Net, with the side named. An unsigned figure in a column beside two
@@ -766,11 +766,11 @@ function CoaRows({
             receipt waited for its opening batch), but worth seeing. */}
         <td className="px-4 py-2 text-right text-sm tabular-nums">
           {net === 0 ? (
-            <span className="text-slate-300">—</span>
+            <span className="text-muted-foreground/50">—</span>
           ) : (
-            <span className={contra ? "text-warning-700" : "text-slate-900 font-medium"}>
+            <span className={contra ? "text-warning-700" : "text-foreground font-medium"}>
               {fmtPKR(Math.abs(net))}
-              <span className="ml-1 text-[11px] text-slate-400">{net > 0 ? "Dr" : "Cr"}</span>
+              <span className="ml-1 text-[11px] text-muted-foreground/70">{net > 0 ? "Dr" : "Cr"}</span>
             </span>
           )}
         </td>
@@ -779,7 +779,7 @@ function CoaRows({
             <div className="flex gap-1 justify-end">
               <button
                 onClick={() => onEdit(account)}
-                className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                 title="Edit"
               >
                 <Pencil className="w-4 h-4" />

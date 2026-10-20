@@ -145,12 +145,12 @@ export default function StatutoryRemitModal({
     }
   };
 
-  const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const inputCls = "w-full px-3 py-2 border border-border rounded-md text-sm";
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Pay a statutory liability" size="md">
       <form className="space-y-4" onSubmit={submit}>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           EOBI, salary tax, PESSI and IESSI are paid against what payroll already owes, not booked as a new cost.
           What was withheld from pay for the month clears its payable; only the part payroll did not accrue
           (the employer&apos;s share) becomes cost.
@@ -163,7 +163,7 @@ export default function StatutoryRemitModal({
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Scheme *</label>
+            <label className="block text-sm text-foreground mb-1">Scheme *</label>
             <ThemedSelect value={scheme} onChange={(e) => setScheme(e.target.value as StatutoryScheme)} className={inputCls}>
               {(Object.keys(STATUTORY_SCHEME_LABEL) as StatutoryScheme[]).map((s) => (
                 <option key={s} value={s}>{STATUTORY_SCHEME_LABEL[s]}</option>
@@ -171,37 +171,37 @@ export default function StatutoryRemitModal({
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">For the month of *</label>
+            <label className="block text-sm text-foreground mb-1">For the month of *</label>
             <input type="month" value={period} onChange={(e) => e.target.value && setPeriod(e.target.value)} className={inputCls} />
           </div>
         </div>
 
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+        <div className="rounded-md border border-border bg-muted/50 p-3 text-sm">
           {dueError ? <div className="text-danger-700">{dueError}</div>
-            : !due ? <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Reading what payroll accrued…</div>
+            : !due ? <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading what payroll accrued…</div>
             : (
               <div className="space-y-1">
-                <div className="flex justify-between"><span className="text-slate-600">Accrued by payroll for the month</span><span className="tabular-nums">{fmt(due.accrued)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-600">Already remitted for the month</span><span className="tabular-nums">{fmt(due.remitted)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Accrued by payroll for the month</span><span className="tabular-nums">{fmt(due.accrued)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Already remitted for the month</span><span className="tabular-nums">{fmt(due.remitted)}</span></div>
                 <div className="flex justify-between font-medium"><span>Still due</span><span className="tabular-nums">{fmt(due.due)}</span></div>
-                <div className="text-[11px] text-slate-500">{due.liability_account}: balance {fmt(due.liability_balance)} across all months.</div>
+                <div className="text-[11px] text-muted-foreground">{due.liability_account}: balance {fmt(due.liability_balance)} across all months.</div>
               </div>
             )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Amount paid *</label>
+            <label className="block text-sm text-foreground mb-1">Amount paid *</label>
             <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Paid on *</label>
+            <label className="block text-sm text-foreground mb-1">Paid on *</label>
             <input type="date" max={today} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className={inputCls} />
           </div>
         </div>
 
         {amt > 0 && due && (
-          <div className={`rounded-md border p-3 text-sm ${refused ? "border-danger-200 bg-danger-50 text-danger-700" : "border-slate-200"}`}>
+          <div className={`rounded-md border p-3 text-sm ${refused ? "border-danger-200 bg-danger-50 text-danger-700" : "border-border"}`}>
             {refused ? (
               <>Only {fmt(due.due)} of salary tax is due for this month. A challan larger than the tax withheld contains
                 something that is not salary tax — record that part as what it is. This will be refused.</>
@@ -215,10 +215,10 @@ export default function StatutoryRemitModal({
         )}
 
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Paid from *</label>
+          <label className="block text-sm text-foreground mb-1">Paid from *</label>
           <div className="grid grid-cols-2 gap-2">
             {(["Bank", "Cash"] as const).map((m) => (
-              <label key={m} className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${paidVia === m ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"}`}>
+              <label key={m} className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${paidVia === m ? "border-foreground bg-muted/50" : "border-border hover:border-border"}`}>
                 <input type="radio" name="statutory_paid_via" className="sr-only" checked={paidVia === m} onChange={() => setPaidVia(m)} />
                 {m}
               </label>
@@ -239,11 +239,11 @@ export default function StatutoryRemitModal({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Challan / CPR number</label>
+            <label className="block text-sm text-foreground mb-1">Challan / CPR number</label>
             <input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Region</label>
+            <label className="block text-sm text-foreground mb-1">Region</label>
             <ThemedSelect value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputCls}>
               <option value="">Head Office (default)</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -251,7 +251,7 @@ export default function StatutoryRemitModal({
           </div>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Notes</label>
+          <label className="block text-sm text-foreground mb-1">Notes</label>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
         </div>
 

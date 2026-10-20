@@ -89,10 +89,10 @@ export default function ContractViewModal({
     <Modal isOpen={isOpen} onClose={onClose} title={`Contract ${contract.contract_code}`} size="lg">
       <div className="space-y-4">
         {/* Header — client + status */}
-        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-200">
+        <div className="flex items-start justify-between gap-3 pb-3 border-b border-border">
           <div>
-            <div className="text-slate-900">{client?.name ?? "(deleted client)"}</div>
-            <div className="text-xs text-slate-500 font-mono">{client?.client_code ?? "—"}</div>
+            <div className="text-foreground">{client?.name ?? "(deleted client)"}</div>
+            <div className="text-xs text-muted-foreground font-mono">{client?.client_code ?? "—"}</div>
           </div>
           <ContractStatusBadge status={contract.status} />
         </div>
@@ -106,7 +106,7 @@ export default function ContractViewModal({
               <span>
                 No end date{renewed && <span className="text-brand-600"> (renewed)</span>}
                 {contract.notice_period_days != null && (
-                  <span className="text-slate-600">
+                  <span className="text-muted-foreground">
                     {" "}
                     — Notice period: {contract.notice_period_days} days
                   </span>
@@ -126,10 +126,10 @@ export default function ContractViewModal({
             {months != null ? (
               <>
                 PKR {(valuePerMonth * months).toLocaleString()}
-                <span className="text-xs text-slate-500"> ({months} months)</span>
+                <span className="text-xs text-muted-foreground"> ({months} months)</span>
               </>
             ) : (
-              <span className="text-slate-500">— (open-ended)</span>
+              <span className="text-muted-foreground">— (open-ended)</span>
             )}
           </Field>
           <Field label="Guards (active / committed)">
@@ -138,17 +138,17 @@ export default function ContractViewModal({
         </div>
 
         {/* Contract Lines — same columns as the editor, read-only */}
-        <div className="border border-slate-200 rounded-md overflow-hidden">
-          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-            <span className="text-sm font-medium text-slate-700">Contract Lines</span>
+        <div className="border border-border rounded-md overflow-hidden">
+          <div className="px-3 py-2 bg-muted/50 border-b border-border">
+            <span className="text-sm font-medium text-foreground">Contract Lines</span>
           </div>
           {lines.length === 0 ? (
-            <p className="px-3 py-3 text-sm text-slate-500">No lines on this contract.</p>
+            <p className="px-3 py-3 text-sm text-muted-foreground">No lines on this contract.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
+                  <tr className="text-xs text-muted-foreground uppercase border-b border-border">
                     <th className="text-left px-3 py-2">Category</th>
                     <th className="text-left px-3 py-2">Notes</th>
                     <th className="text-right px-3 py-2">Committed</th>
@@ -157,7 +157,7 @@ export default function ContractViewModal({
                     <th className="text-right px-3 py-2">Line value</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {lines.map((l) => {
                     const committed = Number(l.committed_count) || 0;
                     const active = activeByLine.get(l.id) ?? 0;
@@ -167,34 +167,34 @@ export default function ContractViewModal({
                     const rateChanged = rate !== baseRate;
                     return (
                       <tr key={l.id}>
-                        <td className="px-3 py-2 text-slate-900">
+                        <td className="px-3 py-2 text-foreground">
                           {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
                         </td>
-                        <td className="px-3 py-2 text-slate-600">{l.location || "—"}</td>
-                        <td className="px-3 py-2 text-right text-slate-900 tabular-nums">
+                        <td className="px-3 py-2 text-muted-foreground">{l.location || "—"}</td>
+                        <td className="px-3 py-2 text-right text-foreground tabular-nums">
                           {committed}
                           {effective != null && effective !== committed && (
-                            <div className="text-[10px] text-slate-500">
+                            <div className="text-[10px] text-muted-foreground">
                               {effective} after addendums
                             </div>
                           )}
                         </td>
                         <td
                           className={`px-3 py-2 text-right tabular-nums ${
-                            active > committed ? "text-danger-700 font-medium" : "text-slate-900"
+                            active > committed ? "text-danger-700 font-medium" : "text-foreground"
                           }`}
                         >
                           {active}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-600 tabular-nums">
+                        <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
                           {rate.toLocaleString()}
                           {rateChanged && (
-                            <div className="text-[10px] text-slate-400 line-through">
+                            <div className="text-[10px] text-muted-foreground/70 line-through">
                               {baseRate.toLocaleString()}
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-600 tabular-nums">
+                        <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
                           {(committed * rate).toLocaleString()}
                         </td>
                       </tr>
@@ -202,7 +202,7 @@ export default function ContractViewModal({
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50 font-medium text-slate-800">
+                  <tr className="border-t border-border bg-muted/50 font-medium text-foreground">
                     <td className="px-3 py-2" colSpan={2}>Total</td>
                     <td className="px-3 py-2 text-right tabular-nums">{totalCommitted}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{totalActive}</td>
@@ -218,10 +218,10 @@ export default function ContractViewModal({
         </div>
 
         {/* Addendums — same table the editor shows */}
-        <div className="border border-slate-200 rounded-md overflow-hidden">
-          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-            <span className="text-sm font-medium text-slate-700">Addendums</span>
-            <span className="text-[11px] text-slate-500 ml-2">
+        <div className="border border-border rounded-md overflow-hidden">
+          <div className="px-3 py-2 bg-muted/50 border-b border-border">
+            <span className="text-sm font-medium text-foreground">Addendums</span>
+            <span className="text-[11px] text-muted-foreground ml-2">
               Dated changes to committed count / rate.
             </span>
           </div>
@@ -229,8 +229,8 @@ export default function ContractViewModal({
         </div>
 
         {/* Document */}
-        <div className="border border-slate-200 rounded-md p-3">
-          <div className="text-sm font-medium text-slate-700 mb-1">Contract document</div>
+        <div className="border border-border rounded-md p-3">
+          <div className="text-sm font-medium text-foreground mb-1">Contract document</div>
           {contract.drive_view_url ? (
             <a
               href={contract.drive_view_url}
@@ -242,15 +242,15 @@ export default function ContractViewModal({
               {contract.contract_file_name ?? "View document"}
             </a>
           ) : (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               No document uploaded. Add one from the contract row or the Edit modal.
             </p>
           )}
         </div>
 
         {/* Client context */}
-        <div className="border border-slate-200 rounded-md p-3">
-          <div className="text-sm font-medium text-slate-700 mb-2">Client</div>
+        <div className="border border-border rounded-md p-3">
+          <div className="text-sm font-medium text-foreground mb-2">Client</div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <Field label="Branch">{branch?.name ?? "—"}</Field>
             <Field label="Industry">{client?.industry ?? "—"}</Field>

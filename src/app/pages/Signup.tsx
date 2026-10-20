@@ -199,7 +199,7 @@ export default function Signup() {
             )}
 
             <button type="submit" disabled={submitting}
-              className="group flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-[#241a06] shadow-sm transition-all hover:bg-brand-600 disabled:opacity-50">
+              className="group flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-on-brand shadow-sm transition-all hover:bg-brand-600 disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue to payment
               {!submitting && <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />}

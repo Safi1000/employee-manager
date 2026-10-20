@@ -736,7 +736,7 @@ export default function Compliance() {
       ? "bg-warning-100 text-warning-700"
       : p === "medium"
       ? "bg-brand-100 text-brand-700"
-      : "bg-slate-100 text-slate-700";
+      : "bg-muted text-foreground";
 
   // Solid dot in the same semantic colour as each priority's badge above.
   const priorityDot = (p: CompliancePriority) =>
@@ -746,7 +746,7 @@ export default function Compliance() {
       ? "bg-warning-500"
       : p === "medium"
       ? "bg-brand-500"
-      : "bg-slate-400";
+      : "bg-muted-foreground/40";
 
   return (
     <>
@@ -758,8 +758,8 @@ export default function Compliance() {
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
             {[
-              { label: "Critical", v: metrics.critical, sub: "inside the advance-notice window", tone: metrics.critical ? "text-[#f0a99a]" : "text-[#9ad1a3]" },
-              { label: "High priority", v: metrics.high, sub: "inside the advance-notice window", tone: metrics.high ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+              { label: "Critical", v: metrics.critical, sub: "inside the advance-notice window", tone: metrics.critical ? "text-down" : "text-up" },
+              { label: "High priority", v: metrics.high, sub: "inside the advance-notice window", tone: metrics.high ? "text-heed" : "text-up" },
               { label: "Upcoming", v: metrics.upcoming, sub: "today or later", tone: "text-foreground" },
               { label: "Active alerts", v: metrics.activeAlerts, sub: "raised from due dates", tone: "text-foreground" },
             ].map((t) => (
@@ -786,7 +786,7 @@ export default function Compliance() {
                   return (
                     <div key={m.label} className="flex flex-col gap-1">
                       <div className="flex justify-between text-xs"><span>{m.label}</span><span className="font-ledger font-semibold">{Math.round(pct * 100)}%</span></div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${pct >= 0.9 ? "bg-[#9ad1a3]" : pct >= 0.5 ? "bg-brand-500" : "bg-[#d4674a]"}`} style={{ width: `${pct * 100}%` }} /></div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${pct >= 0.9 ? "bg-up" : pct >= 0.5 ? "bg-brand-500" : "bg-danger-500"}`} style={{ width: `${pct * 100}%` }} /></div>
                       <span className="text-[11px] text-muted-foreground">{m.done} / {coverageTotals.total} · {m.note}</span>
                     </div>
                   );
@@ -813,10 +813,10 @@ export default function Compliance() {
             An alert stays here until someone acknowledges or resolves it. */}
         {raisedAlerts.length > 0 && (
           <div className="bg-card rounded-2xl border border-border mb-6">
-            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="p-6 border-b border-border flex items-center justify-between">
               <div>
-                <h3 className="text-base text-slate-900">Raised Alerts</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <h3 className="text-base text-foreground">Raised Alerts</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Recorded by the system and still open. Acknowledge them on the Alerts page.
                 </p>
               </div>
@@ -824,14 +824,14 @@ export default function Compliance() {
                 Open Alerts
               </Link>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-border">
               {raisedAlerts.map((a) => {
                 const tone =
                   a.tier === "blocking"
                     ? "bg-danger-50 text-danger-700 border-danger-200"
                     : a.tier === "warning"
                       ? "bg-warning-50 text-warning-700 border-warning-200"
-                      : "bg-slate-50 text-slate-600 border-slate-200";
+                      : "bg-muted/50 text-muted-foreground border-border";
                 const text = describeAlert(a);
                 return (
                   <div key={a.id} className="px-6 py-3 flex items-start gap-3 text-sm">
@@ -839,14 +839,14 @@ export default function Compliance() {
                       {alertTierLabel(a.tier)}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-slate-800">{text.title}</p>
+                      <p className="text-foreground">{text.title}</p>
                       {text.figures && (
-                        <p className="text-xs text-slate-700 mt-0.5">{text.figures}</p>
+                        <p className="text-xs text-foreground mt-0.5">{text.figures}</p>
                       )}
                       {text.detail && (
-                        <p className="text-xs text-slate-500 mt-0.5">{text.detail}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{text.detail}</p>
                       )}
-                      <p className="text-[11px] text-slate-400 mt-1">
+                      <p className="text-[11px] text-muted-foreground/70 mt-1">
                         {alertCategoryLabel(a.category)} · first seen {formatDate(a.created_at.slice(0, 10))}
                         {/* seen_count is the dedupe counter (0295). "Still true
                             after 47 runs" is a different statement from "true",
@@ -862,7 +862,7 @@ export default function Compliance() {
         )}
 
         <div id="compliance-dates-card" className="bg-card rounded-2xl border border-border scroll-mt-4">
-          <div className="p-6 border-b border-slate-200">
+          <div className="p-6 border-b border-border">
             <div className="flex gap-2">
               {([
                 { key: "dates", label: "Important Dates" },
@@ -875,7 +875,7 @@ export default function Compliance() {
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab.key
                       ? "bg-foreground text-background font-semibold"
-                      : "text-slate-600 hover:bg-slate-100"
+                      : "text-muted-foreground hover:bg-muted"
                   }`}
                 >
                   {tab.label}
@@ -885,7 +885,7 @@ export default function Compliance() {
           </div>
 
           {loading && (
-            <div className="px-6 py-10 text-center text-slate-500">
+            <div className="px-6 py-10 text-center text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
             </div>
           )}
@@ -967,20 +967,20 @@ export default function Compliance() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Title</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Date</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Days Remaining</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Advance Notice</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Priority</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Title</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Days Remaining</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Advance Notice</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Priority</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {datesWithDays.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         No important dates yet. Click "Add Important Date" to create one.
                       </td>
                     </tr>
@@ -990,7 +990,7 @@ export default function Compliance() {
                     const inWindow =
                       !overdue && item.daysRemaining <= item.advance_notice_days;
                     return (
-                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={item.id} className="hover:bg-muted/50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <CalendarIcon
@@ -1003,17 +1003,17 @@ export default function Compliance() {
                               }`}
                               strokeWidth={1.5}
                             />
-                            <span className="text-sm text-slate-900">{item.title}</span>
+                            <span className="text-sm text-foreground">{item.title}</span>
                           </div>
                           {item.notes && (
-                            <div className="text-xs text-slate-500 mt-1 ml-6">{item.notes}</div>
+                            <div className="text-xs text-muted-foreground mt-1 ml-6">{item.notes}</div>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
                           {formatDate(item.due_date)}
                         </td>
                         <td className="px-6 py-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-muted text-foreground">
                             {item.category}
                           </span>
                         </td>
@@ -1024,7 +1024,7 @@ export default function Compliance() {
                                 ? "text-danger-600"
                                 : inWindow
                                 ? "text-warning-600"
-                                : "text-slate-600"
+                                : "text-muted-foreground"
                             }`}
                           >
                             {overdue
@@ -1034,7 +1034,7 @@ export default function Compliance() {
                               : `${item.daysRemaining} days`}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
                           {item.advance_notice_days} days
                         </td>
                         <td className="px-6 py-4">
@@ -1069,9 +1069,9 @@ export default function Compliance() {
           )}
 
           {!loading && activeTab === "alerts" && (
-            <div className="divide-y divide-slate-200">
+            <div className="divide-y divide-border">
               {activeAlerts.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-sm">
+                <div className="p-6 text-center text-muted-foreground text-sm">
                   No active alerts. Alerts surface automatically when an Important Date enters
                   its advance-notice window, or when a contract is 2 weeks, 1 week, 3 days or
                   1 day from ending.
@@ -1082,7 +1082,7 @@ export default function Compliance() {
                   return (
                     <div
                       key={d.id}
-                      className="p-6 flex items-start gap-4 hover:bg-slate-50 transition-colors"
+                      className="p-6 flex items-start gap-4 hover:bg-muted/50 transition-colors"
                     >
                       <div className="flex-shrink-0">
                         {isCritical ? (
@@ -1102,7 +1102,7 @@ export default function Compliance() {
                           >
                             {d.priority}
                           </span>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-700">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-muted text-foreground">
                             {d.category}
                           </span>
                           {d.kind === "contract_end" && (
@@ -1116,14 +1116,14 @@ export default function Compliance() {
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-slate-900">
+                        <p className="text-sm text-foreground">
                           {d.title}{" "}
-                          <span className="text-slate-500">
+                          <span className="text-muted-foreground">
                             — due {formatDate(d.due_date)} ({milestoneLabel(d.daysRemaining)})
                           </span>
                         </p>
                         {d.notes && (
-                          <p className="text-xs text-slate-500 mt-1">{d.notes}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{d.notes}</p>
                         )}
                       </div>
                       {d.kind === "important_date" && (
@@ -1142,39 +1142,39 @@ export default function Compliance() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Frequency</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Trigger Day</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Advance Notice</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Name</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Frequency</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Trigger Day</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Advance Notice</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {recurring.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         No recurring alerts yet. Click "Add Recurring Alert" to create one.
                       </td>
                     </tr>
                   )}
                   {recurring.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-900">
+                    <tr key={r.id} className="hover:bg-muted/50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-foreground">
                         {r.name}
                         {r.notes && (
-                          <div className="text-xs text-slate-500 mt-1">{r.notes}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{r.notes}</div>
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-muted text-foreground">
                           {r.category}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{r.frequency}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{r.trigger_day}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{r.frequency}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{r.trigger_day}</td>
                       <td className="px-6 py-4 text-sm text-brand-600">
                         {r.advance_notice_days === 0
                           ? "Same day"
@@ -1187,7 +1187,7 @@ export default function Compliance() {
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                             r.active
                               ? "bg-success-50 text-success-700 hover:bg-success-100"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              : "bg-muted text-muted-foreground hover:bg-border"
                           }`}
                         >
                           <RotateCcw className="w-3 h-3 mr-1" strokeWidth={1.5} />
@@ -1218,7 +1218,7 @@ export default function Compliance() {
 
         <div className="mt-6 bg-card rounded-2xl border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base text-slate-900">Calendar View</h3>
+            <h3 className="text-base text-foreground">Calendar View</h3>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -1232,7 +1232,7 @@ export default function Compliance() {
               >
                 ←
               </Button>
-              <span className="text-sm text-slate-700 min-w-[140px] text-center">
+              <span className="text-sm text-foreground min-w-[140px] text-center">
                 {calendarLabel}
               </span>
               <Button
@@ -1254,7 +1254,7 @@ export default function Compliance() {
             {/* Month grid */}
             <div className="grid grid-cols-7 gap-2 w-full max-w-2xl">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                <div key={day} className="text-center text-xs text-slate-500 py-1">
+                <div key={day} className="text-center text-xs text-muted-foreground py-1">
                   {day}
                 </div>
               ))}
@@ -1272,12 +1272,12 @@ export default function Compliance() {
                     key={idx}
                     className={`h-14 flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
                       hasCritical
-                        ? "bg-danger-100 text-danger-700 dark:text-danger-500 border border-danger-300"
+                        ? "bg-danger-100 text-danger-700 dark:text-danger-500 border border-danger-200"
                         : hasHigh
-                        ? "bg-warning-100 text-warning-700 dark:text-warning-500 border border-warning-300"
+                        ? "bg-warning-100 text-warning-700 dark:text-warning-500 border border-warning-200"
                         : hasEvents
                         ? "bg-brand-50 text-brand-700 dark:text-brand-500 border border-brand-200"
-                        : "text-slate-700 hover:bg-slate-50"
+                        : "text-foreground hover:bg-muted/50"
                     } ${isHighlighted ? "ring-2 ring-brand-500 ring-offset-1" : ""}`}
                     title={cell.events.map((e) => `${e.title} (${e.priority})`).join("\n") || ""}
                   >
@@ -1295,9 +1295,9 @@ export default function Compliance() {
             {/* Upcoming sidebar — fills the space to the right of the grid; stacks
                 below on narrow (<lg) screens. Same `dates` source as the list above. */}
             <div className="w-full lg:flex-1 lg:min-w-[220px]">
-              <h4 className="text-sm font-medium text-slate-900 mb-3">Upcoming</h4>
+              <h4 className="text-sm font-medium text-foreground mb-3">Upcoming</h4>
               {upcomingItems.length === 0 ? (
-                <div className="text-sm text-slate-500 py-8 text-center border border-dashed border-slate-200 rounded-md">
+                <div className="text-sm text-muted-foreground py-8 text-center border border-dashed border-border rounded-md">
                   No upcoming items
                 </div>
               ) : (
@@ -1309,14 +1309,14 @@ export default function Compliance() {
                       onClick={() => goToUpcoming(d)}
                       className={`w-full flex items-start gap-2.5 text-left px-3 py-2 rounded-md border transition-colors ${
                         highlightedDateId === d.id
-                          ? "border-brand-300 bg-brand-50"
-                          : "border-slate-200 hover:bg-slate-50"
+                          ? "border-brand-200 bg-brand-50"
+                          : "border-border hover:bg-muted/50"
                       }`}
                     >
                       <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${priorityDot(d.priority)}`} />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm text-slate-800 truncate">{d.title}</span>
-                        <span className="block text-xs text-slate-500">
+                        <span className="block text-sm text-foreground truncate">{d.title}</span>
+                        <span className="block text-xs text-muted-foreground">
                           {formatDate(d.due_date)} ·{" "}
                           {d.daysRemaining === 0 ? "Today" : `${d.daysRemaining} day${d.daysRemaining === 1 ? "" : "s"}`}
                         </span>
@@ -1475,46 +1475,46 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
   return (
     <>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Title *</label>
+        <label className="block text-sm text-foreground mb-1">Title *</label>
         <input
           required
           type="text"
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           placeholder="e.g., Weapon License Renewal"
         />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Date *</label>
+          <label className="block text-sm text-foreground mb-1">Date *</label>
           <input
             required
             type="date"
             value={form.due_date}
             onChange={(e) => setForm({ ...form, due_date: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           />
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Advance Notice (days) *</label>
+          <label className="block text-sm text-foreground mb-1">Advance Notice (days) *</label>
           <input
             required
             type="number"
             min={0}
             value={form.advance_notice_days}
             onChange={(e) => setForm({ ...form, advance_notice_days: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           />
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Category *</label>
+          <label className="block text-sm text-foreground mb-1">Category *</label>
           <ThemedSelect
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value as ComplianceCategory })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             {COMPLIANCE_CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -1524,13 +1524,13 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
           </ThemedSelect>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Priority *</label>
+          <label className="block text-sm text-foreground mb-1">Priority *</label>
           <ThemedSelect
             value={form.priority}
             onChange={(e) =>
               setForm({ ...form, priority: e.target.value as CompliancePriority })
             }
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             <option value="critical">Critical</option>
             <option value="high">High</option>
@@ -1540,12 +1540,12 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
         </div>
       </div>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Notes</label>
+        <label className="block text-sm text-foreground mb-1">Notes</label>
         <textarea
           rows={2}
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           placeholder="Optional notes"
         />
       </div>
@@ -1557,25 +1557,25 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
   return (
     <>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Alert Name *</label>
+        <label className="block text-sm text-foreground mb-1">Alert Name *</label>
         <input
           required
           type="text"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           placeholder="e.g., Monthly Tax Filing Reminder"
         />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Category *</label>
+          <label className="block text-sm text-foreground mb-1">Category *</label>
           <ThemedSelect
             value={form.category}
             onChange={(e) =>
               setForm({ ...form, category: e.target.value as ComplianceCategory })
             }
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             {COMPLIANCE_CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -1585,13 +1585,13 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
           </ThemedSelect>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Frequency *</label>
+          <label className="block text-sm text-foreground mb-1">Frequency *</label>
           <ThemedSelect
             value={form.frequency}
             onChange={(e) =>
               setForm({ ...form, frequency: e.target.value as RecurringFrequency })
             }
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           >
             <option value="Daily">Daily</option>
             <option value="Weekly">Weekly</option>
@@ -1602,13 +1602,13 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Trigger Day *</label>
+          <label className="block text-sm text-foreground mb-1">Trigger Day *</label>
           <input
             required
             type="text"
             value={form.trigger_day}
             onChange={(e) => setForm({ ...form, trigger_day: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
             placeholder={
               form.frequency === "Daily"
                 ? "e.g., 09:00"
@@ -1619,36 +1619,36 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
                 : "e.g., 03-15"
             }
           />
-          <p className="text-[11px] text-slate-500 mt-1">{triggerDayHelp(form.frequency)}</p>
+          <p className="text-[11px] text-muted-foreground mt-1">{triggerDayHelp(form.frequency)}</p>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Advance Notice (days) *</label>
+          <label className="block text-sm text-foreground mb-1">Advance Notice (days) *</label>
           <input
             required
             type="number"
             min={0}
             value={form.advance_notice_days}
             onChange={(e) => setForm({ ...form, advance_notice_days: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           />
         </div>
       </div>
-      <label className="flex items-center gap-2 text-sm text-slate-700">
+      <label className="flex items-center gap-2 text-sm text-foreground">
         <input
           type="checkbox"
           checked={form.active}
           onChange={(e) => setForm({ ...form, active: e.target.checked })}
-          className="rounded border-slate-300"
+          className="rounded border-border"
         />
         Active
       </label>
       <div>
-        <label className="block text-sm text-slate-700 mb-1">Notes</label>
+        <label className="block text-sm text-foreground mb-1">Notes</label>
         <textarea
           rows={2}
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           placeholder="Optional notes"
         />
       </div>

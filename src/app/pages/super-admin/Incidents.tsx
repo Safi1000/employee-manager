@@ -69,10 +69,10 @@ const emptyForm: IncidentForm = {
 };
 
 const SEVERITY_COLOUR: Record<IncidentSeverity, string> = {
-  low: "bg-slate-100 text-slate-700 border-slate-200",
+  low: "bg-muted text-foreground border-border",
   medium: "bg-warning-50 text-warning-700 border-warning-200",
   high: "bg-danger-50 text-danger-700 border-danger-200",
-  critical: "bg-danger-600 text-[#fff] border-danger-700",
+  critical: "bg-danger-600 text-on-fill border-danger-700",
 };
 
 const STATUS_COLOUR: Record<IncidentStatus, string> = {
@@ -385,21 +385,21 @@ export default function Incidents() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Date & Time *</label>
+          <label className="block text-sm text-foreground mb-1">Date & Time *</label>
           <input
             required
             type="datetime-local"
             value={form.occurred_at}
             onChange={(e) => setForm({ ...form, occurred_at: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
           />
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Status</label>
+          <label className="block text-sm text-foreground mb-1">Status</label>
           <ThemedSelect
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as IncidentStatus })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
           >
             {(Object.keys(INCIDENT_STATUS_LABEL) as IncidentStatus[]).map((s) => (
               <option key={s} value={s}>{INCIDENT_STATUS_LABEL[s]}</option>
@@ -408,34 +408,34 @@ export default function Incidents() {
         </div>
 
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Client</label>
+          <label className="block text-sm text-foreground mb-1">Client</label>
           <ThemedSelect
             value={form.client_id}
             onChange={(e) => setForm({ ...form, client_id: e.target.value, post_id: "", guard_ids: [] })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
           >
             <option value="">— Unspecified —</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </ThemedSelect>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Post / Location</label>
+          <label className="block text-sm text-foreground mb-1">Post / Location</label>
           <ThemedSelect
             value={form.post_id}
             onChange={(e) => setForm({ ...form, post_id: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
             disabled={!form.client_id}
           >
             <option value="">— Unspecified —</option>
             {filteredPosts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </ThemedSelect>
           {!form.client_id && (
-            <p className="text-[10px] text-slate-500 mt-1">Pick a client first.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Pick a client first.</p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Severity *</label>
+          <label className="block text-sm text-foreground mb-1">Severity *</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
             {(Object.keys(INCIDENT_SEVERITY_LABEL) as IncidentSeverity[]).map((s) => (
               <button
@@ -443,7 +443,7 @@ export default function Incidents() {
                 type="button"
                 onClick={() => setForm({ ...form, severity: s })}
                 className={`px-2 py-1.5 text-xs rounded border transition-colors ${
-                  form.severity === s ? SEVERITY_COLOUR[s] : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                  form.severity === s ? SEVERITY_COLOUR[s] : "border-border hover:bg-muted/50 text-muted-foreground"
                 }`}
               >
                 {INCIDENT_SEVERITY_LABEL[s]}
@@ -452,12 +452,12 @@ export default function Incidents() {
           </div>
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Category *</label>
+          <label className="block text-sm text-foreground mb-1">Category *</label>
           <ThemedSelect
             required
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value as IncidentCategory })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
           >
             {(Object.keys(INCIDENT_CATEGORY_LABEL) as IncidentCategory[]).map((c) => (
               <option key={c} value={c}>{INCIDENT_CATEGORY_LABEL[c]}</option>
@@ -466,9 +466,9 @@ export default function Incidents() {
         </div>
 
         <div className="col-span-2">
-          <label className="block text-sm text-slate-700 mb-1">Guards Involved</label>
+          <label className="block text-sm text-foreground mb-1">Guards Involved</label>
           {!form.client_id ? (
-            <p className="text-xs text-slate-500 border border-dashed border-slate-200 rounded-md px-3 py-2">
+            <p className="text-xs text-muted-foreground border border-dashed border-border rounded-md px-3 py-2">
               Select a client first to choose the guards involved.
             </p>
           ) : (
@@ -480,36 +480,36 @@ export default function Incidents() {
                 display={empDisplay}
               />
               {guardsForClient.length === 0 && (
-                <p className="text-xs text-slate-500 mt-1">No active guards are assigned to this client.</p>
+                <p className="text-xs text-muted-foreground mt-1">No active guards are assigned to this client.</p>
               )}
             </>
           )}
         </div>
 
         <div className="col-span-2">
-          <label className="block text-sm text-slate-700 mb-1">Description</label>
+          <label className="block text-sm text-foreground mb-1">Description</label>
           <textarea
             rows={3}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
             placeholder="What happened, where, who was there…"
           />
         </div>
 
         <div className="col-span-2">
-          <label className="block text-sm text-slate-700 mb-1">Action Taken</label>
+          <label className="block text-sm text-foreground mb-1">Action Taken</label>
           <textarea
             rows={2}
             value={form.action_taken}
             onChange={(e) => setForm({ ...form, action_taken: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm"
             placeholder="What was done in response"
           />
         </div>
 
         <div>
-          <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
+          <label className="flex items-center gap-2 text-sm text-foreground mb-1">
             <input
               type="checkbox"
               checked={form.client_notified}
@@ -520,20 +520,20 @@ export default function Incidents() {
         </div>
         {form.client_notified && (
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Notified on</label>
+            <label className="block text-sm text-foreground mb-1">Notified on</label>
             <input
               type="date"
               value={form.client_notified_at}
               onChange={(e) => setForm({ ...form, client_notified_at: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
         )}
 
         <div className="col-span-2">
-          <label className="block text-sm text-slate-700 mb-1">Attachment (photo / FIR copy)</label>
+          <label className="block text-sm text-foreground mb-1">Attachment (photo / FIR copy)</label>
           {editingRow?.drive_view_url && !pendingFile ? (
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border border-slate-200 rounded-md">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border border-border rounded-md">
               <a
                 href={editingRow.drive_view_url}
                 target="_blank"
@@ -543,7 +543,7 @@ export default function Incidents() {
                 <FileText className="w-4 h-4" />
                 {editingRow.attachment_file_name ?? "Current attachment"}
               </a>
-              <label className="cursor-pointer px-2 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50">
+              <label className="cursor-pointer px-2 py-1 text-xs border border-border rounded hover:bg-muted/50">
                 Replace
                 <input
                   type="file"
@@ -557,7 +557,7 @@ export default function Incidents() {
               </label>
             </div>
           ) : (
-            <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 text-sm border border-dashed border-slate-300 rounded hover:bg-slate-50 w-full">
+            <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 text-sm border border-dashed border-border rounded hover:bg-muted/50 w-full">
               <Upload className="w-4 h-4" />
               {pendingFile ? pendingFile.name : "Upload photo / FIR / CCTV reference"}
               <input
@@ -574,7 +574,7 @@ export default function Incidents() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
+      <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-card border-t border-border flex items-center gap-2">
         <Button variant="primary" size="md" disabled={submitting} className="flex-1">
           {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
           {submitting ? "Saving…" : submitLabel}
@@ -664,7 +664,7 @@ export default function Incidents() {
                   <div className="flex items-end gap-1.5 h-16">
                     {weeks.map((w, k) => (
                       <span key={k} title={`${w.start.toLocaleDateString(undefined, { day: "numeric", month: "short" })}: ${w.n} incident${w.n === 1 ? "" : "s"}`}
-                        className={`flex-1 rounded-t ${w.n ? "bg-[#d4674a]" : "bg-muted"}`} style={{ height: `${w.n ? Math.max(12, (w.n / max) * 100) : 6}%` }} />
+                        className={`flex-1 rounded-t ${w.n ? "bg-danger-500" : "bg-muted"}`} style={{ height: `${w.n ? Math.max(12, (w.n / max) * 100) : 6}%` }} />
                     ))}
                   </div>
                 </div>
@@ -699,19 +699,19 @@ export default function Incidents() {
         {/* Filters */}
         <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative md:col-span-2">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by code, description, or guard…"
-              className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full pl-10 pr-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <ThemedSelect
             value={clientFilter}
             onChange={(e) => setClientFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           >
             <option value="all">All clients</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -775,7 +775,7 @@ export default function Incidents() {
                 <button
                   type="button"
                   onClick={() => openEdit(row)}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-slate-600"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground"
                 >
                   <Pencil className="w-4 h-4" /> Edit
                 </button>
@@ -793,29 +793,29 @@ export default function Incidents() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Code</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">When</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client / Post</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Severity</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Category</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Guards</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Code</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">When</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Client / Post</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Severity</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Category</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Guards</th>
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Status</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500 text-sm">
-                      <ShieldAlert className="w-5 h-5 inline-block mr-2 text-slate-400" />
+                    <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                      <ShieldAlert className="w-5 h-5 inline-block mr-2 text-muted-foreground/70" />
                       No incidents match the current filters.
                     </td>
                   </tr>
@@ -823,24 +823,24 @@ export default function Incidents() {
                 {!loading && filteredRows.map((row) => {
                   const postName = row.post_id ? posts.find((p) => p.id === row.post_id)?.name : null;
                   return (
-                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.incident_code}</td>
-                      <td className="px-4 py-3 text-xs text-slate-700">
+                    <tr key={row.id} className="hover:bg-muted/50 transition-colors">
+                      <td className="px-4 py-3 text-xs font-mono text-foreground">{row.incident_code}</td>
+                      <td className="px-4 py-3 text-xs text-foreground">
                         {formatDateTime(row.occurred_at)}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <div className="text-slate-900">{row.client_name ?? "—"}</div>
-                        {postName && <div className="text-xs text-slate-500">{postName}</div>}
+                        <div className="text-foreground">{row.client_name ?? "—"}</div>
+                        {postName && <div className="text-xs text-muted-foreground">{postName}</div>}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${SEVERITY_COLOUR[row.severity]}`}>
                           {INCIDENT_SEVERITY_LABEL[row.severity]}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-700">{INCIDENT_CATEGORY_LABEL[row.category]}</td>
-                      <td className="px-4 py-3 text-xs text-slate-700 max-w-[180px]">
+                      <td className="px-4 py-3 text-xs text-foreground">{INCIDENT_CATEGORY_LABEL[row.category]}</td>
+                      <td className="px-4 py-3 text-xs text-foreground max-w-[180px]">
                         {row.guard_names.length === 0 ? (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-muted-foreground/70">—</span>
                         ) : (
                           <span title={row.guard_names.join(", ")}>
                             {row.guard_names.slice(0, 2).join(", ")}
@@ -869,7 +869,7 @@ export default function Incidents() {
                           <button
                             type="button"
                             onClick={() => openEdit(row)}
-                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                            className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                             title="Edit"
                           >
                             <Pencil className="w-4 h-4" />
@@ -974,18 +974,18 @@ function GuardMultiSelect({
   };
 
   return (
-    <div className="border border-slate-200 rounded-md">
-      <div className="p-2 border-b border-slate-200">
+    <div className="border border-border rounded-md">
+      <div className="p-2 border-b border-border">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search guards…"
-          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+          className="w-full px-2 py-1.5 border border-border rounded text-sm"
         />
       </div>
       {selectedIds.length > 0 && (
-        <div className="p-2 border-b border-slate-200 flex flex-wrap gap-1">
+        <div className="p-2 border-b border-border flex flex-wrap gap-1">
           {selectedIds.map((id) => {
             const emp = allGuards.find((g) => g.id === id);
             return (
@@ -1004,20 +1004,20 @@ function GuardMultiSelect({
       )}
       <div className="max-h-40 overflow-y-auto p-2 space-y-0.5">
         {filtered.length === 0 ? (
-          <div className="text-xs text-slate-500 p-2">No matches.</div>
+          <div className="text-xs text-muted-foreground p-2">No matches.</div>
         ) : (
           filtered.map((g) => (
             <label
               key={g.id}
-              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer text-sm"
+              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm"
             >
               <input
                 type="checkbox"
                 checked={selectedIds.includes(g.id)}
                 onChange={() => toggle(g.id)}
               />
-              <span className="text-slate-900">{g.full_name}</span>
-              <span className="text-xs text-slate-500 font-mono ml-auto">{display(g)}</span>
+              <span className="text-foreground">{g.full_name}</span>
+              <span className="text-xs text-muted-foreground font-mono ml-auto">{display(g)}</span>
             </label>
           ))
         )}

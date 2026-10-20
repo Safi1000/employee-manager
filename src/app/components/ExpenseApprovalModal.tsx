@@ -134,7 +134,7 @@ export default function ExpenseApprovalModal({
           </div>
 
           {approving ? (
-            <div className="flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+            <div className="flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500">
               <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
               <span>
                 Approving locks this expense: no further edits and no deletion. A correction

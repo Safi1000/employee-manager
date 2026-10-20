@@ -151,15 +151,15 @@ function CodeHistoryRow({ h }: { h: EmployeeCodeHistory }) {
   // on client reassignment anymore) — render just the code, not a "X → X" arrow.
   const codeChanged = !!h.old_code && h.old_code !== h.new_code;
   return (
-    <div className="flex items-center gap-2 flex-wrap text-sm text-slate-700">
+    <div className="flex items-center gap-2 flex-wrap text-sm text-foreground">
       {codeChanged ? (
         <>
-          <span className="font-mono text-slate-500 line-through">{h.old_code}</span>
-          <span className="text-slate-400">→</span>
+          <span className="font-mono text-muted-foreground line-through">{h.old_code}</span>
+          <span className="text-muted-foreground/70">→</span>
         </>
       ) : null}
-      <span className="font-mono text-slate-900">{h.new_code}</span>
-      <span className="text-xs text-slate-400">
+      <span className="font-mono text-foreground">{h.new_code}</span>
+      <span className="text-xs text-muted-foreground/70">
         {CODE_HISTORY_REASON[h.reason]} · {formatDate(h.changed_at.slice(0, 10))}
       </span>
     </div>
@@ -369,7 +369,7 @@ const daysInCurrentMonth = () => {
 };
 
 const FIELD_CLS =
-  "w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 
 // §11 extended paper-form sections, rendered once and reused by both the Add and
 // Edit modals (like renderAssignmentFields). Follows the existing form pattern:
@@ -382,7 +382,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
     opts: { type?: string; placeholder?: string; wide?: boolean } = {},
   ) => (
     <div className={opts.wide ? "col-span-2" : ""}>
-      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <label className="block text-sm text-foreground mb-1">{label}</label>
       <input
         type={opts.type ?? "text"}
         value={(f[key] as string) ?? ""}
@@ -394,7 +394,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
   );
   const area = (key: keyof FormState, label: string) => (
     <div className="col-span-2">
-      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <label className="block text-sm text-foreground mb-1">{label}</label>
       <textarea
         rows={2}
         value={(f[key] as string) ?? ""}
@@ -406,13 +406,13 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
   return (
     <>
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Personal Details</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Personal Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("cnic_expiry", "CNIC Expiry", { type: "date" })}
           {txt("education", "Education")}
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Marital Status</label>
+            <label className="block text-sm text-foreground mb-1">Marital Status</label>
             <ThemedSelect
               value={f.marital_status}
               onChange={(e) => setF({ ...f, marital_status: e.target.value as "" | MaritalStatus })}
@@ -434,8 +434,8 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Second Emergency Contact</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Second Emergency Contact</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("emergency_contact2_name", "Name")}
           {txt("emergency_contact2_relation", "Relation")}
@@ -443,8 +443,8 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Political / Locality</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Political / Locality</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("post_office", "Post Office")}
           {txt("police_station", "Police Station")}
@@ -453,8 +453,8 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Family</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Family</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("spouse_name", "Spouse Name")}
           {txt("next_of_kin_name", "Next of Kin — Name")}
@@ -464,10 +464,10 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Ex-Service</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Ex-Service</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+          <label className="col-span-full flex items-center gap-2 text-sm text-foreground">
             <input
               type="checkbox"
               checked={f.is_ex_serviceman}
@@ -489,13 +489,13 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Experience</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Experience</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{area("weapons_trained", "Weapons Trained On")}</div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Internal Office Data</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Internal Office Data</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("interview_date", "Interview Date", { type: "date" })}
           {txt("form_serial_no", "Form Serial No.")}
@@ -503,7 +503,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
           {txt("project", "Project")}
           {txt("company_id_card_number", "Company ID Card No.")}
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Social Security Status</label>
+            <label className="block text-sm text-foreground mb-1">Social Security Status</label>
             <ThemedSelect
               value={f.social_security_status}
               onChange={(e) =>
@@ -524,21 +524,21 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Recruitment</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Recruitment</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("referral_source", "Referral Source", { placeholder: "e.g. Walk-in, Advert, Referral" })}
           {txt("referred_by_name", "Referred By")}
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-200">
-        <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
+      <div className="pt-4 border-t border-border">
+        <h4 className="text-sm text-foreground mb-4">Documents</h4>
         <label
           className={`flex items-center gap-2 text-sm rounded-md border p-3 cursor-pointer ${
             f.physical_copy_present
-              ? "bg-success-50 border-success-200 text-success-800"
-              : "bg-danger-50 border-danger-200 text-danger-800"
+              ? "bg-success-50 border-success-200 text-success-700 dark:text-success-500"
+              : "bg-danger-50 border-danger-200 text-danger-700 dark:text-danger-500"
           }`}
         >
           <input
@@ -815,10 +815,10 @@ function FieldErrorSummary({
             key={key}
             type="button"
             onClick={() => jump(key)}
-            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-danger-300 bg-white text-danger-700 hover:bg-danger-100 transition-colors"
+            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-danger-200 bg-card text-danger-700 hover:bg-danger-100 transition-colors"
           >
             {EMPLOYEE_FIELD_LABELS[key] ?? key}
-            <span className="text-danger-400">›</span>
+            <span className="text-danger-500">›</span>
           </button>
         ))}
       </div>
@@ -2297,19 +2297,19 @@ export default function EmployeeManagement() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border bg-slate-50">
+                  <tr className="border-b border-border bg-muted/50">
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Guard</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">File</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-muted/50 border-l border-border">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -2317,7 +2317,7 @@ export default function EmployeeManagement() {
                   )}
                   {!loading && rows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         {emptyText}
                       </td>
                     </tr>
@@ -2414,7 +2414,7 @@ export default function EmployeeManagement() {
                                 : "bg-secondary text-muted-foreground border-border"
                             }`}
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${isFired(employee) ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${isFired(employee) ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-muted-foreground/40"}`} />
                             {lifecycleStatusLabel(employee)}
                           </span>
                         </td>
@@ -2554,7 +2554,7 @@ export default function EmployeeManagement() {
                 <SlidersHorizontal className="w-4 h-4" strokeWidth={1.5} />
                 Filters
                 {activeFilterCount > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-[#241a06]">{activeFilterCount}</span>
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-on-brand">{activeFilterCount}</span>
                 )}
                 <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} strokeWidth={1.5} />
               </button>
@@ -2587,7 +2587,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value as "all" | EmployeeCategory)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="all">All Categories</option>
                 <option value="client">Client</option>
@@ -2597,7 +2597,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night" | "evening")}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
@@ -2607,7 +2607,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="all">All Status</option>
                 <option value="Active">Active</option>
@@ -2617,7 +2617,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={completenessFilter}
                 onChange={(e) => setCompletenessFilter(e.target.value as "all" | "complete" | "incomplete")}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 title="Profile completeness"
               >
                 <option value="all">All Profiles</option>
@@ -2627,7 +2627,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={lifecycleFilter}
                 onChange={(e) => setLifecycleFilter(e.target.value as "all" | EmployeeLifecycleState)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 title="Recruitment / lifecycle stage"
               >
                 <option value="all">All Lifecycle</option>
@@ -2638,7 +2638,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={expiredCardFilter}
                 onChange={(e) => setExpiredCardFilter(e.target.value as "all" | "expired")}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 title="CNIC card expiry"
               >
                 <option value="all">All Cards</option>
@@ -2647,7 +2647,7 @@ export default function EmployeeManagement() {
               <ThemedSelect
                 value={dupCnicFilter}
                 onChange={(e) => setDupCnicFilter(e.target.value as "all" | "duplicate")}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 title="CNIC shared by more than one employee record"
               >
                 <option value="all">All CNICs</option>
@@ -2676,7 +2676,7 @@ export default function EmployeeManagement() {
                     className={`px-4 py-2 rounded-md text-sm transition-colors ${
                       waitlistTab === value
                         ? "bg-foreground text-background font-semibold"
-                        : "text-slate-600 hover:bg-slate-100"
+                        : "text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {label} ({count})
@@ -2717,72 +2717,72 @@ export default function EmployeeManagement() {
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
+                <label className="block text-sm text-foreground mb-1">Full Name *</label>
                 <input
                   type="text"
                   id="empfield-full_name"
                   value={form.full_name}
                   onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   placeholder="Enter full name"
                 />
                 {formErrors.full_name && <p className="text-xs text-danger-600 mt-1">{formErrors.full_name}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Phone Number *</label>
+                <label className="block text-sm text-foreground mb-1">Phone Number *</label>
                 <input
                   type="tel"
                   id="empfield-phone"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   placeholder="+92 300 1234567"
                 />
                 {formErrors.phone && <p className="text-xs text-danger-600 mt-1">{formErrors.phone}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Secondary Phone Number</label>
+                <label className="block text-sm text-foreground mb-1">Secondary Phone Number</label>
                 <input
                   type="tel"
                   id="empfield-secondary_phone"
                   value={form.secondary_phone}
                   onChange={(e) => setForm({ ...form, secondary_phone: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, secondary_phone: e.target.value.trim() ? validatePhone(e.target.value) : null }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   placeholder="Optional"
                 />
                 {formErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{formErrors.secondary_phone}</p>}
               </div>
               {form.lifecycle_intake && (
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Preferred Location</label>
+                  <label className="block text-sm text-foreground mb-1">Preferred Location</label>
                   <input
                     type="text"
                     id="empfield-preferred_location"
                     value={form.preferred_location}
                     onChange={(e) => setForm({ ...form, preferred_location: e.target.value })}
                     onBlur={(e) => setFormErrors((p) => ({ ...p, preferred_location: validateFreeText(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="Where would they like to be posted?"
                   />
                   {formErrors.preferred_location && <p className="text-xs text-danger-600 mt-1">{formErrors.preferred_location}</p>}
                 </div>
               )}
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Recruitment Intake</label>
+                <label className="block text-sm text-foreground mb-1">Recruitment Intake</label>
                 <ThemedSelect
                   value={form.lifecycle_intake}
                   onChange={(e) =>
                     setForm({ ...form, lifecycle_intake: e.target.value as "" | "applicant" | "waitlisted" })
                   }
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="">Active hire (default)</option>
                   <option value="waitlisted">Waiting list</option>
                 </ThemedSelect>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Create as a waiting-list entry; hire them later with “Hire” on
                   the Waiting List tab, which asks for the full employee record.
                 </p>
@@ -2801,24 +2801,24 @@ export default function EmployeeManagement() {
           <FormSection label="Candidate Details" collapsible={false}>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Current Address</label>
+                <label className="block text-sm text-foreground mb-1">Current Address</label>
                 <textarea
                   rows={2}
                   id="empfield-current_address"
                   value={form.current_address}
                   onChange={(e) => setForm({ ...form, current_address: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, current_address: validateFreeText(e.target.value) }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 />
                 {formErrors.current_address && <p className="text-xs text-danger-600 mt-1">{formErrors.current_address}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Experience</label>
+                <label className="block text-sm text-foreground mb-1">Experience</label>
                 <textarea
                   rows={2}
                   value={form.weapons_trained}
                   onChange={(e) => setForm({ ...form, weapons_trained: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   placeholder="Weapons trained on, previous postings…"
                 />
               </div>
@@ -2827,7 +2827,7 @@ export default function EmployeeManagement() {
 
           <FormSection label="Ex-Service" collapsible={false}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+              <label className="col-span-full flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={form.is_ex_serviceman}
@@ -2847,18 +2847,18 @@ export default function EmployeeManagement() {
                     ["discharging_officer", "Discharging Officer", "text"],
                   ] as const).map(([key, label, type]) => (
                     <div key={key}>
-                      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+                      <label className="block text-sm text-foreground mb-1">{label}</label>
                       <input
                         type={type}
                         value={form[key]}
                         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                        className="w-full px-4 py-2 border border-border rounded-md text-sm"
                       />
                     </div>
                   ))}
                 </>
               ) : (
-                <p className="col-span-full text-xs text-slate-500">
+                <p className="col-span-full text-xs text-muted-foreground">
                   Tick “Ex-serviceman” to record army service details.
                 </p>
               )}
@@ -2871,11 +2871,11 @@ export default function EmployeeManagement() {
           {/* Posting and pay (client, branch, shift, salary, joining date) are set
               on Workforce ▸ Assignments & Pay, where the whole client can be
               edited at once. A new hire lands in that page's "Unassigned" group. */}
-          <div className="flex items-start gap-2 text-sm text-slate-600">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" strokeWidth={2} />
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground/70" strokeWidth={2} />
             <span>
               Client, location, branch, department, shift, salary and joining date are set on{" "}
-              <span className="font-medium text-slate-800">Workforce ▸ Assignments &amp; Pay</span> once this
+              <span className="font-medium text-foreground">Workforce ▸ Assignments &amp; Pay</span> once this
               record is saved.
             </span>
           </div>
@@ -2887,7 +2887,7 @@ export default function EmployeeManagement() {
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
+                <label className="block text-sm text-foreground mb-1">Bank Name *</label>
                 <ClientFilterSelect
                   clients={PK_BANK_OPTIONS}
                   value={form.bank_name}
@@ -2913,19 +2913,19 @@ export default function EmployeeManagement() {
                 {formErrors.bank_name && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_name}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Account Title *</label>
+                <label className="block text-sm text-foreground mb-1">Account Title *</label>
                 <input
                   type="text"
                   id="empfield-account_title"
                   value={form.account_title}
                   onChange={(e) => setForm({ ...form, account_title: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   placeholder="Account holder name"
                 />
                 {formErrors.account_title && <p className="text-xs text-danger-600 mt-1">{formErrors.account_title}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">
+                <label className="block text-sm text-foreground mb-1">
                   {isPkWallet(form.bank_name) ? "Mobile Account Number" : "Bank Account Number"} *
                 </label>
                 <input
@@ -2938,24 +2938,24 @@ export default function EmployeeManagement() {
                     setFormErrors((p) => ({ ...p, bank_account: accountFieldError(form.bank_name, v, true) }));
                   }}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, bank_account: accountFieldError(form.bank_name, e.target.value) }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   placeholder={isPkWallet(form.bank_name) ? "03XXXXXXXXX" : "e.g., 0010053029480016"}
                 />
                 {formErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_account}</p>}
                 {!isPkWallet(form.bank_name) && branchCodeHint(form.bank_account) && (
-                  <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(form.bank_account)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Branch code: {branchCodeHint(form.bank_account)}</p>
                 )}
               </div>
               {!isPkWallet(form.bank_name) && (
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Branch Code *</label>
+                  <label className="block text-sm text-foreground mb-1">Branch Code *</label>
                   <input
                     type="text"
                     id="empfield-bank_branch_code"
                     value={form.bank_branch_code}
                     onChange={(e) => setForm({ ...form, bank_branch_code: e.target.value })}
                     onBlur={(e) => setFormErrors((p) => ({ ...p, bank_branch_code: e.target.value.trim() ? null : "Branch Code is required." }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                     placeholder={branchCodeHint(form.bank_account) ?? "e.g., 0010"}
                   />
                   {formErrors.bank_branch_code && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_branch_code}</p>}
@@ -2963,7 +2963,7 @@ export default function EmployeeManagement() {
               )}
               {!isPkWallet(form.bank_name) && (
                 <div className="col-span-full">
-                  <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
+                  <label className="block text-sm text-foreground mb-1">IBAN (24 chars — as issued by the bank)</label>
                   <input
                     type="text"
                     maxLength={24}
@@ -2971,7 +2971,7 @@ export default function EmployeeManagement() {
                     value={form.iban}
                     onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
                     onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(form.bank_name)) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                     placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
                   />
                   {formErrors.iban && <p className="text-xs text-danger-600 mt-1">{formErrors.iban}</p>}
@@ -3087,27 +3087,27 @@ export default function EmployeeManagement() {
 
             {viewTab === "profile" && (
             <div>
-              <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
+              <h4 className="text-sm text-foreground mb-4">Basic Information</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-slate-500 mb-1">Display Code</p>
-                  <p className="text-slate-900 font-mono">{displayCodeFor(selectedEmployee)}</p>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  <p className="text-muted-foreground mb-1">Display Code</p>
+                  <p className="text-foreground font-mono">{displayCodeFor(selectedEmployee)}</p>
+                  <p className="text-xs text-muted-foreground/70 font-mono mt-0.5">
                     Guard code {selectedEmployee.guard_code ?? selectedEmployee.employee_code}
                     {selectedEmployee.legacy_code && <> · was {selectedEmployee.legacy_code}</>}
                   </p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">Name</p>
-                  <p className="text-slate-900">{selectedEmployee.full_name}</p>
+                  <p className="text-muted-foreground mb-1">Name</p>
+                  <p className="text-foreground">{selectedEmployee.full_name}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">Phone</p>
-                  <p className="text-slate-900">{selectedEmployee.phone ?? "—"}</p>
+                  <p className="text-muted-foreground mb-1">Phone</p>
+                  <p className="text-foreground">{selectedEmployee.phone ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">CNIC</p>
-                  <p className="text-slate-900 font-mono">
+                  <p className="text-muted-foreground mb-1">CNIC</p>
+                  <p className="text-foreground font-mono">
                     {selectedEmployee.cnic_number ? formatCnicInline(selectedEmployee.cnic_number) : "—"}
                   </p>
                 </div>
@@ -3117,8 +3117,8 @@ export default function EmployeeManagement() {
                     on this read-only profile only invited them to drift. */}
                 {selectedEmployee.opening_leaves != null && (
                   <div>
-                    <p className="text-slate-500 mb-1">Opening Leaves</p>
-                    <p className="text-slate-900">
+                    <p className="text-muted-foreground mb-1">Opening Leaves</p>
+                    <p className="text-foreground">
                       {selectedEmployee.opening_leaves}
                       {selectedEmployee.opening_leaves_month
                         ? ` (from ${formatDate(selectedEmployee.opening_leaves_month)})`
@@ -3127,23 +3127,23 @@ export default function EmployeeManagement() {
                   </div>
                 )}
                 <div>
-                  <p className="text-slate-500 mb-1">Join Date</p>
-                  <p className="text-slate-900">{selectedEmployee.join_date ? formatDate(selectedEmployee.join_date) : "—"}</p>
+                  <p className="text-muted-foreground mb-1">Join Date</p>
+                  <p className="text-foreground">{selectedEmployee.join_date ? formatDate(selectedEmployee.join_date) : "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">Bank Name</p>
-                  <p className="text-slate-900">{selectedEmployee.bank_name ?? "—"}</p>
+                  <p className="text-muted-foreground mb-1">Bank Name</p>
+                  <p className="text-foreground">{selectedEmployee.bank_name ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">Account Title</p>
-                  <p className="text-slate-900">{selectedEmployee.account_title ?? "—"}</p>
+                  <p className="text-muted-foreground mb-1">Account Title</p>
+                  <p className="text-foreground">{selectedEmployee.account_title ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">Bank Account</p>
-                  <p className="text-slate-900 font-mono">{selectedEmployee.bank_account ?? "—"}</p>
+                  <p className="text-muted-foreground mb-1">Bank Account</p>
+                  <p className="text-foreground font-mono">{selectedEmployee.bank_account ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 mb-1">Status</p>
+                  <p className="text-muted-foreground mb-1">Status</p>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                     isFired(selectedEmployee)
                       ? "bg-danger-50 text-danger-700"
@@ -3151,7 +3151,7 @@ export default function EmployeeManagement() {
                       ? "bg-success-50 text-success-700"
                       : selectedEmployee.status === "On Leave"
                       ? "bg-warning-50 text-warning-700"
-                      : "bg-slate-100 text-slate-600"
+                      : "bg-muted text-muted-foreground"
                   }`}>
                     {lifecycleStatusLabel(selectedEmployee)}
                   </span>
@@ -3164,7 +3164,7 @@ export default function EmployeeManagement() {
 
             {viewTab === "profile" && codeHistory.length > 0 && (
               <div>
-                <h4 className="text-sm text-slate-900 mb-2">Employee ID History</h4>
+                <h4 className="text-sm text-foreground mb-2">Employee ID History</h4>
                 {/* Only the most recent change is shown inline; older entries live
                     behind "View All Logs" so the panel doesn't grow unbounded. */}
                 <CodeHistoryRow h={codeHistory[0]} />
@@ -3181,27 +3181,27 @@ export default function EmployeeManagement() {
             )}
 
             {viewTab === "profile" && (
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm text-foreground mb-4">Documents</h4>
               {selectedDocs.length === 0 ? (
-                <p className="text-sm text-slate-500">No documents uploaded yet.</p>
+                <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
               ) : (
                 <div className="space-y-2">
                   {selectedDocs.map((d) => (
                     <div
                       key={d.id}
-                      className="flex items-center justify-between p-3 border border-slate-200 rounded-lg"
+                      className="flex items-center justify-between p-3 border border-border rounded-lg"
                     >
                       <div>
-                        <p className="text-sm text-slate-900">{d.file_name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{d.doc_type}</p>
+                        <p className="text-sm text-foreground">{d.file_name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{d.doc_type}</p>
                       </div>
                       {d.publicUrl && (
                         <a
                           href={d.publicUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-sm text-slate-700 hover:text-slate-900 underline"
+                          className="text-sm text-foreground hover:text-foreground underline"
                         >
                           View
                         </a>
@@ -3216,15 +3216,15 @@ export default function EmployeeManagement() {
             {viewTab === "history" && (
               <div className="space-y-3">
                 <div className="pt-2">
-                  <h4 className="text-sm text-slate-900 mb-3">Shift changes</h4>
+                  <h4 className="text-sm text-foreground mb-3">Shift changes</h4>
                   <ShiftChangeHistory employeeId={selectedEmployee.id} />
                 </div>
-                <div className="pt-4 border-t border-slate-200">
-                  <h4 className="text-sm text-slate-900 mb-3">Payroll disbursements</h4>
+                <div className="pt-4 border-t border-border">
+                  <h4 className="text-sm text-foreground mb-3">Payroll disbursements</h4>
                   <PayrollDisbursementHistory employeeId={selectedEmployee.id} />
                 </div>
-                <div className="pt-4 border-t border-slate-200">
-                  <h4 className="text-sm text-slate-900 mb-3">Payslip corrections</h4>
+                <div className="pt-4 border-t border-border">
+                  <h4 className="text-sm text-foreground mb-3">Payslip corrections</h4>
                   <PayrollAdjustmentHistory employeeId={selectedEmployee.id} />
                 </div>
               </div>
@@ -3241,7 +3241,7 @@ export default function EmployeeManagement() {
       >
         <ul className="space-y-3">
           {codeHistory.map((h) => (
-            <li key={h.id} className="pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+            <li key={h.id} className="pb-3 border-b border-border last:border-0 last:pb-0">
               <CodeHistoryRow h={h} />
             </li>
           ))}
@@ -3260,13 +3260,13 @@ export default function EmployeeManagement() {
           size="sm"
         >
           <div className="space-y-3">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               {displayCodeFor(incompleteTarget)} is missing the following required
               fields. Open Edit to fill them in.
             </p>
             <ul className="space-y-1.5">
               {missingRequiredFields(incompleteTarget).map((f) => (
-                <li key={f} className="flex items-center gap-2 text-sm text-slate-900">
+                <li key={f} className="flex items-center gap-2 text-sm text-foreground">
                   <AlertCircle className="w-3.5 h-3.5 text-danger-600 shrink-0" strokeWidth={2} />
                   {f}
                 </li>
@@ -3347,74 +3347,74 @@ export default function EmployeeManagement() {
             <FormSection label="Candidate Details" collapsible={false}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
+                  <label className="block text-sm text-foreground mb-1">Full Name *</label>
                   <input
                     type="text"
                     id="empeditfield-full_name"
                     value={editForm.full_name}
                     onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                   {editFormErrors.full_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.full_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Phone Number *</label>
+                  <label className="block text-sm text-foreground mb-1">Phone Number *</label>
                   <input
                     type="tel"
                     id="empeditfield-phone"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                   {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Secondary Phone Number</label>
+                  <label className="block text-sm text-foreground mb-1">Secondary Phone Number</label>
                   <input
                     type="tel"
                     id="empeditfield-secondary_phone"
                     value={editForm.secondary_phone}
                     onChange={(e) => setEditForm({ ...editForm, secondary_phone: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, secondary_phone: e.target.value.trim() ? validatePhone(e.target.value) : null }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="Optional"
                   />
                   {editFormErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.secondary_phone}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Preferred Location</label>
+                  <label className="block text-sm text-foreground mb-1">Preferred Location</label>
                   <input
                     type="text"
                     id="empeditfield-preferred_location"
                     value={editForm.preferred_location}
                     onChange={(e) => setEditForm({ ...editForm, preferred_location: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, preferred_location: validateFreeText(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="Where would they like to be posted?"
                   />
                   {editFormErrors.preferred_location && <p className="text-xs text-danger-600 mt-1">{editFormErrors.preferred_location}</p>}
                 </div>
                 <div className="col-span-full">
-                  <label className="block text-sm text-slate-700 mb-1">Current Address</label>
+                  <label className="block text-sm text-foreground mb-1">Current Address</label>
                   <textarea
                     rows={2}
                     id="empeditfield-current_address"
                     value={editForm.current_address}
                     onChange={(e) => setEditForm({ ...editForm, current_address: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, current_address: validateFreeText(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                   {editFormErrors.current_address && <p className="text-xs text-danger-600 mt-1">{editFormErrors.current_address}</p>}
                 </div>
                 <div className="col-span-full">
-                  <label className="block text-sm text-slate-700 mb-1">Experience</label>
+                  <label className="block text-sm text-foreground mb-1">Experience</label>
                   <textarea
                     rows={2}
                     value={editForm.weapons_trained}
                     onChange={(e) => setEditForm({ ...editForm, weapons_trained: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="Weapons trained on, previous postings…"
                   />
                 </div>
@@ -3423,7 +3423,7 @@ export default function EmployeeManagement() {
 
             <FormSection label="Ex-Service" collapsible={false}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+                <label className="col-span-full flex items-center gap-2 text-sm text-foreground">
                   <input
                     type="checkbox"
                     checked={editForm.is_ex_serviceman}
@@ -3443,18 +3443,18 @@ export default function EmployeeManagement() {
                       ["discharging_officer", "Discharging Officer", "text"],
                     ] as const).map(([key, label, type]) => (
                       <div key={key}>
-                        <label className="block text-sm text-slate-700 mb-1">{label}</label>
+                        <label className="block text-sm text-foreground mb-1">{label}</label>
                         <input
                           type={type}
                           value={editForm[key]}
                           onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                          className="w-full px-4 py-2 border border-border rounded-md text-sm"
                         />
                       </div>
                     ))}
                   </>
                 ) : (
-                  <p className="col-span-full text-xs text-slate-500">
+                  <p className="col-span-full text-xs text-muted-foreground">
                     Tick “Ex-serviceman” to record army service details.
                   </p>
                 )}
@@ -3465,7 +3465,7 @@ export default function EmployeeManagement() {
             ) : (
               <>
             {hiringMode && (
-              <div className="flex items-start gap-2 p-3 bg-brand-50 border border-brand-200 rounded-md text-sm text-slate-700">
+              <div className="flex items-start gap-2 p-3 bg-brand-50 border border-brand-200 rounded-md text-sm text-foreground">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-brand-600" strokeWidth={2} />
                 <span>
                   Hiring <span className="font-medium">{selectedEmployee.full_name}</span>. Every
@@ -3514,16 +3514,16 @@ export default function EmployeeManagement() {
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Employee ID</label>
+                  <label className="block text-sm text-foreground mb-1">Employee ID</label>
                   <input
                     type="text"
                     value={selectedEmployee.employee_code}
                     disabled
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 font-mono"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm bg-muted/50 text-muted-foreground font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
+                  <label className="block text-sm text-foreground mb-1">Full Name *</label>
                   <input
                     required
                     type="text"
@@ -3532,41 +3532,41 @@ export default function EmployeeManagement() {
                     value={editForm.full_name}
                     onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
-                    className={`w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent${selectedEmployee?.identity_verified ? " bg-slate-50 text-slate-500 cursor-not-allowed" : ""}`}
+                    className={`w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent${selectedEmployee?.identity_verified ? " bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}`}
                   />
                   {editFormErrors.full_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.full_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Phone Number *</label>
+                  <label className="block text-sm text-foreground mb-1">Phone Number *</label>
                   <input
                     type="tel"
                     id="empeditfield-phone"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                   {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Secondary Phone Number</label>
+                  <label className="block text-sm text-foreground mb-1">Secondary Phone Number</label>
                   <input
                     type="tel"
                     id="empeditfield-secondary_phone"
                     value={editForm.secondary_phone}
                     onChange={(e) => setEditForm({ ...editForm, secondary_phone: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, secondary_phone: e.target.value.trim() ? validatePhone(e.target.value) : null }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="Optional"
                   />
                   {editFormErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.secondary_phone}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Status</label>
+                  <label className="block text-sm text-foreground mb-1">Status</label>
                   <ThemedSelect
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as EmployeeRow["status"])}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   >
                     <option value="Active">Active</option>
                     <option value="On Leave">On Leave</option>
@@ -3576,8 +3576,8 @@ export default function EmployeeManagement() {
                 {/* Posting and pay live on Workforce ▸ Assignments & Pay, where
                     a whole client's guards can be changed in one go instead of
                     fifty modals. Nothing here duplicates them. */}
-                <div className="col-span-full flex items-start gap-2 rounded-md border border-border bg-accent/40 px-3 py-2.5 text-sm text-slate-600">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" strokeWidth={2} />
+                <div className="col-span-full flex items-start gap-2 rounded-md border border-border bg-accent/40 px-3 py-2.5 text-sm text-muted-foreground">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground/70" strokeWidth={2} />
                   <span className="flex-1">
                     Client, location, branch, department, shift, salary, allowance and joining date are
                     managed on{" "}
@@ -3598,7 +3598,7 @@ export default function EmployeeManagement() {
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
+                  <label className="block text-sm text-foreground mb-1">Bank Name *</label>
                   <ClientFilterSelect
                     clients={PK_BANK_OPTIONS}
                     value={editForm.bank_name}
@@ -3622,19 +3622,19 @@ export default function EmployeeManagement() {
                   {editFormErrors.bank_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Account Title *</label>
+                  <label className="block text-sm text-foreground mb-1">Account Title *</label>
                   <input
                     type="text"
                     id="empeditfield-account_title"
                     value={editForm.account_title}
                     onChange={(e) => setEditForm({ ...editForm, account_title: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder="Account holder name"
                   />
                   {editFormErrors.account_title && <p className="text-xs text-danger-600 mt-1">{editFormErrors.account_title}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">
+                  <label className="block text-sm text-foreground mb-1">
                     {isPkWallet(editForm.bank_name) ? "Mobile Account Number" : "Bank Account Number"} *
                   </label>
                   <input
@@ -3647,24 +3647,24 @@ export default function EmployeeManagement() {
                       setEditFormErrors((p) => ({ ...p, bank_account: accountFieldError(editForm.bank_name, v, true) }));
                     }}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_account: accountFieldError(editForm.bank_name, e.target.value) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     placeholder={isPkWallet(editForm.bank_name) ? "03XXXXXXXXX" : "e.g., 0010053029480016"}
                   />
                   {editFormErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_account}</p>}
                   {!isPkWallet(editForm.bank_name) && branchCodeHint(editForm.bank_account) && (
-                    <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(editForm.bank_account)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Branch code: {branchCodeHint(editForm.bank_account)}</p>
                   )}
                 </div>
                 {!isPkWallet(editForm.bank_name) && (
                   <div>
-                    <label className="block text-sm text-slate-700 mb-1">Branch Code *</label>
+                    <label className="block text-sm text-foreground mb-1">Branch Code *</label>
                     <input
                       type="text"
                       id="empeditfield-bank_branch_code"
                       value={editForm.bank_branch_code}
                       onChange={(e) => setEditForm({ ...editForm, bank_branch_code: e.target.value })}
                       onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_branch_code: e.target.value.trim() ? null : "Branch Code is required." }))}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                      className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                       placeholder={branchCodeHint(editForm.bank_account) ?? "e.g., 0010"}
                     />
                     {editFormErrors.bank_branch_code && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_branch_code}</p>}
@@ -3672,7 +3672,7 @@ export default function EmployeeManagement() {
                 )}
                 {!isPkWallet(editForm.bank_name) && (
                   <div className="col-span-full">
-                    <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
+                    <label className="block text-sm text-foreground mb-1">IBAN (24 chars — as issued by the bank)</label>
                     <input
                       type="text"
                       maxLength={24}
@@ -3680,7 +3680,7 @@ export default function EmployeeManagement() {
                       value={editForm.iban}
                       onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
                       onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(editForm.bank_name)) }))}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                      className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                       placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
                     />
                     {editFormErrors.iban && <p className="text-xs text-danger-600 mt-1">{editFormErrors.iban}</p>}
@@ -3797,12 +3797,12 @@ function SectionHeader({
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-2 py-2 text-left text-sm text-slate-900 hover:text-brand-700"
+      className="w-full flex items-center gap-2 py-2 text-left text-sm text-foreground hover:text-brand-700"
     >
       {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
       <span className="flex-1">
         {title}
-        {hint && <span className="text-xs text-slate-500 font-normal ml-2">{hint}</span>}
+        {hint && <span className="text-xs text-muted-foreground font-normal ml-2">{hint}</span>}
       </span>
     </button>
   );
@@ -3916,11 +3916,11 @@ function IdentityVerificationPanel({
   };
 
   return (
-    <div className="border border-slate-200 rounded-md p-4">
+    <div className="border border-border rounded-md p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h4 className="text-sm text-slate-900">Identity Verification</h4>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h4 className="text-sm text-foreground">Identity Verification</h4>
+          <p className="text-xs text-muted-foreground mt-0.5">
             {verified
               ? "Core identity is locked — changes are logged amendments."
               : "Verify to lock name, father/husband, CNIC and date of birth."}
@@ -3956,9 +3956,9 @@ function IdentityVerificationPanel({
             return (
               <div key={f.key} className="text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-500">{f.label}</span>
+                  <span className="text-muted-foreground">{f.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-900 font-mono">{current}</span>
+                    <span className="text-foreground font-mono">{current}</span>
                     <button
                       type="button"
                       onClick={() => startAmend(f.key)}
@@ -3969,7 +3969,7 @@ function IdentityVerificationPanel({
                   </div>
                 </div>
                 {amendKey === f.key && (
-                  <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200 space-y-2">
+                  <div className="mt-2 p-2 bg-muted/50 rounded border border-border space-y-2">
                     <input
                       type={f.type}
                       value={amendValue}
@@ -4000,7 +4000,7 @@ function IdentityVerificationPanel({
 
           <div className="pt-1">
             {unverifyOpen ? (
-              <div className="p-2 bg-slate-50 rounded border border-slate-200 space-y-2">
+              <div className="p-2 bg-muted/50 rounded border border-border space-y-2">
                 <input
                   type="text"
                   value={unverifyReason}
@@ -4021,7 +4021,7 @@ function IdentityVerificationPanel({
               <button
                 type="button"
                 onClick={() => setUnverifyOpen(true)}
-                className="text-xs text-slate-500 hover:text-slate-700 underline"
+                className="text-xs text-muted-foreground hover:text-foreground underline"
               >
                 Unverify identity
               </button>
@@ -4031,16 +4031,16 @@ function IdentityVerificationPanel({
       )}
 
       {history.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-slate-100">
-          <p className="text-xs text-slate-500 mb-2">Amendment history</p>
+        <div className="mt-3 pt-3 border-t border-border">
+          <p className="text-xs text-muted-foreground mb-2">Amendment history</p>
           <ul className="space-y-1.5">
             {history.map((h, i) => (
-              <li key={i} className="text-xs text-slate-600 flex flex-wrap items-center gap-1.5">
-                <span className="text-slate-500">{h.field}:</span>
-                <span className="font-mono line-through text-slate-400">{h.old_value || "—"}</span>
-                <span className="text-slate-400">→</span>
-                <span className="font-mono text-slate-800">{h.new_value || "—"}</span>
-                <span className="text-slate-400">
+              <li key={i} className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5">
+                <span className="text-muted-foreground">{h.field}:</span>
+                <span className="font-mono line-through text-muted-foreground/70">{h.old_value || "—"}</span>
+                <span className="text-muted-foreground/70">→</span>
+                <span className="font-mono text-foreground">{h.new_value || "—"}</span>
+                <span className="text-muted-foreground/70">
                   · {h.reason} · {formatDate(h.changed_at.slice(0, 10))}
                 </span>
               </li>
@@ -4111,27 +4111,27 @@ export function ShiftChangeHistory({ employeeId }: { employeeId: string }) {
     return () => { alive = false; };
   }, [employeeId]);
 
-  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (err) return <p className="text-sm text-danger-600">{err}</p>;
-  if (rows.length === 0) return <p className="text-sm text-slate-500">No postings recorded yet.</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">No postings recorded yet.</p>;
 
   return (
     <div className="space-y-2">
       {rows.map((r) => (
-        <div key={r.id} className="flex gap-3 text-sm border-b border-slate-100 pb-2 last:border-0">
-          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 capitalize h-fit whitespace-nowrap">
+        <div key={r.id} className="flex gap-3 text-sm border-b border-border pb-2 last:border-0">
+          <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground capitalize h-fit whitespace-nowrap">
             {r.shift_code ?? "—"}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-slate-900">
+            <p className="text-foreground">
               {r.client?.name ?? "—"}
-              {r.site?.name && <span className="text-slate-500"> · {r.site.name}</span>}
+              {r.site?.name && <span className="text-muted-foreground"> · {r.site.name}</span>}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {SHIFT_REASON_LABEL[r.reason] ?? r.reason}
             </p>
             {/* An open segment (no end_date) is the posting they are on today. */}
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-muted-foreground/70">
               {fmtDate(r.start_date)} → {r.end_date ? fmtDate(r.end_date) : "current"}
             </p>
           </div>
@@ -4180,28 +4180,28 @@ function PayrollDisbursementHistory({ employeeId }: { employeeId: string }) {
 
   const money = (n: number) => `PKR ${Number(n).toLocaleString()}`;
 
-  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (err) return <p className="text-sm text-danger-600">{err}</p>;
-  if (rows.length === 0) return <p className="text-sm text-slate-500">Nothing disbursed yet.</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">Nothing disbursed yet.</p>;
 
   return (
     <div className="space-y-2">
       {rows.map((r) => {
         const balance = Number(r.net_salary) - Number(r.amount_paid);
         return (
-          <div key={r.id} className="flex gap-3 text-sm border-b border-slate-100 pb-2 last:border-0">
-            <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 h-fit whitespace-nowrap">
+          <div key={r.id} className="flex gap-3 text-sm border-b border-border pb-2 last:border-0">
+            <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground h-fit whitespace-nowrap">
               {r.payment_mode}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-slate-900">
+              <p className="text-foreground">
                 {formatDate(r.period_month)} — {money(r.amount_paid)}
                 {balance > 0 && (
                   <span className="text-danger-600"> · {money(balance)} outstanding</span>
                 )}
               </p>
-              <p className="text-xs text-slate-500">Net {money(r.net_salary)}</p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-xs text-muted-foreground">Net {money(r.net_salary)}</p>
+              <p className="text-[11px] text-muted-foreground/70">
                 {r.disbursed_at ? new Date(r.disbursed_at).toLocaleDateString() : "Date not recorded"}
               </p>
             </div>
@@ -4314,22 +4314,22 @@ function BulkGenerateModal({
       }
     >
       <div className="space-y-3">
-        <label className="block"><span className="text-sm text-slate-600">Document</span>
+        <label className="block"><span className="text-sm text-muted-foreground">Document</span>
           <ThemedSelect value={docType} onChange={(e) => setDocType(e.target.value as "data_form" | "id_card")} disabled={running}
-            className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+            className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm">
             <option value="data_form">Employee Data Form (2-page)</option>
             <option value="id_card">Company ID Card</option>
           </ThemedSelect>
         </label>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           One combined PDF for all {employees.length} guards in the current filter. Failures are reported without stopping the batch.
         </p>
         {(running || finished) && (
           <div>
-            <div className="h-2 bg-slate-100 rounded overflow-hidden">
+            <div className="h-2 bg-muted rounded overflow-hidden">
               <div className="h-2 bg-brand-500 transition-all" style={{ width: `${employees.length ? (done / employees.length) * 100 : 0}%` }} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">{done} / {employees.length} processed{finished ? " — done" : "…"}</p>
+            <p className="text-xs text-muted-foreground mt-1">{done} / {employees.length} processed{finished ? " — done" : "…"}</p>
           </div>
         )}
         {finished && failures.length > 0 && (
@@ -4416,9 +4416,9 @@ export function SalaryHistoryPanel({
   };
 
   return (
-    <div className="md:col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50/50">
+    <div className="md:col-span-2 border border-border rounded-md p-3 bg-muted/50/50">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-slate-800">Salary increments &amp; history</h4>
+        <h4 className="text-sm font-medium text-foreground">Salary increments &amp; history</h4>
         <button
           type="button"
           className="text-xs text-brand-700 hover:underline"
@@ -4429,27 +4429,27 @@ export function SalaryHistoryPanel({
       </div>
 
       {open && (
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border border-slate-200 bg-white p-3">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border border-border bg-card p-3">
           <div>
-            <label className="block text-xs text-slate-600 mb-1">New base salary (PKR)</label>
+            <label className="block text-xs text-muted-foreground mb-1">New base salary (PKR)</label>
             <input type="number" value={newBase} onChange={(e) => setNewBase(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-slate-600 mb-1">Allowance (PKR)</label>
+            <label className="block text-xs text-muted-foreground mb-1">Allowance (PKR)</label>
             <input type="number" min={0} value={newAllowance} onChange={(e) => setNewAllowance(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" placeholder="0" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm" placeholder="0" />
           </div>
           <div>
-            <label className="block text-xs text-slate-600 mb-1">Effective date</label>
+            <label className="block text-xs text-muted-foreground mb-1">Effective date</label>
             <input type="date" value={effDate} onChange={(e) => setEffDate(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
-            <p className="text-[11px] text-slate-500 mt-1">Applies from this date; earlier months keep the old salary.</p>
+              className="w-full px-3 py-2 border border-border rounded-md text-sm" />
+            <p className="text-[11px] text-muted-foreground mt-1">Applies from this date; earlier months keep the old salary.</p>
           </div>
           <div>
-            <label className="block text-xs text-slate-600 mb-1">Reason</label>
+            <label className="block text-xs text-muted-foreground mb-1">Reason</label>
             <input value={reason} onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" placeholder="Increment" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm" placeholder="Increment" />
           </div>
           {err && <p className="sm:col-span-2 text-xs text-danger-600">{err}</p>}
           <div className="sm:col-span-2 flex justify-end">
@@ -4462,13 +4462,13 @@ export function SalaryHistoryPanel({
 
       <div className="mt-3 overflow-x-auto">
         {loading ? (
-          <p className="text-xs text-slate-500">Loading…</p>
+          <p className="text-xs text-muted-foreground">Loading…</p>
         ) : rows.length === 0 ? (
-          <p className="text-xs text-slate-500">No salary records yet.</p>
+          <p className="text-xs text-muted-foreground">No salary records yet.</p>
         ) : (
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200">
+              <tr className="text-left text-muted-foreground border-b border-border">
                 <th className="py-1.5 pr-3 font-medium">Effective date</th>
                 <th className="py-1.5 pr-3 font-medium">Base</th>
                 <th className="py-1.5 pr-3 font-medium">Allowance</th>
@@ -4477,14 +4477,14 @@ export function SalaryHistoryPanel({
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.effective_date} className="border-b border-slate-100 last:border-0">
-                  <td className="py-1.5 pr-3 text-slate-800">
+                <tr key={r.effective_date} className="border-b border-border last:border-0">
+                  <td className="py-1.5 pr-3 text-foreground">
                     {fmtDate(r.effective_date)}
-                    {i === 0 && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">current</span>}
+                    {i === 0 && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-success-100 text-success-700">current</span>}
                   </td>
-                  <td className="py-1.5 pr-3 text-slate-800 font-mono">{fmt(r.base_salary)}</td>
-                  <td className="py-1.5 pr-3 text-slate-600 font-mono">{fmt(r.allowance)}</td>
-                  <td className="py-1.5 text-slate-500">{r.reason ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-foreground font-mono">{fmt(r.base_salary)}</td>
+                  <td className="py-1.5 pr-3 text-muted-foreground font-mono">{fmt(r.allowance)}</td>
+                  <td className="py-1.5 text-muted-foreground">{r.reason ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -4510,7 +4510,7 @@ function RehireModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fail = (m: string) => { setErr(m); onError(m); };
-  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const inputCls = "mt-1 w-full px-3 py-2 border border-border rounded-md text-sm";
   const perDay = baseSalary ? computePerDay(baseSalary) : "";
 
   const save = async () => {
@@ -4554,28 +4554,28 @@ function RehireModal({
       }
     >
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Same person, same permanent code ({guard.guard_code ?? guard.employee_code}) and full history. Opens a new posting and reopens the employment window.
         </p>
-        <label className="block"><span className="text-sm text-slate-600">Rehire (joining) date</span>
+        <label className="block"><span className="text-sm text-muted-foreground">Rehire (joining) date</span>
           <input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} className={inputCls} />
         </label>
-        <label className="block"><span className="text-sm text-slate-600">Client</span>
+        <label className="block"><span className="text-sm text-muted-foreground">Client</span>
           <ThemedSelect value={clientId} onChange={(e) => setClientId(e.target.value)} className={inputCls}>
             <option value="">— Select —</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </ThemedSelect>
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block"><span className="text-sm text-slate-600">Base salary (PKR)</span>
+          <label className="block"><span className="text-sm text-muted-foreground">Base salary (PKR)</span>
             <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="0" />
           </label>
-          <label className="block"><span className="text-sm text-slate-600">Allowance (PKR)</span>
+          <label className="block"><span className="text-sm text-muted-foreground">Allowance (PKR)</span>
             <input type="number" min={0} value={allowance} onChange={(e) => setAllowance(e.target.value)} className={inputCls} placeholder="0" />
           </label>
         </div>
         {baseSalary && (
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-muted-foreground">
             Per day (this month): PKR {Number(perDay).toLocaleString()} · recorded effective {fmtDate(joinDate)}.
           </p>
         )}
@@ -4662,7 +4662,7 @@ export function ChangeClientModal({
     }
   };
 
-  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const inputCls = "mt-1 w-full px-3 py-2 border border-border rounded-md text-sm";
   return (
     <Modal
       isOpen
@@ -4681,12 +4681,12 @@ export function ChangeClientModal({
       }
     >
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Moving {guard.full_name} ({displayCode}). This closes the current client record and opens a
           new dated one.{clientChanged && " A new client number will be issued."}
         </p>
         <label className="block">
-          <span className="text-sm text-slate-600">Client</span>
+          <span className="text-sm text-muted-foreground">Client</span>
           <ThemedSelect
             value={clientId}
             onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }}
@@ -4697,14 +4697,14 @@ export function ChangeClientModal({
           </ThemedSelect>
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Contract line (optional)</span>
+          <span className="text-sm text-muted-foreground">Contract line (optional)</span>
           <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
             <option value="">— None —</option>
             {lines.map((l) => (<option key={l.id} value={l.id}>{l.label ?? l.category}</option>))}
           </ThemedSelect>
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Reason</span>
+          <span className="text-sm text-muted-foreground">Reason</span>
           <ThemedSelect value={reason} onChange={(e) => setReason(e.target.value as typeof reason)} className={inputCls}>
             <option value="relief_cover">Relief cover</option>
             <option value="shift_change">Shift change (same client)</option>
@@ -4713,7 +4713,7 @@ export function ChangeClientModal({
           </ThemedSelect>
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Effective date</span>
+          <span className="text-sm text-muted-foreground">Effective date</span>
           <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={inputCls} />
         </label>
       </div>
@@ -4817,7 +4817,7 @@ export function ChangeCategoryModal({
     }
   };
 
-  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const inputCls = "mt-1 w-full px-3 py-2 border border-border rounded-md text-sm";
   return (
     <Modal
       isOpen
@@ -4836,14 +4836,14 @@ export function ChangeCategoryModal({
       }
     >
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Moving {guard.full_name} ({displayCode}) from{" "}
           <span className="font-medium">{CHANGE_CATEGORY_LABEL[currentCategory]}</span>. Past attendance
           stays under the old posting; the new category applies from the effective date.
           {movingToClient && " A new client number will be issued."}
         </p>
         <label className="block">
-          <span className="text-sm text-slate-600">Category</span>
+          <span className="text-sm text-muted-foreground">Category</span>
           <ThemedSelect
             value={category}
             onChange={(e) => {
@@ -4862,7 +4862,7 @@ export function ChangeCategoryModal({
         {movingToClient && (
           <>
             <label className="block">
-              <span className="text-sm text-slate-600">Client</span>
+              <span className="text-sm text-muted-foreground">Client</span>
               <ThemedSelect
                 value={clientId}
                 onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }}
@@ -4873,7 +4873,7 @@ export function ChangeCategoryModal({
               </ThemedSelect>
             </label>
             <label className="block">
-              <span className="text-sm text-slate-600">Contract line (optional)</span>
+              <span className="text-sm text-muted-foreground">Contract line (optional)</span>
               <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
                 <option value="">— None —</option>
                 {lines.map((l) => (<option key={l.id} value={l.id}>{l.label ?? l.category}</option>))}
@@ -4882,7 +4882,7 @@ export function ChangeCategoryModal({
           </>
         )}
         <label className="block">
-          <span className="text-sm text-slate-600">Effective date</span>
+          <span className="text-sm text-muted-foreground">Effective date</span>
           <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={inputCls} />
         </label>
       </div>
@@ -4916,7 +4916,7 @@ export function ChangeShiftModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fail = (m: string) => { setErr(m); onError(m); };
-  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const inputCls = "mt-1 w-full px-3 py-2 border border-border rounded-md text-sm";
 
   useEffect(() => {
     let cancelled = false;
@@ -5032,34 +5032,34 @@ export function ChangeShiftModal({
       }
     >
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           {guard.full_name} ({displayCode}) is currently on the{" "}
           <span className="font-medium capitalize">{guard.shift}</span> shift. From the effective
           date they move to the new shift; all attendance before that date stays on the old shift.
         </p>
         {noAlternative && (
-          <p className="text-xs rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">
+          <p className="text-xs rounded-md border border-warning-200 bg-warning-50 text-warning-700 px-3 py-2">
             This site only runs the <span className="font-medium capitalize">{guard.shift}</span>{" "}
             shift, so there is nowhere to move {guard.full_name}. Add a contract line for the other
             shift under Contracts, or add the shift to the site under Sites &amp; Strength, then
             try again.
           </p>
         )}
-        <label className="block"><span className="text-sm text-slate-600">New shift</span>
+        <label className="block"><span className="text-sm text-muted-foreground">New shift</span>
           <ThemedSelect value={newShift} onChange={(e) => setNewShift(e.target.value)} className={inputCls} disabled={loadingShifts || noAlternative}>
             {shifts.map((s) => (
               <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}{s === guard.shift ? " (current)" : ""}</option>
             ))}
           </ThemedSelect>
         </label>
-        <label className="block"><span className="text-sm text-slate-600">Effective date</span>
+        <label className="block"><span className="text-sm text-muted-foreground">Effective date</span>
           <div className="mt-1 flex items-center gap-2">
             <button type="button" onClick={() => setEffectiveDate(todayIso())}
-              className={`px-3 py-2 rounded-md text-sm border ${effectiveDate === todayIso() ? "bg-slate-100 border-slate-300 text-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              className={`px-3 py-2 rounded-md text-sm border ${effectiveDate === todayIso() ? "bg-muted border-border text-foreground" : "border-border text-muted-foreground hover:bg-muted/50"}`}>
               Today
             </button>
             <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm" />
+              className="flex-1 px-3 py-2 border border-border rounded-md text-sm" />
           </div>
         </label>
       </div>
@@ -5168,17 +5168,17 @@ function EmployeeChildTables({ employeeId }: { employeeId: string }) {
     wrap(supabase.from("employee_document_checklist").update(patch).eq("id", id));
 
   return (
-    <div className="pt-4 border-t border-slate-200 space-y-6">
-      <h4 className="text-sm text-slate-900">Paper-Form Records</h4>
+    <div className="pt-4 border-t border-border space-y-6">
+      <h4 className="text-sm text-foreground">Paper-Form Records</h4>
       {err && <p className="text-xs text-danger-600">{err}</p>}
 
       {/* Children */}
       <div>
-        <p className="text-sm text-slate-700 mb-2">Children</p>
+        <p className="text-sm text-foreground mb-2">Children</p>
         {children.length > 0 && (
           <ul className="space-y-1 mb-2">
             {children.map((c) => (
-              <li key={c.id} className="flex items-center justify-between text-sm text-slate-700">
+              <li key={c.id} className="flex items-center justify-between text-sm text-foreground">
                 <span>
                   {c.name}
                   {c.date_of_birth ? ` · ${formatDate(c.date_of_birth)}` : ""}
@@ -5222,13 +5222,13 @@ function EmployeeChildTables({ employeeId }: { employeeId: string }) {
 
       {/* References */}
       <div>
-        <p className="text-sm text-slate-700 mb-2">References</p>
+        <p className="text-sm text-foreground mb-2">References</p>
         <div className="space-y-3">
           {REFERENCE_SLOTS.map((slot) => {
             const r = refFor(slot.type);
             return (
-              <div key={slot.type} className="border border-slate-200 rounded-md p-3">
-                <p className="text-xs text-slate-500 mb-2">{slot.label}</p>
+              <div key={slot.type} className="border border-border rounded-md p-3">
+                <p className="text-xs text-muted-foreground mb-2">{slot.label}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     className={FIELD_CLS}
@@ -5263,13 +5263,13 @@ function EmployeeChildTables({ employeeId }: { employeeId: string }) {
 
       {/* Previous jobs */}
       <div>
-        <p className="text-sm text-slate-700 mb-2">Previous Employment (up to 3)</p>
+        <p className="text-sm text-foreground mb-2">Previous Employment (up to 3)</p>
         <div className="space-y-3">
           {[1, 2, 3].map((seq) => {
             const j = jobFor(seq);
             return (
-              <div key={seq} className="border border-slate-200 rounded-md p-3">
-                <p className="text-xs text-slate-500 mb-2">Job {seq}</p>
+              <div key={seq} className="border border-border rounded-md p-3">
+                <p className="text-xs text-muted-foreground mb-2">Job {seq}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     className={FIELD_CLS}
@@ -5310,11 +5310,11 @@ function EmployeeChildTables({ employeeId }: { employeeId: string }) {
 
       {/* Documents checklist */}
       <div>
-        <p className="text-sm text-slate-700 mb-2">Documents Checklist</p>
+        <p className="text-sm text-foreground mb-2">Documents Checklist</p>
         <ul className="space-y-1.5">
           {checklist.map((item) => (
             <li key={item.id} className="flex items-center gap-3 text-sm">
-              <label className="flex items-center gap-2 flex-1 text-slate-700">
+              <label className="flex items-center gap-2 flex-1 text-foreground">
                 <input
                   type="checkbox"
                   checked={item.received}
@@ -5361,8 +5361,8 @@ function EmployeeHrSection({
 }) {
   // Webcam capture for the profile photo, alongside the file upload.
   const [photoCamOpen, setPhotoCamOpen] = useState(false);
-  const lockCls = lockedIdentity ? " bg-slate-50 text-slate-500 cursor-not-allowed" : "";
-  const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const lockCls = lockedIdentity ? " bg-muted/50 text-muted-foreground cursor-not-allowed" : "";
+  const inputCls = "w-full px-3 py-2 border border-border rounded-md text-sm";
 
   // Text / textarea inputs bound to a string field on FormState.
   const txt = (
@@ -5371,7 +5371,7 @@ function EmployeeHrSection({
     opts: { type?: string; placeholder?: string; format?: (v: string) => string; maxLength?: number } = {},
   ) => (
     <div>
-      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <label className="block text-sm text-foreground mb-1">{label}</label>
       <input
         type={opts.type ?? "text"}
         value={(form[key] as string) ?? ""}
@@ -5384,7 +5384,7 @@ function EmployeeHrSection({
   );
   const area = (key: keyof FormState, label: string) => (
     <div className="col-span-2">
-      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <label className="block text-sm text-foreground mb-1">{label}</label>
       <textarea rows={2} value={(form[key] as string) ?? ""}
         onChange={(e) => setForm({ ...form, [key]: e.target.value })} className={inputCls} />
     </div>
@@ -5455,7 +5455,7 @@ function EmployeeHrSection({
 
   return (
     <div>
-      <h4 className="text-sm text-slate-900 mb-2 mt-2">Employee Details</h4>
+      <h4 className="text-sm text-foreground mb-2 mt-2">Employee Details</h4>
 
       <div className="space-y-2">
       {/* ── Personal Information ─────────────────────────────────────────── */}
@@ -5468,18 +5468,18 @@ function EmployeeHrSection({
         <div className="space-y-4">
           {/* Photo */}
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Photo</label>
+            <label className="block text-sm text-foreground mb-1">Photo</label>
             <div className="flex items-center gap-3">
               {form.photo_url ? (
-                <img src={form.photo_url} alt="Employee" className="w-16 h-16 rounded-md object-cover border border-slate-200" />
+                <img src={form.photo_url} alt="Employee" className="w-16 h-16 rounded-md object-cover border border-border" />
               ) : (
-                <div className="w-16 h-16 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-slate-300">
+                <div className="w-16 h-16 rounded-md border border-dashed border-border flex items-center justify-center text-muted-foreground/50">
                   <ImageIcon className="w-6 h-6" />
                 </div>
               )}
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-1">
-                  <label className="text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer w-max">
+                  <label className="text-xs px-2.5 py-1.5 rounded-md border border-border text-foreground hover:bg-muted/50 cursor-pointer w-max">
                     {form.photo_url ? "Replace photo" : "Upload photo"}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
                   </label>
@@ -5487,7 +5487,7 @@ function EmployeeHrSection({
                   <button
                     type="button"
                     onClick={() => setPhotoCamOpen(true)}
-                    className="text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 w-max inline-flex items-center gap-1.5"
+                    className="text-xs px-2.5 py-1.5 rounded-md border border-border text-foreground hover:bg-muted/50 w-max inline-flex items-center gap-1.5"
                   >
                     <Camera className="w-3.5 h-3.5" strokeWidth={1.5} /> Use camera
                   </button>
@@ -5509,7 +5509,7 @@ function EmployeeHrSection({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC Number *</label>
+              <label className="block text-sm text-foreground mb-1">CNIC Number *</label>
               <input
                 type="text"
                 maxLength={15}
@@ -5518,13 +5518,13 @@ function EmployeeHrSection({
                 value={form.cnic_number}
                 onChange={(e) => setForm({ ...form, cnic_number: formatCnicInline(e.target.value) })}
                 onBlur={(e) => onFieldBlur("cnic_number", validateCnic(e.target.value))}
-                className={"w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono" + lockCls}
+                className={"w-full px-3 py-2 border border-border rounded-md text-sm font-mono" + lockCls}
                 placeholder="XXXXX-XXXXXXX-X"
               />
               {errors.cnic_number && <p className="text-xs text-danger-600 mt-1">{errors.cnic_number}</p>}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Date of Birth *</label>
+              <label className="block text-sm text-foreground mb-1">Date of Birth *</label>
               <input
                 type="date"
                 id={idPrefix + "date_of_birth"}
@@ -5532,12 +5532,12 @@ function EmployeeHrSection({
                 value={form.date_of_birth}
                 onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
                 onBlur={(e) => onFieldBlur("date_of_birth", e.target.value ? null : "Date of Birth is required.")}
-                className={"w-full px-3 py-2 border border-slate-200 rounded-md text-sm" + lockCls}
+                className={"w-full px-3 py-2 border border-border rounded-md text-sm" + lockCls}
               />
               {errors.date_of_birth && <p className="text-xs text-danger-600 mt-1">{errors.date_of_birth}</p>}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Father / Husband Name *</label>
+              <label className="block text-sm text-foreground mb-1">Father / Husband Name *</label>
               <input
                 type="text"
                 id={idPrefix + "father_or_husband_name"}
@@ -5550,7 +5550,7 @@ function EmployeeHrSection({
                     e.target.value.trim() ? validateFreeText(e.target.value) : "Father / Husband Name is required.",
                   )
                 }
-                className={"w-full px-3 py-2 border border-slate-200 rounded-md text-sm" + lockCls}
+                className={"w-full px-3 py-2 border border-border rounded-md text-sm" + lockCls}
                 placeholder="As per CNIC"
               />
               {errors.father_or_husband_name && (
@@ -5558,7 +5558,7 @@ function EmployeeHrSection({
               )}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Blood Group</label>
+              <label className="block text-sm text-foreground mb-1">Blood Group</label>
               <ThemedSelect value={form.blood_group} onChange={(e) => setForm({ ...form, blood_group: e.target.value })} className={inputCls}>
                 <option value="">—</option>
                 {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
@@ -5566,7 +5566,7 @@ function EmployeeHrSection({
             </div>
 
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC Expiry *</label>
+              <label className="block text-sm text-foreground mb-1">CNIC Expiry *</label>
               <input
                 type="date"
                 id={idPrefix + "cnic_expiry"}
@@ -5579,14 +5579,14 @@ function EmployeeHrSection({
             </div>
             {txt("education", "Education")}
             {cardExpired && (
-              <div className="col-span-full flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-2.5 py-2">
+              <div className="col-span-full flex items-start gap-2 text-xs text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded-md px-2.5 py-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-warning-600" strokeWidth={2} />
                 <span>This CNIC is expired as of {fmtDate(form.cnic_expiry)} — you are adding/editing an employee with an expired card.</span>
               </div>
             )}
 
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Marital Status</label>
+              <label className="block text-sm text-foreground mb-1">Marital Status</label>
               <ThemedSelect value={form.marital_status}
                 onChange={(e) => setForm({ ...form, marital_status: e.target.value as "" | MaritalStatus })} className={inputCls}>
                 <option value="">—</option>
@@ -5604,7 +5604,7 @@ function EmployeeHrSection({
             {area("special_skills", "Special Skills")}
 
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Permanent Address</label>
+              <label className="block text-sm text-foreground mb-1">Permanent Address</label>
               <textarea
                 rows={2}
                 id={idPrefix + "permanent_address"}
@@ -5616,7 +5616,7 @@ function EmployeeHrSection({
               {errors.permanent_address && <p className="text-xs text-danger-600 mt-1">{errors.permanent_address}</p>}
             </div>
             <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Current Address</label>
+              <label className="block text-sm text-foreground mb-1">Current Address</label>
               <textarea
                 rows={2}
                 id={idPrefix + "current_address"}
@@ -5630,8 +5630,8 @@ function EmployeeHrSection({
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100">
-            <h5 className="text-sm text-slate-900 mb-3">Family</h5>
+          <div className="pt-3 border-t border-border">
+            <h5 className="text-sm text-foreground mb-3">Family</h5>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("spouse_name", "Spouse Name")}
               {txt("next_of_kin_name", "Next of Kin — Name")}
@@ -5641,8 +5641,8 @@ function EmployeeHrSection({
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100">
-            <h5 className="text-sm text-slate-900 mb-3">Political / Locality</h5>
+          <div className="pt-3 border-t border-border">
+            <h5 className="text-sm text-foreground mb-3">Political / Locality</h5>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("post_office", "Post Office")}
               {txt("police_station", "Police Station")}
@@ -5662,18 +5662,18 @@ function EmployeeHrSection({
       >
         <div className="space-y-4">
           <div>
-            <h5 className="text-sm text-slate-900 mb-3">Emergency Contact *</h5>
-            <p className="text-xs text-slate-500 mb-3">
+            <h5 className="text-sm text-foreground mb-3">Emergency Contact *</h5>
+            <p className="text-xs text-muted-foreground mb-3">
               At least one contact below must have both a name and a phone.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Name</label>
+                <label className="block text-sm text-foreground mb-1">Name</label>
                 <input type="text" id={idPrefix + "emergency_contact_name"} value={form.emergency_contact_name}
                   onChange={(e) => setForm({ ...form, emergency_contact_name: e.target.value })} className={inputCls} />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Relation</label>
+                <label className="block text-sm text-foreground mb-1">Relation</label>
                 <ThemedSelect value={form.emergency_contact_relation}
                   onChange={(e) => setForm({ ...form, emergency_contact_relation: e.target.value })} className={inputCls}>
                   <option value="">—</option>
@@ -5681,7 +5681,7 @@ function EmployeeHrSection({
                 </ThemedSelect>
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Phone</label>
+                <label className="block text-sm text-foreground mb-1">Phone</label>
                 <input type="tel" id={idPrefix + "emergency_contact_phone"} value={form.emergency_contact_phone}
                   onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })}
                   onBlur={(e) => onFieldBlur("emergency_contact_phone", validatePhone(e.target.value))}
@@ -5693,13 +5693,13 @@ function EmployeeHrSection({
               <p className="text-xs text-danger-600 mt-2">{errors.emergency_contact_name}</p>
             )}
           </div>
-          <div className="pt-3 border-t border-slate-100">
-            <h5 className="text-sm text-slate-900 mb-3">Second Emergency Contact</h5>
+          <div className="pt-3 border-t border-border">
+            <h5 className="text-sm text-foreground mb-3">Second Emergency Contact</h5>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {txt("emergency_contact2_name", "Name")}
               {txt("emergency_contact2_relation", "Relation")}
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Phone</label>
+                <label className="block text-sm text-foreground mb-1">Phone</label>
                 <input type="tel" id={idPrefix + "emergency_contact2_phone"} value={form.emergency_contact2_phone}
                   onChange={(e) => setForm({ ...form, emergency_contact2_phone: e.target.value })}
                   onBlur={(e) => onFieldBlur("emergency_contact2_phone", validatePhone(e.target.value))}
@@ -5718,7 +5718,7 @@ function EmployeeHrSection({
         onToggle={() => toggleSection("exservice")}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+          <label className="col-span-full flex items-center gap-2 text-sm text-foreground">
             <input type="checkbox" checked={form.is_ex_serviceman}
               onChange={(e) => setForm({ ...form, is_ex_serviceman: e.target.checked })} />
             <span>Ex-serviceman</span>
@@ -5734,7 +5734,7 @@ function EmployeeHrSection({
               {txt("discharging_officer", "Discharging Officer")}
             </>
           ) : (
-            <p className="col-span-full text-xs text-slate-500">Tick “Ex-serviceman” to record army service details.</p>
+            <p className="col-span-full text-xs text-muted-foreground">Tick “Ex-serviceman” to record army service details.</p>
           )}
         </div>
       </FormSection>
@@ -5762,7 +5762,7 @@ function EmployeeHrSection({
             {txt("project", "Project")}
             {txt("company_id_card_number", "Company ID Card No.")}
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Social Security Status</label>
+              <label className="block text-sm text-foreground mb-1">Social Security Status</label>
               <ThemedSelect value={form.social_security_status}
                 onChange={(e) => setForm({ ...form, social_security_status: e.target.value as "" | SocialSecurityStatus })} className={inputCls}>
                 <option value="">—</option>
@@ -5777,17 +5777,17 @@ function EmployeeHrSection({
             {area("remarks", "Remarks")}
           </div>
 
-          <div className="pt-3 border-t border-slate-100">
-            <h5 className="text-sm text-slate-900 mb-3">Recruitment</h5>
+          <div className="pt-3 border-t border-border">
+            <h5 className="text-sm text-foreground mb-3">Recruitment</h5>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("referral_source", "Referral Source", { placeholder: "e.g. Walk-in, Advert, Referral" })}
               {txt("referred_by_name", "Referred By")}
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100">
-            <h5 className="text-sm text-slate-900 mb-1">Licences & Compliance</h5>
-            <p className="text-xs text-slate-500 mb-3">Expiry dates feed the Compliance Calendar.</p>
+          <div className="pt-3 border-t border-border">
+            <h5 className="text-sm text-foreground mb-1">Licences & Compliance</h5>
+            <p className="text-xs text-muted-foreground mb-3">Expiry dates feed the Compliance Calendar.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("weapon_licence_number", "Weapon Licence #")}
               {txt("weapon_licence_expiry", "Weapon Licence Expiry", { type: "date" })}
@@ -5934,13 +5934,13 @@ function FilledDetails({ employee }: { employee: EmployeeRow }) {
   return (
     <>
       {groups.map(([title, rows]) => (
-        <div key={title} className="pt-4 border-t border-slate-200">
-          <h4 className="text-sm text-slate-900 mb-4">{title}</h4>
+        <div key={title} className="pt-4 border-t border-border">
+          <h4 className="text-sm text-foreground mb-4">{title}</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             {rows.map(([label, value]) => (
               <div key={label}>
-                <p className="text-slate-500 mb-1">{label}</p>
-                <p className="text-slate-900 whitespace-pre-wrap">{show(value)}</p>
+                <p className="text-muted-foreground mb-1">{label}</p>
+                <p className="text-foreground whitespace-pre-wrap">{show(value)}</p>
               </div>
             ))}
           </div>
@@ -5967,8 +5967,8 @@ function PhysicalCopyToggle({
     <label
       className={`flex items-center gap-2 text-sm rounded-md border px-3 py-2 cursor-pointer ${
         checked
-          ? "bg-success-50 border-success-200 text-success-800"
-          : "bg-danger-50 border-danger-200 text-danger-800"
+          ? "bg-success-50 border-success-200 text-success-700 dark:text-success-500"
+          : "bg-danger-50 border-danger-200 text-danger-700 dark:text-danger-500"
       }`}
     >
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
@@ -6021,7 +6021,7 @@ function FormSection({
         onClick={onToggle}
         aria-expanded={open}
         className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors ${
-          open ? "bg-accent/60 text-foreground font-medium" : "text-slate-700 hover:bg-accent/40"
+          open ? "bg-accent/60 text-foreground font-medium" : "text-foreground hover:bg-accent/40"
         }`}
       >
         <ChevronRightIcon
@@ -6079,7 +6079,7 @@ function EmployeeBand({
         </button>
         <button type="button" onClick={() => onTab("active")} className={tile(false)}>
           <span className="lbl">Active</span>
-          <span className={`${fig} text-[#9ad1a3]`}>{counts.active.toLocaleString()}</span>
+          <span className={`${fig} text-up`}>{counts.active.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">{counts.total ? Math.round((counts.active / counts.total) * 100) : 0}% of registered</span>
         </button>
         <button type="button" onClick={onInactive} className={tile(flags.inactive)}>
@@ -6089,17 +6089,17 @@ function EmployeeBand({
         </button>
         <button type="button" onClick={onMissing} className={tile(flags.missing)} title="Records missing CNIC and/or Join Date — tap to show only these">
           <span className="lbl">No CNIC / join date</span>
-          <span className={`${fig} ${counts.missingKeyFields ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{counts.missingKeyFields.toLocaleString()}</span>
+          <span className={`${fig} ${counts.missingKeyFields ? "text-down" : "text-up"}`}>{counts.missingKeyFields.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">identity or attendance window missing</span>
         </button>
         <button type="button" onClick={onExpired} className={tile(flags.expired)}>
           <span className="lbl">CNIC expired</span>
-          <span className={`${fig} ${counts.expiredCards ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{counts.expiredCards.toLocaleString()}</span>
+          <span className={`${fig} ${counts.expiredCards ? "text-down" : "text-up"}`}>{counts.expiredCards.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">active guards</span>
         </button>
         <button type="button" onClick={onDuplicate} className={tile(flags.duplicate)}>
           <span className="lbl">Same CNIC twice</span>
-          <span className={`${fig} ${counts.duplicateCnic ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{counts.duplicateCnic.toLocaleString()}</span>
+          <span className={`${fig} ${counts.duplicateCnic ? "text-down" : "text-up"}`}>{counts.duplicateCnic.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">records sharing a CNIC</span>
         </button>
       </div>

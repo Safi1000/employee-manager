@@ -384,7 +384,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
   const typeBadge = (type: AccountEntry["type"]) => {
     const cfg: Record<AccountEntry["type"], { label: string; cls: string }> = {
-      OPENING: { label: "Opening", cls: "bg-slate-100 text-slate-700" },
+      OPENING: { label: "Opening", cls: "bg-muted text-foreground" },
       PROFIT_ALLOCATION: { label: "Allocation", cls: "bg-success-50 text-success-700" },
       DRAWING: { label: "Drawing", cls: "bg-danger-50 text-danger-700" },
       CONTRIBUTION: { label: "Contribution / repayment", cls: "bg-brand-50 text-brand-700" },
@@ -393,7 +393,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
     return <span className={`inline-flex px-2 py-0.5 rounded text-xs ${c.cls}`}>{c.label}</span>;
   };
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground/70" /></div>;
 
   return (
     <>
@@ -414,8 +414,8 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         {embedded && (
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
-              <h3 className="text-lg text-slate-900">RMD Statements</h3>
-              <p className="text-sm text-slate-500">Running ledger per partner — drawings, contributions, profit allocations</p>
+              <h3 className="text-lg text-foreground">RMD Statements</h3>
+              <p className="text-sm text-muted-foreground">Running ledger per partner — drawings, contributions, profit allocations</p>
             </div>
             <Button variant="primary" size="md" onClick={openAddPartner}>
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
@@ -432,10 +432,10 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         )}
 
         {/* Tab bar */}
-        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
+        <div className="flex gap-1 bg-muted rounded-md p-1 mb-6 w-fit">
           {([["partners", "Partners"], ["statement", "Capital Entries"], ["summary", "Summary"]] as const).map(([key, label]) => (
             <button key={key} type="button" onClick={() => setTab(key)}
-              className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               {label}
             </button>
           ))}
@@ -446,66 +446,66 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
           <div className="space-y-4">
             <div className="bg-card rounded-2xl border border-border p-4">
               <div className="relative max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
                 <input type="text" placeholder="Search partners…" value={search} onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
               </div>
             </div>
 
             <div className="bg-card rounded-2xl border border-border overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Scope</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Method</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Profit Share %</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Name</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Scope</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Method</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Profit Share %</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {filteredPartners.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">No partners yet.</td></tr>
+                    <tr><td colSpan={6} className="px-6 py-10 text-center text-muted-foreground text-sm">No partners yet.</td></tr>
                   )}
                   {filteredPartners.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={p.id} className="hover:bg-muted/50 transition-colors">
                       <td className="px-6 py-4">
-                        <p className="text-sm text-slate-900 font-medium">{p.name}</p>
-                        {p.branch_id && <p className="text-xs text-slate-500">{branches.find((b) => b.id === p.branch_id)?.name ?? ""}</p>}
+                        <p className="text-sm text-foreground font-medium">{p.name}</p>
+                        {p.branch_id && <p className="text-xs text-muted-foreground">{branches.find((b) => b.id === p.branch_id)?.name ?? ""}</p>}
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700"}`}>
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-warning-50 text-warning-700"}`}>
                           {p.scope === "COMPANY" ? "Company" : "Branch"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{p.allocation_method === "MANUAL" ? "Manual" : "Fixed %"}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{p.allocation_method === "MANUAL" ? "Manual" : "Fixed %"}</td>
                       {/* profit_share_percent, not default_share_pct. This column
                           used to show the one the ledger does not read, so a share
                           edited here appeared to change while every allocation kept
                           using the old number. */}
-                      <td className="px-6 py-4 text-sm text-slate-600">{p.profit_share_percent != null ? `${p.profit_share_percent}%` : "—"}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{p.profit_share_percent != null ? `${p.profit_share_percent}%` : "—"}</td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.is_active ? "bg-success-50 text-success-700" : "bg-muted text-muted-foreground"}`}>
                           {p.is_active ? "Active" : "Inactive"}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
                           <button title="Capital entries (hand-entered only — the full statement with agency is in the partner detail view)" onClick={() => { setStmtPartner(p.id); setTab("statement"); }}
-                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
+                            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                             <Landmark className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                           <button title="Record Drawing" onClick={() => { setDrawingPartnerId(p.id); setDrawingForm({ date: today(), amount: "", payment_method: "CASH", description: "" }); setIsDrawingOpen(true); }}
-                            className="p-1.5 rounded hover:bg-danger-50 text-slate-500 hover:text-danger-600 transition-colors">
+                            className="p-1.5 rounded hover:bg-danger-50 text-muted-foreground hover:text-danger-600 transition-colors">
                             <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                           <button title="Record a contribution or repayment — a partner settling a negative balance posts Dr Bank/Cash, Cr their current account, which is exactly a contribution" onClick={() => { setContribPartnerId(p.id); setContribForm({ date: today(), amount: "", payment_method: "CASH", description: "" }); setIsContribOpen(true); }}
-                            className="p-1.5 rounded hover:bg-success-50 text-slate-500 hover:text-success-600 transition-colors">
+                            className="p-1.5 rounded hover:bg-success-50 text-muted-foreground hover:text-success-600 transition-colors">
                             <ArrowDownLeft className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                           <button title="Edit" onClick={() => openEditPartner(p)}
-                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
+                            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                             <Pencil className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                         </div>
@@ -531,7 +531,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                 position. partner_ledger() is the whole position, and the
                 partner detail view shows it. The narrow list stays because the
                 journal drill-down targets these rows by id. */}
-            <div className="bg-white rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-800">
+            <div className="bg-card rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-700 dark:text-brand-500">
               Hand-entered capital movements only. Cash the partner holds or has spent on the
               company&rsquo;s behalf is <strong>not</strong> shown here — open the partner for the full
               statement, which nets agency against profit share.
@@ -539,9 +539,9 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
             {/* Controls */}
             <div className="bg-card rounded-2xl border border-border p-4 flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-[180px]">
-                <label className="block text-sm text-slate-700 mb-2">Partner</label>
+                <label className="block text-sm text-foreground mb-2">Partner</label>
                 <ThemedSelect value={stmtPartner} onChange={(e) => setStmtPartner(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                   <option value="">Select partner…</option>
                   {partners.filter((p) => p.is_active).map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -549,14 +549,14 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                 </ThemedSelect>
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-2">From</label>
+                <label className="block text-sm text-foreground mb-2">From</label>
                 <input type="date" value={stmtFrom} onChange={(e) => setStmtFrom(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-2">To</label>
+                <label className="block text-sm text-foreground mb-2">To</label>
                 <input type="date" value={stmtTo} onChange={(e) => setStmtTo(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
               </div>
               {stmtPartner && (
                 <>
@@ -586,7 +586,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                 ].map((s) => (
                   <div key={s.label} className={`bg-card rounded-2xl border border-border border-l-4 ${s.cls} p-4`}>
                     <p className="lbl mb-1">{s.label}</p>
-                    <p className={`text-lg font-mono ${s.label === "Net Balance" && s.value < 0 ? "text-danger-700" : "text-slate-900"}`}>{fmt(s.value)}</p>
+                    <p className={`text-lg font-mono ${s.label === "Net Balance" && s.value < 0 ? "text-danger-700" : "text-foreground"}`}>{fmt(s.value)}</p>
                     {s.label === "Net Balance" && s.value < 0 && <p className="text-[10px] text-danger-500 mt-0.5">Partner overdrawn</p>}
                     {s.label === "Net Balance" && s.value > 0 && <p className="text-[10px] text-success-600 mt-0.5">Company owes partner</p>}
                   </div>
@@ -597,40 +597,40 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
             {/* Ledger table */}
             {stmtPartner && (
               <div className="bg-card rounded-2xl border border-border">
-                <div className="p-4 border-b border-slate-200">
-                  <h3 className="text-base text-slate-900">Ledger — {stmtPartnerObj?.name ?? ""}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Opening balance: {fmt(stmtPartnerObj?.opening_balance ?? 0)}</p>
+                <div className="p-4 border-b border-border">
+                  <h3 className="text-base text-foreground">Ledger — {stmtPartnerObj?.name ?? ""}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Opening balance: {fmt(stmtPartnerObj?.opening_balance ?? 0)}</p>
                 </div>
                 {stmtLoading ? (
-                  <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                  <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground/70" /></div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left px-6 py-3 text-sm text-slate-500">Date</th>
-                          <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
-                          <th className="text-left px-6 py-3 text-sm text-slate-500">Particulars</th>
-                          <th className="text-left px-6 py-3 text-sm text-slate-500">Method</th>
-                          <th className="text-right px-6 py-3 text-sm text-slate-500">Drawing (Out)</th>
-                          <th className="text-right px-6 py-3 text-sm text-slate-500">Allocation (In)</th>
-                          <th className="text-right px-6 py-3 text-sm text-slate-500">Contribution (In)</th>
-                          <th className="text-right px-6 py-3 text-sm text-slate-500">Balance</th>
+                        <tr className="border-b border-border">
+                          <th className="text-left px-6 py-3 text-sm text-muted-foreground">Date</th>
+                          <th className="text-left px-6 py-3 text-sm text-muted-foreground">Type</th>
+                          <th className="text-left px-6 py-3 text-sm text-muted-foreground">Particulars</th>
+                          <th className="text-left px-6 py-3 text-sm text-muted-foreground">Method</th>
+                          <th className="text-right px-6 py-3 text-sm text-muted-foreground">Drawing (Out)</th>
+                          <th className="text-right px-6 py-3 text-sm text-muted-foreground">Allocation (In)</th>
+                          <th className="text-right px-6 py-3 text-sm text-muted-foreground">Contribution (In)</th>
+                          <th className="text-right px-6 py-3 text-sm text-muted-foreground">Balance</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200">
+                      <tbody className="divide-y divide-border">
                         {(() => {
                           let running = stmtPartnerObj?.opening_balance ?? 0;
                           return [
-                            <tr key="opening" className="bg-slate-50">
-                              <td className="px-6 py-3 text-xs text-slate-500">{stmtPartnerObj?.opening_balance_date ?? "—"}</td>
+                            <tr key="opening" className="bg-muted/50">
+                              <td className="px-6 py-3 text-xs text-muted-foreground">{stmtPartnerObj?.opening_balance_date ?? "—"}</td>
                               <td className="px-6 py-3">{typeBadge("OPENING")}</td>
-                              <td className="px-6 py-3 text-sm text-slate-600">Opening Balance</td>
-                              <td className="px-6 py-3 text-sm text-slate-500">—</td>
+                              <td className="px-6 py-3 text-sm text-muted-foreground">Opening Balance</td>
+                              <td className="px-6 py-3 text-sm text-muted-foreground">—</td>
                               <td className="px-6 py-3 text-right"></td>
                               <td className="px-6 py-3 text-right"></td>
                               <td className="px-6 py-3 text-right"></td>
-                              <td className={`px-6 py-3 text-right text-sm font-mono ${running < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(running)}</td>
+                              <td className={`px-6 py-3 text-right text-sm font-mono ${running < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(running)}</td>
                             </tr>,
                             ...stmtEntries.map((e) => {
                               let dr = 0, cr = 0, contrib = 0;
@@ -641,31 +641,31 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                                 <tr
                                   key={e.id}
                                   ref={e.id === focusEntry ? focusEntryRow : undefined}
-                                  className={`hover:bg-slate-50 transition-colors ${
+                                  className={`hover:bg-muted/50 transition-colors ${
                                     e.id === focusEntry ? FOCUS_ROW_CLASS : ""
                                   }`}
                                 >
-                                  <td className="px-6 py-3 text-xs text-slate-500">{e.date}</td>
+                                  <td className="px-6 py-3 text-xs text-muted-foreground">{e.date}</td>
                                   <td className="px-6 py-3">{typeBadge(e.type)}</td>
-                                  <td className="px-6 py-3 text-sm text-slate-900">{e.description}{e.period_month ? <span className="ml-2 text-xs text-slate-400">({e.period_month.slice(0, 7)})</span> : null}</td>
-                                  <td className="px-6 py-3 text-xs text-slate-500">{e.payment_method ?? "—"}</td>
+                                  <td className="px-6 py-3 text-sm text-foreground">{e.description}{e.period_month ? <span className="ml-2 text-xs text-muted-foreground/70">({e.period_month.slice(0, 7)})</span> : null}</td>
+                                  <td className="px-6 py-3 text-xs text-muted-foreground">{e.payment_method ?? "—"}</td>
                                   <td className="px-6 py-3 text-right text-sm text-danger-600">{dr > 0 ? fmt(dr) : ""}</td>
                                   <td className="px-6 py-3 text-right text-sm text-success-600">{cr !== 0 ? fmt(Math.abs(cr)) : ""}</td>
                                   <td className="px-6 py-3 text-right text-sm text-brand-600">{contrib > 0 ? fmt(contrib) : ""}</td>
-                                  <td className={`px-6 py-3 text-right text-sm font-mono ${running < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(running)}</td>
+                                  <td className={`px-6 py-3 text-right text-sm font-mono ${running < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(running)}</td>
                                 </tr>
                               );
                             }),
                           ];
                         })()}
                         {stmtEntries.length === 0 && (
-                          <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-500 text-sm">No entries in this range.</td></tr>
+                          <tr><td colSpan={8} className="px-6 py-8 text-center text-muted-foreground text-sm">No entries in this range.</td></tr>
                         )}
                         {(focusEntryMissing ||
                           (focusEntry && !stmtLoading && stmtEntries.length > 0 &&
                             !stmtEntries.some((e) => e.id === focusEntry))) && (
                           <tr>
-                            <td colSpan={8} className="px-6 py-3 text-sm text-warning-800 bg-warning-50">
+                            <td colSpan={8} className="px-6 py-3 text-sm text-warning-700 dark:text-warning-500 bg-warning-50">
                               The entry this ledger line points at is not on this screen — it
                               may have been deleted, or it may be outside the region you can see.
                             </td>
@@ -678,7 +678,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
               </div>
             )}
             {!stmtPartner && (
-              <div className="bg-card rounded-2xl border border-border py-16 text-center text-slate-500 text-sm">
+              <div className="bg-card rounded-2xl border border-border py-16 text-center text-muted-foreground text-sm">
                 Select a partner to view their statement.
               </div>
             )}
@@ -689,42 +689,42 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         {tab === "summary" && (
           <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             {summaryLoading ? (
-              <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+              <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground/70" /></div>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Scope</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Opening</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Profit share</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Holding for co.</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Paid out</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net owed</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Partner</th>
+                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Scope</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Opening</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Profit share</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Holding for co.</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Paid out</th>
+                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Net owed</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
                   {partners.length === 0 && (
-                    <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">No partners.</td></tr>
+                    <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">No partners.</td></tr>
                   )}
                   {partners.map((p) => {
                     const s = summaryData.get(p.id);
                     return (
-                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={p.id} className="hover:bg-muted/50 transition-colors">
                         <td className="px-6 py-4">
-                          <p className="text-sm text-slate-900 font-medium">{p.name}</p>
-                          {p.branch_id && <p className="text-xs text-slate-500">{branches.find((b) => b.id === p.branch_id)?.name}</p>}
+                          <p className="text-sm text-foreground font-medium">{p.name}</p>
+                          {p.branch_id && <p className="text-xs text-muted-foreground">{branches.find((b) => b.id === p.branch_id)?.name}</p>}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700"}`}>
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-warning-50 text-warning-700"}`}>
                             {p.scope === "COMPANY" ? "Company" : "Branch"}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right text-sm font-mono text-slate-700">{fmt(p.opening_balance)}</td>
+                        <td className="px-6 py-4 text-right text-sm font-mono text-foreground">{fmt(p.opening_balance)}</td>
                         <td className="px-6 py-4 text-right text-sm font-mono text-success-600">{s ? fmt(s.allocated) : "—"}</td>
                         <td className="px-6 py-4 text-right text-sm font-mono text-brand-600">{s ? fmt(s.contributed) : "—"}</td>
                         <td className="px-6 py-4 text-right text-sm font-mono text-danger-600">{s ? fmt(s.drawn) : "—"}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s && s.balance < 0 ? "text-danger-700" : "text-slate-900"}`}>
+                        <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s && s.balance < 0 ? "text-danger-700" : "text-foreground"}`}>
                           {s ? fmt(s.balance) : "—"}
                         </td>
                       </tr>
@@ -733,8 +733,8 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                 </tbody>
                 {partners.length > 0 && summaryData.size > 0 && (
                   <tfoot>
-                    <tr className="border-t-2 border-slate-300 bg-slate-50">
-                      <td colSpan={3} className="px-6 py-3 text-sm font-medium text-slate-700">Total</td>
+                    <tr className="border-t-2 border-border bg-muted/50">
+                      <td colSpan={3} className="px-6 py-3 text-sm font-medium text-foreground">Total</td>
                       <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-success-700">
                         {fmt(Array.from(summaryData.values()).reduce((s, d) => s + d.allocated, 0))}
                       </td>
@@ -744,7 +744,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                       <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-danger-700">
                         {fmt(Array.from(summaryData.values()).reduce((s, d) => s + d.drawn, 0))}
                       </td>
-                      <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">
+                      <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-foreground">
                         {fmt(Array.from(summaryData.values()).reduce((s, d) => s + d.balance, 0))}
                       </td>
                     </tr>
@@ -767,23 +767,23 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       <Modal isOpen={isPartnerOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsPartnerOpen(false)} title={editPartner ? "Edit Partner" : "Add Partner"} size="md">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Name *</label>
+            <label className="block text-sm text-foreground mb-1">Name *</label>
             <input type="text" value={partnerForm.name} onChange={(e) => setPartnerForm({ ...partnerForm, name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Scope</label>
+              <label className="block text-sm text-foreground mb-1">Scope</label>
               <ThemedSelect value={partnerForm.scope} onChange={(e) => setPartnerForm({ ...partnerForm, scope: e.target.value as any })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="COMPANY">Company (owner)</option>
                 <option value="BRANCH">Branch (regional partner)</option>
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Allocation Method</label>
+              <label className="block text-sm text-foreground mb-1">Allocation Method</label>
               <ThemedSelect value={partnerForm.allocation_method} onChange={(e) => setPartnerForm({ ...partnerForm, allocation_method: e.target.value as any })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="MANUAL">Manual (typed each period)</option>
                 <option value="FIXED_PCT">Fixed % (auto-computed)</option>
               </ThemedSelect>
@@ -791,9 +791,9 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
           </div>
           {partnerForm.scope === "BRANCH" && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Branch</label>
+              <label className="block text-sm text-foreground mb-1">Branch</label>
               <ThemedSelect value={partnerForm.branch_id} onChange={(e) => setPartnerForm({ ...partnerForm, branch_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select branch…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
@@ -813,15 +813,15 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                   allocating at the old one. Locking the field on edit is what makes
                   that impossible rather than merely unlikely; the create path below
                   writes both columns together so they cannot come apart. */}
-              <label className="block text-sm text-slate-700 mb-1">
-                Profit Share % {editPartner && <span className="text-xs text-slate-400 ml-1">(locked)</span>}
+              <label className="block text-sm text-foreground mb-1">
+                Profit Share % {editPartner && <span className="text-xs text-muted-foreground/70 ml-1">(locked)</span>}
               </label>
               <input type="number" min="0" max="100" step="0.01" value={partnerForm.default_share_pct}
                 disabled={!!editPartner}
                 onChange={(e) => setPartnerForm({ ...partnerForm, default_share_pct: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:bg-muted/50 disabled:text-muted-foreground/70" />
               {editPartner && (
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-muted-foreground mt-1">
                   The share the ledger allocates on. Changing it restates every unposted
                   month, so it is set once when the partner is added; per-client overrides
                   on the Partnership Report are the effective-dated way to vary it.
@@ -829,23 +829,23 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
               )}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">
-                Opening Balance {editPartner?.opening_balance_locked && <span className="text-xs text-slate-400 ml-1">(locked)</span>}
+              <label className="block text-sm text-foreground mb-1">
+                Opening Balance {editPartner?.opening_balance_locked && <span className="text-xs text-muted-foreground/70 ml-1">(locked)</span>}
               </label>
               <input type="number" value={partnerForm.opening_balance}
                 onChange={(e) => setPartnerForm({ ...partnerForm, opening_balance: e.target.value })}
                 disabled={editPartner?.opening_balance_locked}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:bg-muted/50 disabled:text-muted-foreground/70" />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Opening Balance Date</label>
+            <label className="block text-sm text-foreground mb-1">Opening Balance Date</label>
             <input type="date" value={partnerForm.opening_balance_date} disabled={editPartner?.opening_balance_locked}
               onChange={(e) => setPartnerForm({ ...partnerForm, opening_balance_date: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:bg-muted/50 disabled:text-muted-foreground/70" />
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-            <input type="checkbox" checked={partnerForm.is_active} onChange={(e) => setPartnerForm({ ...partnerForm, is_active: e.target.checked })} className="rounded border-slate-300" />
+          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <input type="checkbox" checked={partnerForm.is_active} onChange={(e) => setPartnerForm({ ...partnerForm, is_active: e.target.checked })} className="rounded border-border" />
             Active
           </label>
           <div className="flex gap-2 pt-2">
@@ -860,30 +860,30 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       {/* ── Drawing Modal ── */}
       <Modal isOpen={isDrawingOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsDrawingOpen(false)} title="Record Drawing" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">Payment <strong>out</strong> to the partner. Does not hit P&L.</p>
+          <p className="text-sm text-muted-foreground">Payment <strong>out</strong> to the partner. Does not hit P&L.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Date *</label>
+              <label className="block text-sm text-foreground mb-1">Date *</label>
               <input type="date" value={drawingForm.date} onChange={(e) => setDrawingForm({ ...drawingForm, date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input type="number" min="0" placeholder="0" value={drawingForm.amount} onChange={(e) => setDrawingForm({ ...drawingForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Method</label>
+            <label className="block text-sm text-foreground mb-1">Payment Method</label>
             <ThemedSelect value={drawingForm.payment_method} onChange={(e) => setDrawingForm({ ...drawingForm, payment_method: e.target.value as any })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Description</label>
+            <label className="block text-sm text-foreground mb-1">Description</label>
             <input type="text" placeholder="e.g. Cash paid, Fuel card…" value={drawingForm.description} onChange={(e) => setDrawingForm({ ...drawingForm, description: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="danger" size="md" className="flex-1" onClick={saveDrawing} disabled={drawingSaving}>
@@ -897,30 +897,30 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       {/* ── Contribution Modal ── */}
       <Modal isOpen={isContribOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsContribOpen(false)} title="Record Contribution" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">Partner's own money put <strong>into</strong> the company. Does not hit P&L.</p>
+          <p className="text-sm text-muted-foreground">Partner's own money put <strong>into</strong> the company. Does not hit P&L.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Date *</label>
+              <label className="block text-sm text-foreground mb-1">Date *</label>
               <input type="date" value={contribForm.date} onChange={(e) => setContribForm({ ...contribForm, date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
               <input type="number" min="0" placeholder="0" value={contribForm.amount} onChange={(e) => setContribForm({ ...contribForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Method</label>
+            <label className="block text-sm text-foreground mb-1">Payment Method</label>
             <ThemedSelect value={contribForm.payment_method} onChange={(e) => setContribForm({ ...contribForm, payment_method: e.target.value as any })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Description</label>
+            <label className="block text-sm text-foreground mb-1">Description</label>
             <input type="text" placeholder="e.g. Capital injection" value={contribForm.description} onChange={(e) => setContribForm({ ...contribForm, description: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" onClick={saveContrib} disabled={contribSaving}>

@@ -47,12 +47,12 @@ function PermissionCheckboxes({
     <div className="space-y-4">
       {PERMISSION_GROUPS.map((group) => (
         <div key={group.label}>
-          <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-2">{group.label}</h4>
+          <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">{group.label}</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {group.items.map((item) => (
               <label
                 key={item.key}
-                className={`flex items-start gap-2 text-sm text-slate-700 ${
+                className={`flex items-start gap-2 text-sm text-foreground ${
                   disabled ? "opacity-50" : "cursor-pointer"
                 }`}
               >
@@ -61,7 +61,7 @@ function PermissionCheckboxes({
                   checked={selected.has(item.key)}
                   onChange={() => onToggle(item.key)}
                   disabled={disabled}
-                  className="mt-0.5 rounded border-slate-300"
+                  className="mt-0.5 rounded border-border"
                 />
                 <span>{item.label}</span>
               </label>
@@ -193,11 +193,11 @@ export default function UserManagement() {
     selfId?: string | null,
   ) => (
     <div className="md:col-span-2">
-      <label className="block text-sm text-slate-700 mb-1">User Type</label>
+      <label className="block text-sm text-foreground mb-1">User Type</label>
       <ThemedSelect
         value={userType}
         onChange={(e) => setUserType(e.target.value === "partner" ? "partner" : "office_staff")}
-        className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+        className="w-full px-4 py-2 border border-border rounded-md text-sm"
       >
         <option value="office_staff">Office Staff</option>
         <option value="partner">Partner</option>
@@ -207,11 +207,11 @@ export default function UserManagement() {
           and a check constraint refuses the pair. */}
       {userType !== "partner" && (
         <div className="mt-3">
-          <label className="block text-sm text-slate-700 mb-1">Linked employee (optional)</label>
+          <label className="block text-sm text-foreground mb-1">Linked employee (optional)</label>
           <ThemedSelect
             value={employeeId}
             onChange={(e) => setEmployeeId(e.target.value)}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            className="w-full px-4 py-2 border border-border rounded-md text-sm"
           >
             <option value="">Not linked — an ordinary admin account</option>
             {employeesList.map((emp) => {
@@ -225,7 +225,7 @@ export default function UserManagement() {
               );
             })}
           </ThemedSelect>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Gives this login a <strong>My Profile</strong> page showing that employee&rsquo;s own
             record, attendance, payslips, advances and cash. It <strong>adds</strong> access rather
             than removing it: where the user holds no governing permission, the database also
@@ -236,20 +236,20 @@ export default function UserManagement() {
       )}
       {userType === "partner" && (
         <div className="mt-3">
-          <label className="block text-sm text-slate-700 mb-1">Partners this user represents</label>
+          <label className="block text-sm text-foreground mb-1">Partners this user represents</label>
           {partnersList.length === 0 ? (
-            <p className="text-xs text-slate-500">No partners in this company yet.</p>
+            <p className="text-xs text-muted-foreground">No partners in this company yet.</p>
           ) : (
-            <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-48 overflow-y-auto">
+            <div className="border border-border rounded-md divide-y divide-border max-h-48 overflow-y-auto">
               {partnersList.map((p) => (
-                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50">
+                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50">
                   <input type="checkbox" checked={scope.has(p.id)} onChange={() => togglePerm(scope, setScope, p.id)} />
                   {p.name}
                 </label>
               ))}
             </div>
           )}
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             The Partnership Report shows ONLY the selected partners' data. None selected = this user sees no partner data.
             Requires the Partnership Report view permission as well — this only narrows which partners are visible.
           </p>
@@ -476,7 +476,7 @@ export default function UserManagement() {
               {[
                 { label: "Scoped to a region", v: scoped, sub: `${users.length - scoped} see every region`, tone: "text-foreground" },
                 { label: "Accountant page", v: accountant, sub: "can open it (incl. super admins)", tone: "text-foreground" },
-                { label: "Need attention", v: temp + noAccess, sub: `${temp} on a temporary password · ${noAccess} with no permissions`, tone: temp + noAccess ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+                { label: "Need attention", v: temp + noAccess, sub: `${temp} on a temporary password · ${noAccess} with no permissions`, tone: temp + noAccess ? "text-heed" : "text-up" },
               ].map((t) => (
                 <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
                   <span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span>
@@ -491,26 +491,26 @@ export default function UserManagement() {
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         <div className="bg-card rounded-2xl border border-border">
-          <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
               <input
                 type="text"
                 placeholder="Search by name, email, or title…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               />
             </div>
           </div>
 
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="p-8 flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+              <div className="p-8 flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
             ) : filtered.length === 0 ? (
               <div className="p-12 text-center">
-                <Plus className="w-8 h-8 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
-                <p className="text-slate-500 text-sm">No users match your filters.</p>
+                <Plus className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" strokeWidth={1.5} />
+                <p className="text-muted-foreground text-sm">No users match your filters.</p>
               </div>
             ) : (
               <>
@@ -554,7 +554,7 @@ export default function UserManagement() {
                   <>
                     <button
                       onClick={() => openEdit(u)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-slate-600"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground"
                     >
                       <Pencil className="w-4 h-4" /> Edit
                     </button>
@@ -585,45 +585,45 @@ export default function UserManagement() {
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full min-w-[720px]">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Email</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Title</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Branch</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Permissions</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Name</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Email</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Title</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Branch</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Permissions</th>
+                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-border">
                     {filtered.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
+                      <tr key={u.id} className="hover:bg-muted/50">
+                        <td className="px-6 py-4 text-sm text-foreground">{u.full_name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{u.email ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
                           {displayLabel(u)}
                           {showImplicitAll(u.role) && (
                             <span className="ml-2 text-xs text-brand-600">(admin)</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
                           {u.branch_id
                             ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
-                            : <span className="text-xs text-slate-400">All branches</span>}
+                            : <span className="text-xs text-muted-foreground/70">All branches</span>}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
                           {showImplicitAll(u.role) ? (
                             <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">All (implicit)</span>
                           ) : (u.permissions?.length ?? 0) === 0 ? (
-                            <span className="text-xs text-slate-400">None</span>
+                            <span className="text-xs text-muted-foreground/70">None</span>
                           ) : (
-                            <span className="text-xs text-slate-700">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}</span>
+                            <span className="text-xs text-foreground">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="inline-flex gap-1">
                             <button
                               onClick={() => openEdit(u)}
-                              className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                              className="p-1.5 rounded text-muted-foreground hover:bg-muted"
                               title="Edit"
                             >
                               <Pencil className="w-4 h-4" />
@@ -666,70 +666,70 @@ export default function UserManagement() {
         <form onSubmit={handleCreate} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Full Name</label>
+              <label className="block text-sm text-foreground mb-1">Full Name</label>
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Email *</label>
+              <label className="block text-sm text-foreground mb-1">Email *</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Title *</label>
+              <label className="block text-sm text-foreground mb-1">Title *</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
                 placeholder="e.g. CEO, CTO, HR Manager"
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
-              <p className="text-xs text-slate-500 mt-1">Free-form label. Use whatever fits.</p>
+              <p className="text-xs text-muted-foreground mt-1">Free-form label. Use whatever fits.</p>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Temporary Password *</label>
+              <label className="block text-sm text-foreground mb-1">Temporary Password *</label>
               <input
                 type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
               />
-              <p className="text-xs text-slate-500 mt-1">At least 8 chars. Share securely.</p>
+              <p className="text-xs text-muted-foreground mt-1">At least 8 chars. Share securely.</p>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm text-slate-700 mb-1">Branch</label>
+              <label className="block text-sm text-foreground mb-1">Branch</label>
               <ThemedSelect
                 value={createBranchId}
                 onChange={(e) => setCreateBranchId(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               >
                 <option value="">No branch — unrestricted (Head Office admin)</option>
                 {branches.filter((b) => !b.is_head_office).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </ThemedSelect>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 If set, this user can only see and act on data inside the chosen branch. Leave empty for company-wide access.
               </p>
             </div>
             {renderUserTypeFields(createUserType, setCreateUserType, createPartnerScope, setCreatePartnerScope, createEmployeeId, setCreateEmployeeId)}
           </div>
 
-          <div className="pt-4 border-t border-slate-200">
+          <div className="pt-4 border-t border-border">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm text-slate-900">Permissions</h3>
+              <h3 className="text-sm text-foreground">Permissions</h3>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -741,7 +741,7 @@ export default function UserManagement() {
                 <button
                   type="button"
                   onClick={() => setCreatePerms(new Set())}
-                  className="text-xs text-slate-500 hover:underline"
+                  className="text-xs text-muted-foreground hover:underline"
                 >
                   Clear
                 </button>
@@ -771,31 +771,31 @@ export default function UserManagement() {
           <form onSubmit={handleSaveEdit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Full Name</label>
+                <label className="block text-sm text-foreground mb-1">Full Name</label>
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Title</label>
+                <label className="block text-sm text-foreground mb-1">Title</label>
                 <input
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   placeholder="e.g. CEO, CTO, HR Manager"
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground"
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">Role</label>
+                <label className="block text-sm text-foreground mb-1">Role</label>
                 <ThemedSelect
                   value={editRole}
                   onChange={(e) => setEditRole(e.target.value as UserRole)}
                   disabled={editUser.role === "super_admin" && !isSSA}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm disabled:bg-muted/50 disabled:text-muted-foreground"
                 >
                   {ASSIGNABLE_ROLES.map((r) => (
                     // Assigning/keeping Super Admin is Super-Super-Admin-only.
@@ -814,18 +814,18 @@ export default function UserManagement() {
                 )}
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">Branch</label>
+                <label className="block text-sm text-foreground mb-1">Branch</label>
                 <ThemedSelect
                   value={editBranchId}
                   onChange={(e) => setEditBranchId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="">No branch — unrestricted (Head Office admin)</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </ThemedSelect>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Empty = company-wide access. Set a branch to scope this user's view to that branch only.
                 </p>
               </div>
@@ -833,9 +833,9 @@ export default function UserManagement() {
             </div>
 
             {editRole !== "super_admin" && (
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-border">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm text-slate-900">Permissions</h3>
+                  <h3 className="text-sm text-foreground">Permissions</h3>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -847,7 +847,7 @@ export default function UserManagement() {
                     <button
                       type="button"
                       onClick={() => setEditPerms(new Set())}
-                      className="text-xs text-slate-500 hover:underline"
+                      className="text-xs text-muted-foreground hover:underline"
                     >
                       Clear
                     </button>
@@ -886,15 +886,15 @@ export default function UserManagement() {
               <KeyRound className="w-6 h-6 text-success-600" strokeWidth={1.5} />
             </div>
             <p className="text-sm text-success-700 font-medium">Password reset successfully!</p>
-            <p className="text-xs text-slate-500 mt-1">The user will be prompted to set a new password on next login.</p>
+            <p className="text-xs text-muted-foreground mt-1">The user will be prompted to set a new password on next login.</p>
           </div>
         ) : (
           <form onSubmit={handleResetPassword} className="space-y-4">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               Set a new temporary password for this user. They will be required to change it on their next login.
             </p>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">New Temporary Password</label>
+              <label className="block text-sm text-foreground mb-1">New Temporary Password</label>
               <input
                 type="text"
                 value={resetPwValue}
@@ -902,7 +902,7 @@ export default function UserManagement() {
                 required
                 minLength={8}
                 placeholder="At least 8 characters"
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             {error && (

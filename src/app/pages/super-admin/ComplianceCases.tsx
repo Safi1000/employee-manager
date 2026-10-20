@@ -14,7 +14,7 @@ import { usePageState } from "../../lib/pageState";
 
 type Tab = "cases" | "filings";
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const STAGES = ["not_started", "submitted", "verification", "follow_up", "issued"] as const;
 const JURISDICTIONS = ["ict", "punjab", "federal", "sindh", "kpk", "balochistan", "ajk", "other"] as const;
 const CASE_TYPES = ["licence", "renewal", "noc", "registration", "other"] as const;
@@ -95,17 +95,17 @@ export default function ComplianceCases() {
           {register.length > 0 && (
             <div className="flex gap-2 flex-wrap">
               {register.map((r) => (
-                <div key={r.jurisdiction} className="border border-slate-200 rounded-md px-3 py-2 text-sm">
-                  <span className="uppercase text-slate-700">{r.jurisdiction}</span>
-                  <span className="text-slate-500"> · {r.open_cases} open</span>
+                <div key={r.jurisdiction} className="border border-border rounded-md px-3 py-2 text-sm">
+                  <span className="uppercase text-foreground">{r.jurisdiction}</span>
+                  <span className="text-muted-foreground"> · {r.open_cases} open</span>
                   {Number(r.overdue_cases) > 0 && <span className="text-danger-600"> · {r.overdue_cases} overdue</span>}
                 </div>
               ))}
             </div>
           )}
 
-          <section className="border border-slate-200 rounded-md p-3">
-            <h3 className="text-sm text-slate-900 mb-2">New case</h3>
+          <section className="border border-border rounded-md p-3">
+            <h3 className="text-sm text-foreground mb-2">New case</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               <input className={FIELD} placeholder="Title" value={nc.title} onChange={(e) => setNc({ ...nc, title: e.target.value })} />
               <ThemedSelect className={FIELD} value={nc.case_type} onChange={(e) => setNc({ ...nc, case_type: e.target.value })}>
@@ -128,9 +128,9 @@ export default function ComplianceCases() {
             </div>
           </section>
 
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <div className="overflow-x-auto border border-border rounded-md">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                 <tr>
                   <th className="text-left px-3 py-2">Case</th>
                   <th className="text-left px-3 py-2">Jurisdiction</th>
@@ -140,15 +140,15 @@ export default function ComplianceCases() {
                   <th className="text-right px-3 py-2">Advance</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {cases.map((c) => {
                   const overdue = c.target_date && c.target_date < new Date().toISOString().slice(0, 10) && c.stage !== "issued";
                   return (
                     <tr key={c.id} className={overdue ? "bg-danger-50" : ""}>
-                      <td className="px-3 py-1.5 text-slate-700">{c.title}</td>
-                      <td className="px-3 py-1.5 uppercase text-slate-500">{c.jurisdiction}</td>
-                      <td className="px-3 py-1.5 text-slate-500">{c.authority ?? "—"}</td>
-                      <td className="px-3 py-1.5 text-slate-500">{c.target_date ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-foreground">{c.title}</td>
+                      <td className="px-3 py-1.5 uppercase text-muted-foreground">{c.jurisdiction}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{c.authority ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{c.target_date ?? "—"}</td>
                       <td className="px-3 py-1.5"><span className="capitalize">{String(c.stage).replace(/_/g, " ")}</span></td>
                       <td className="px-3 py-1.5 text-right space-x-1">
                         <Button variant="secondary" size="sm" onClick={() => setOpenCase(openCase === c.id ? null : c.id)}>
@@ -164,7 +164,7 @@ export default function ComplianceCases() {
                     </tr>
                   );
                 })}
-                {cases.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-slate-500">No cases.</td></tr>}
+                {cases.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-muted-foreground">No cases.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -175,8 +175,8 @@ export default function ComplianceCases() {
 
       {tab === "filings" && (
         <div className="space-y-4">
-          <section className="border border-slate-200 rounded-md p-3">
-            <h3 className="text-sm text-slate-900 mb-2">New filing</h3>
+          <section className="border border-border rounded-md p-3">
+            <h3 className="text-sm text-foreground mb-2">New filing</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <ThemedSelect className={FIELD} value={nf.filing_type} onChange={(e) => setNf({ ...nf, filing_type: e.target.value })}>
                 {FILING_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
@@ -198,9 +198,9 @@ export default function ComplianceCases() {
             </div>
           </section>
 
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <div className="overflow-x-auto border border-border rounded-md">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                 <tr>
                   <th className="text-left px-3 py-2">Type</th>
                   <th className="text-left px-3 py-2">Period</th>
@@ -210,14 +210,14 @@ export default function ComplianceCases() {
                   <th className="text-right px-3 py-2">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {filings.map((f) => {
                   const status = f.paid_date ? "paid" : f.filed_date ? "filed" : f.due_date < new Date().toISOString().slice(0, 10) ? "overdue" : "pending";
                   return (
                     <tr key={f.id} className={status === "overdue" ? "bg-danger-50" : ""}>
-                      <td className="px-3 py-1.5 text-slate-700 capitalize">{String(f.filing_type).replace(/_/g, " ")}</td>
-                      <td className="px-3 py-1.5 text-slate-500">{String(f.period_month).slice(0, 7)}</td>
-                      <td className="px-3 py-1.5 text-slate-500">{f.due_date}</td>
+                      <td className="px-3 py-1.5 text-foreground capitalize">{String(f.filing_type).replace(/_/g, " ")}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{String(f.period_month).slice(0, 7)}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{f.due_date}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{f.amount ? Number(f.amount).toLocaleString() : "—"}</td>
                       <td className="px-3 py-1.5 text-center"><span className="capitalize text-xs">{status}</span></td>
                       <td className="px-3 py-1.5 text-right space-x-1">
@@ -229,7 +229,7 @@ export default function ComplianceCases() {
                     </tr>
                   );
                 })}
-                {filings.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-slate-500">No filings.</td></tr>}
+                {filings.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-muted-foreground">No filings.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -267,10 +267,10 @@ function CaseVisits({ companyId, caseId }: { companyId: string; caseId: string }
   };
 
   return (
-    <div className="border border-slate-200 rounded-md p-3 space-y-3 bg-slate-50/50">
-      <h4 className="text-sm text-slate-900">Government visits</h4>
+    <div className="border border-border rounded-md p-3 space-y-3 bg-muted/50/50">
+      <h4 className="text-sm text-foreground">Government visits</h4>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-        <div><label className="text-xs text-slate-500 block mb-1">Date</label>
+        <div><label className="text-xs text-muted-foreground block mb-1">Date</label>
           <input type="date" className={FIELD + " w-full"} value={date} onChange={(e) => setDate(e.target.value)} /></div>
         <input className={FIELD + " col-span-2"} placeholder="Outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} />
         <input className={FIELD} placeholder="Next action" value={nextAction} onChange={(e) => setNextAction(e.target.value)} />
@@ -279,17 +279,17 @@ function CaseVisits({ companyId, caseId }: { companyId: string; caseId: string }
           <Button variant="primary" size="sm" disabled={busy || !outcome.trim()} onClick={add}>Log</Button>
         </div>
       </div>
-      <div className="divide-y divide-slate-100 border border-slate-200 rounded-md bg-white">
+      <div className="divide-y divide-border border border-border rounded-md bg-card">
         {visits.map((v) => (
           <div key={v.id} className="px-3 py-2 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-slate-700">{v.visit_date} · {v.outcome}</span>
-              {v.next_action_date && <span className="text-xs text-slate-400">next: {v.next_action_date}</span>}
+              <span className="text-foreground">{v.visit_date} · {v.outcome}</span>
+              {v.next_action_date && <span className="text-xs text-muted-foreground/70">next: {v.next_action_date}</span>}
             </div>
-            {v.next_action && <div className="text-xs text-slate-500">→ {v.next_action}</div>}
+            {v.next_action && <div className="text-xs text-muted-foreground">→ {v.next_action}</div>}
           </div>
         ))}
-        {visits.length === 0 && <p className="px-3 py-2 text-sm text-slate-500">No visits logged for this case.</p>}
+        {visits.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">No visits logged for this case.</p>}
       </div>
     </div>
   );

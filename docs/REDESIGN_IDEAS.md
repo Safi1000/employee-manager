@@ -198,47 +198,23 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — Badges on rail icons (open alerts on Overview, payslips waiting on
   Workforce, red controls on Finance).
 
-## TO DO LATER — one colour system everywhere
+## One colour system everywhere
 
-**Asked for 2026-10-21, to be worked on later.** Many panels still use the old
-colours (cool grey "slate" shades, plain white cards, fixed hex values) instead
-of the theme's warm tokens, so they look out of place next to the redesigned
-pages and often do not follow dark mode.
-
-Measured 2026-10-21: about **4,900** old colour classes in **83 files**.
-Heaviest first:
-
-| File | Old classes |
-|---|---|
-| Banks & Ledgers (`Accounting.tsx`) | 444 |
-| Expenses & Advances | 383 |
-| Employees | 293 |
-| Payroll | 203 |
-| Contract editor (modal) | 134 |
-| Partner Accounts | 117 |
-| Cash Custody | 109 |
-| Project Financing | 106 |
-| Clients | 104 |
-| Partnership Report, Compliance Calendar | 91 each |
-| Invoices | 90 |
-| Cash Flow | 88 |
-| Invoice generator | 73 |
-| Users & Permissions | 70 |
-| Roster, Profit Distribution, Attendance, Incidents, Documents, Settings, Treasury… | 50–70 each |
-
-The plan when we pick it up:
-
-- **One mapping, applied by script, checked by eye.** Old shade → theme
-  token: white/`slate-50` cards → `bg-card`; `slate-50/100` fills →
-  `bg-muted`; `slate-200/300` lines → `border-border`; `slate-400/500` text →
-  `text-muted-foreground`; `slate-700/800/900` text → `text-foreground`;
-  `blue-*` accents → `brand-*`; red/green/amber status → `danger/success/
-  warning-*`. Fixed hex values become tokens or move into `theme.css`.
-- **Modals, forms and tables first**, since they appear on every page (the
-  contract editor, invoice generator, partner modal, every data table).
-- **Then page by page**, heaviest first (table above), with a light and a
-  dark screenshot of each before pushing.
-- **A guard so it does not come back:** a check in the build that fails on a
-  new `slate-*`, `gray-*`, `bg-white` or hex colour outside `theme.css`.
-- **Idea** — once everything reads tokens, the three accent themes (amber,
-  green, steel) in Settings work on every screen, not only the redesigned ones.
+- **Built 2026-10-21** (asked for the same day). Every screen now reads the
+  theme's named colours:
+  - ~4,700 grey/white classes moved to `bg-card`, `bg-muted`,
+    `border-border`, `text-foreground`, `text-muted-foreground`.
+  - 63 stock colours (amber, emerald, indigo, violet, teal, purple) moved to
+    warning / success / info.
+  - ~180 shade numbers the theme never defined (e.g. `warning-800`, which
+    showed no colour at all) moved to the nearest real shade, readable in dark
+    mode.
+  - 153 raw colour codes became named fixed tones in `theme.css`: `on-fill`,
+    `on-brand`, `ink`, `ink-foreground`, `up`, `down`, `heed`, `settled`,
+    `calm`, `rest`.
+- **Built** — `scripts/check-colors.mjs` runs before every `npm run build` and
+  fails it if an old colour comes back (`npm run check:colors` runs it alone).
+- **Not covered, on purpose** — hex values handed to charts, PDFs and Excel
+  exports, which cannot read CSS variables; and the separate `mobile/` app.
+- **Idea** — now that every screen reads tokens, the accent themes in Settings
+  (amber, green, steel) can recolour every screen; worth a check of each.

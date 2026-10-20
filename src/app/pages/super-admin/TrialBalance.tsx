@@ -209,7 +209,7 @@ export default function TrialBalance() {
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2.5">
             <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
               <span className="lbl">{period ? monthLabel(period) : "All periods"} · debits against credits</span>
-              <span className={`font-display text-2xl font-bold leading-none ${balanced ? "text-[#9ad1a3]" : "text-[#f0a99a]"}`}>{balanced ? "Balanced" : `Off by ${Math.abs(totals.d - totals.c).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
+              <span className={`font-display text-2xl font-bold leading-none ${balanced ? "text-up" : "text-down"}`}>{balanced ? "Balanced" : `Off by ${Math.abs(totals.d - totals.c).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
               <span className="font-ledger text-xs text-muted-foreground">Dr {totals.d.toLocaleString(undefined, { maximumFractionDigits: 0 })} · Cr {totals.c.toLocaleString(undefined, { maximumFractionDigits: 0 })}{isClosed ? " · period locked" : ""}</span>
             </div>
             <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
@@ -221,7 +221,7 @@ export default function TrialBalance() {
                   return (
                     <div key={t} className="flex flex-col">
                       <span className="text-xs text-muted-foreground">{ACCOUNT_TYPE_LABEL[t]} · {list.length}</span>
-                      <span className={`font-ledger text-sm font-semibold whitespace-nowrap ${net < 0 ? "text-[#f6d79b]" : ""}`}>{net < 0 ? "Cr " : "Dr "}{Math.abs(Math.round(net)).toLocaleString()}</span>
+                      <span className={`font-ledger text-sm font-semibold whitespace-nowrap ${net < 0 ? "text-heed" : ""}`}>{net < 0 ? "Cr " : "Dr "}{Math.abs(Math.round(net)).toLocaleString()}</span>
                     </div>
                   );
                 })}
@@ -243,13 +243,13 @@ export default function TrialBalance() {
         )}
 
         <div className="bg-card rounded-2xl border border-border">
-          <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="p-4 md:p-5 border-b border-border flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <label className="text-sm text-slate-600">Period</label>
+              <label className="text-sm text-muted-foreground">Period</label>
               <ThemedSelect
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[200px]"
+                className="px-3 py-2 border border-border rounded-md text-sm min-w-[200px]"
               >
                 <option value="">All periods (cumulative)</option>
                 {periods.map((p) => (
@@ -263,7 +263,7 @@ export default function TrialBalance() {
                 <span
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
                     isClosed
-                      ? "bg-slate-100 text-slate-700"
+                      ? "bg-muted text-foreground"
                       : "bg-success-50 text-success-700"
                   }`}
                 >
@@ -280,7 +280,7 @@ export default function TrialBalance() {
               )}
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-600">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 checked={hideZero}
@@ -291,7 +291,7 @@ export default function TrialBalance() {
           </div>
 
           {loading ? (
-            <div className="py-16 text-center text-slate-500">
+            <div className="py-16 text-center text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
             </div>
           ) : folded.length === 0 ? (
@@ -300,27 +300,27 @@ export default function TrialBalance() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Code</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Account</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Debit</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Credit</th>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Code</th>
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase">Account</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Debit</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase">Credit</th>
                   </tr>
                 </thead>
                 {ACCOUNT_TYPE_ORDER.map((type) => {
                   const group = byType.get(type) ?? [];
                   if (group.length === 0) return null;
                   return (
-                    <tbody key={type} className="divide-y divide-slate-100">
-                      <tr className="bg-slate-50/60">
-                        <td colSpan={4} className="px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
+                    <tbody key={type} className="divide-y divide-border">
+                      <tr className="bg-muted/50/60">
+                        <td colSpan={4} className="px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground">
                           {ACCOUNT_TYPE_LABEL[type]}
                         </td>
                       </tr>
                       {group.map((r) => (
-                        <tr key={r.account_id} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 text-xs font-mono text-slate-900">{r.account_code}</td>
-                          <td className="px-4 py-2 text-sm text-slate-900">{r.account_name}</td>
+                        <tr key={r.account_id} className="hover:bg-muted/50">
+                          <td className="px-4 py-2 text-xs font-mono text-foreground">{r.account_code}</td>
+                          <td className="px-4 py-2 text-sm text-foreground">{r.account_name}</td>
                           <td className="px-4 py-2 text-right text-sm">
                             {r.debit !== 0 ? fmtPKR(r.debit) : ""}
                           </td>
@@ -333,14 +333,14 @@ export default function TrialBalance() {
                   );
                 })}
                 <tfoot>
-                  <tr className="border-t-2 border-slate-300 bg-slate-50">
-                    <td colSpan={2} className="px-4 py-3 text-sm text-slate-900 font-medium text-right">
+                  <tr className="border-t-2 border-border bg-muted/50">
+                    <td colSpan={2} className="px-4 py-3 text-sm text-foreground font-medium text-right">
                       TOTAL
                     </td>
-                    <td className="px-4 py-3 text-right text-sm text-slate-900 font-medium">
+                    <td className="px-4 py-3 text-right text-sm text-foreground font-medium">
                       {fmtPKR(totals.d)}
                     </td>
-                    <td className="px-4 py-3 text-right text-sm text-slate-900 font-medium">
+                    <td className="px-4 py-3 text-right text-sm text-foreground font-medium">
                       {fmtPKR(totals.c)}
                     </td>
                   </tr>
@@ -371,12 +371,12 @@ export default function TrialBalance() {
 function EmptyLedger({ period, regionName }: { period: string; regionName: string | null }) {
   return (
     <div className="py-16 px-6 text-center">
-      <Info className="w-6 h-6 mx-auto text-slate-400 mb-3" />
-      <p className="text-sm text-slate-700">
+      <Info className="w-6 h-6 mx-auto text-muted-foreground/70 mb-3" />
+      <p className="text-sm text-foreground">
         No journal entries {period ? `for ${monthLabel(period)}` : "yet"}
         {regionName ? ` in ${regionName}` : ""}.
       </p>
-      <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto">
+      <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
         This is the ledger reporting that nothing has been posted — not a
         loading failure. Balances appear here as soon as invoices, payroll,
         expenses or opening balances are entered.

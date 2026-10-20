@@ -72,9 +72,9 @@ export default function ContractRenewModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Renew ${contract.contract_code}`} size="md">
       <div className="space-y-4">
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
-          <p className="text-slate-900">{clientName}</p>
-          <p className="text-xs text-slate-500 mt-0.5">
+        <div className="bg-muted/50 border border-border rounded-md p-3 text-sm">
+          <p className="text-foreground">{clientName}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
             Current term: {formatDateUS(contract.start_date)}
             {contract.is_infinite
               ? " → no end date"
@@ -84,7 +84,7 @@ export default function ContractRenewModal({
           </p>
         </div>
 
-        <p className="text-xs text-slate-600">
+        <p className="text-xs text-muted-foreground">
           Every term and contract line is copied onto a new contract with its own code.
           {" "}<strong>{contract.contract_code}</strong> is marked expired, and any guards pinned to it
           move onto the renewal so their attendance keeps working. The signed document and any
@@ -93,24 +93,24 @@ export default function ContractRenewModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-slate-600 mb-1">New start date *</label>
+            <label className="block text-xs text-muted-foreground mb-1">New start date *</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-600 mb-1">New end date {isInfinite ? "" : "*"}</label>
+            <label className="block text-xs text-muted-foreground mb-1">New end date {isInfinite ? "" : "*"}</label>
             <input
               type="date"
               value={endDate}
               disabled={isInfinite}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-100 disabled:text-slate-400"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm disabled:bg-muted disabled:text-muted-foreground/70"
             />
-            <label className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+            <label className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
               <input
                 type="checkbox"
                 checked={isInfinite}
@@ -123,7 +123,7 @@ export default function ContractRenewModal({
 
         {error && <p className="text-sm text-danger-600">{error}</p>}
 
-        <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+        <div className="flex items-center gap-3 pt-4 border-t border-border">
           <Button variant="primary" size="md" className="flex-1" disabled={busy} onClick={submit}>
             {busy
               ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Renewing…</>

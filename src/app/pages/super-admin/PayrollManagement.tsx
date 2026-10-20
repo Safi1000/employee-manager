@@ -2439,7 +2439,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {(focusPayslipMissing ||
             (focusPayslip && !loading && !filtered.some((r) => r.payslip_id === focusPayslip))) && (
-            <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
                 The payslip this ledger entry points at is not on this screen — it may
@@ -2496,17 +2496,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 const fullyDisbursed = shellFullyDisbursed(s.key);
                 const partiallyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount > 0;
                 return (
-                  <div key={s.key} className={`relative rounded-2xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
+                  <div key={s.key} className={`relative rounded-2xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-500/8 border-success-200 dark:border-success-500/30" : "bg-card border-border"}`}>
                     <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 pr-24 text-left">
                       <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
-                      <span className={`text-sm font-medium truncate flex-1 ${fullyDisbursed ? "text-success-800 dark:text-success-400" : "text-foreground"}`}>{s.name}</span>
+                      <span className={`text-sm font-medium truncate flex-1 ${fullyDisbursed ? "text-success-700 dark:text-success-500" : "text-foreground"}`}>{s.name}</span>
                       {fullyDisbursed && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500">
                           <Check className="w-3 h-3" strokeWidth={2.5} /> All disbursed
                         </span>
                       )}
                       {partiallyDisbursed && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-warning-50 text-warning-800 dark:bg-warning-900/20 dark:text-warning-500">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-warning-50 text-warning-700 dark:bg-warning-500/10 dark:text-warning-500">
                           {t!.disbursedCount}/{done} disbursed
                         </span>
                       )}
@@ -2686,7 +2686,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         }
         actions={
           <div className="flex items-center gap-3">
-            <div className="text-xs text-slate-500 flex flex-col items-end mr-2">
+            <div className="text-xs text-muted-foreground flex flex-col items-end mr-2">
               <span>Cash: PKR {cashBalance.toLocaleString()}</span>
               <span>Days in {formatPeriod(selectedPeriod)}: {daysInMonth(selectedPeriod)}</span>
             </div>
@@ -2772,7 +2772,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="w-[220px] min-w-[180px] relative">
                     <Search
-                      className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70"
                       strokeWidth={1.5}
                     />
                     <input
@@ -2780,7 +2780,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search employee…"
-                      className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                     />
                   </div>
                   <button
@@ -2791,7 +2791,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     <SlidersHorizontal className="w-4 h-4" strokeWidth={1.5} />
                     Filters
                     {activeFilterCount > 0 && (
-                      <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-[#241a06]">{activeFilterCount}</span>
+                      <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-on-brand">{activeFilterCount}</span>
                     )}
                     <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} strokeWidth={1.5} />
                   </button>
@@ -2833,7 +2833,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   <ThemedSelect
                     value={shiftFilter}
                     onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="px-3 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="all">All Shifts</option>
                     <option value="day">Day</option>
@@ -2842,7 +2842,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   <ThemedSelect
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="px-3 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="all">All Status</option>
                     <option value="Pending">Pending</option>
@@ -2851,7 +2851,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   <ThemedSelect
                     value={disbursedFilter}
                     onChange={(e) => setDisbursedFilter(e.target.value as "all" | "yes" | "no")}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="px-3 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="all">All Disbursed</option>
                     <option value="yes">Disbursed</option>
@@ -2884,7 +2884,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     <ThemedSelect
                       value={categoryFilter}
                       onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
-                      className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                      className="px-3 py-2 border border-border rounded-md text-sm"
                       title="Filter by employee category"
                     >
                       <option value="all">All Categories</option>
@@ -2911,13 +2911,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 return (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
                     <div className="relative w-[240px] min-w-[160px]">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
                       <input
                         type="text"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="Search by name or employee ID…"
-                        className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                        className="w-full pl-9 pr-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                       />
                     </div>
                     {afterNet && (
@@ -2940,29 +2940,29 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200">
+                    <tr className="border-b border-border">
                       {afterNet && <th className="w-10 px-4 py-3"></th>}
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground">Employee</th>
                       {!runInline && (
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground">
                         {relieversOnly ? "Worked for" : "Client"}
                       </th>
                       )}
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Attendance</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
-                      {showBank && <th className="text-left px-4 py-3 text-xs text-slate-500">Bank Name</th>}
-                      {showBank && <th className="text-left px-4 py-3 text-xs text-slate-500">Account Title</th>}
-                      {showBank && <th className="text-left px-4 py-3 text-xs text-slate-500">Account No.</th>}
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground">Attendance</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground">Base</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground">Net Salary</th>
+                      {showBank && <th className="text-left px-4 py-3 text-xs text-muted-foreground">Bank Name</th>}
+                      {showBank && <th className="text-left px-4 py-3 text-xs text-muted-foreground">Account Title</th>}
+                      {showBank && <th className="text-left px-4 py-3 text-xs text-muted-foreground">Account No.</th>}
                       {showBank && <th className="px-4 py-3"></th>}
-                      {!runInline && <th className="text-left px-4 py-3 text-xs text-slate-500">Status</th>}
-                      {!runInline && <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>}
+                      {!runInline && <th className="text-left px-4 py-3 text-xs text-muted-foreground">Status</th>}
+                      {!runInline && <th className="text-left px-4 py-3 text-xs text-muted-foreground">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {loading && (
                       <tr>
-                        <td colSpan={bodyColCount} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={bodyColCount} className="px-6 py-10 text-center text-muted-foreground">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                           Loading…
                         </td>
@@ -2970,7 +2970,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     )}
                     {!loading && filtered.length === 0 && (
                       <tr>
-                        <td colSpan={bodyColCount} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={bodyColCount} className="px-6 py-10 text-center text-muted-foreground text-sm">
                           No employees match the current filters.
                         </td>
                       </tr>
@@ -3046,7 +3046,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 : selectedId === e.id
                                 ? "bg-brand-500/10"
                                 : isPaidOrZero(row)
-                                  ? "bg-success-50 dark:bg-success-900/15 hover:bg-success-100 dark:hover:bg-success-900/25"
+                                  ? "bg-success-50 dark:bg-success-500/8 hover:bg-success-100 dark:hover:bg-success-500/12"
                                   : "hover:bg-accent/50"
                             }`}
                             onClick={() => { setSelectedId((prev) => (runInline && prev === e.id ? null : e.id)); setRowError(null); }}
@@ -3057,7 +3057,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
                                   <input
                                     type="checkbox"
-                                    className="rounded border-slate-300"
+                                    className="rounded border-border"
                                     checked={selectedEmpIds.has(e.id)}
                                     disabled={!payable}
                                     title={payable ? "Select for disbursement" : "Already fully disbursed"}
@@ -3067,7 +3067,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               );
                             })()}
                             <td className={`px-4 py-3 ${rowIndent(item.depth)}`}>
-                              <div className="text-sm text-slate-900 flex items-center gap-2">
+                              <div className="text-sm text-foreground flex items-center gap-2">
                                 {e.full_name}
                                 {/* Says Fired / Terminated / Resigned / Absconded
                                     for a leaver, not the legacy "Inactive" — same
@@ -3080,28 +3080,28 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                         ? "bg-success-50 text-success-700"
                                         : e.status === "On Leave"
                                           ? "bg-warning-50 text-warning-700"
-                                          : "bg-slate-100 text-slate-600"
+                                          : "bg-muted text-muted-foreground"
                                   }`}
                                 >
                                   {lifecycleStatusLabel(e)}
                                 </span>
                                 {isPaidOrZero(row) && (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400">
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500">
                                     <Check className="w-3 h-3" strokeWidth={2.5} /> Disbursed
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-slate-500 font-mono">
+                              <div className="text-xs text-muted-foreground font-mono">
                                 {empDisplay(e)}
-                                <span className="block text-[11px] text-slate-400">{e.guard_code ?? e.employee_code}</span>
+                                <span className="block text-[11px] text-muted-foreground/70">{e.guard_code ?? e.employee_code}</span>
                               </div>
                             </td>
                             {!runInline && (
-                            <td className="px-4 py-3 text-sm text-slate-700">
+                            <td className="px-4 py-3 text-sm text-foreground">
                               {relieversOnly ? (() => {
                                 const breakdown = relieverPerClient.get(e.id);
                                 if (!breakdown || breakdown.size === 0) {
-                                  return <span className="text-slate-400">—</span>;
+                                  return <span className="text-muted-foreground/70">—</span>;
                                 }
                                 const items = Array.from(breakdown.entries()).sort((a, b) => b[1] - a[1]);
                                 return (
@@ -3113,19 +3113,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                           : clients.find((c) => c.id === cid)?.name ?? "(Unknown)";
                                       return (
                                         <div key={cid} className="flex justify-between gap-3">
-                                          <span className="text-slate-700 truncate max-w-[10rem]" title={name}>{name}</span>
-                                          <span className="text-slate-500 tabular-nums">{days}d</span>
+                                          <span className="text-foreground truncate max-w-[10rem]" title={name}>{name}</span>
+                                          <span className="text-muted-foreground tabular-nums">{days}d</span>
                                         </div>
                                       );
                                     })}
                                   </div>
                                 );
                               })() : (
-                                e.client_name ?? <span className="text-slate-400">—</span>
+                                e.client_name ?? <span className="text-muted-foreground/70">—</span>
                               )}
                             </td>
                             )}
-                            <td className="px-4 py-3 text-xs text-slate-600">
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
                               {(() => {
                                 const unmarked = Math.max(
                                   row.working_days - row.present_days - row.absent_days - row.leave_days,
@@ -3152,15 +3152,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                         </>
                                       )}
                                     </div>
-                                    <div className="text-slate-400">of {row.working_days} wd</div>
+                                    <div className="text-muted-foreground/70">of {row.working_days} wd</div>
                                   </>
                                 );
                               })()}
                             </td>
-                            <td className="px-4 py-3 text-sm text-slate-700">
+                            <td className="px-4 py-3 text-sm text-foreground">
                               PKR {row.base_salary.toLocaleString()}
                             </td>
-                            <td className="px-4 py-3 text-sm text-slate-900">
+                            <td className="px-4 py-3 text-sm text-foreground">
                               PKR {row.net_salary.toLocaleString()}
                               {(() => {
                                 const bal = Math.round(row.net_salary) - Math.round(row.amount_paid || 0);
@@ -3174,13 +3174,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             </td>
                             {showBank && (
                               <>
-                                <td className="px-4 py-3 text-sm text-slate-700">
-                                  {e.bank_name ?? <span className="text-slate-400">—</span>}
+                                <td className="px-4 py-3 text-sm text-foreground">
+                                  {e.bank_name ?? <span className="text-muted-foreground/70">—</span>}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-slate-700">
-                                  {e.account_title ?? <span className="text-slate-400">—</span>}
+                                <td className="px-4 py-3 text-sm text-foreground">
+                                  {e.account_title ?? <span className="text-muted-foreground/70">—</span>}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-slate-700" onClick={(ev) => ev.stopPropagation()}>
+                                <td className="px-4 py-3 text-sm text-foreground" onClick={(ev) => ev.stopPropagation()}>
                                   {e.bank_account ? (
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-mono whitespace-nowrap">{e.bank_account}</span>
@@ -3189,7 +3189,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                         title="Copy account number"
                                         aria-label="Copy account number"
                                         onClick={() => copyText(`acct-${e.id}`, e.bank_account)}
-                                        className="flex-shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                                        className="flex-shrink-0 p-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-border"
                                       >
                                         {copiedKey === `acct-${e.id}` ? (
                                           <Check className="w-3.5 h-3.5 text-success-600" strokeWidth={2} />
@@ -3199,7 +3199,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                       </button>
                                     </div>
                                   ) : (
-                                    <span className="text-slate-400">—</span>
+                                    <span className="text-muted-foreground/70">—</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3">
@@ -3237,7 +3237,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               >
                                 <span
                                   className={`w-1.5 h-1.5 rounded-full ${
-                                    row.disbursed ? "bg-success-600" : "bg-slate-300"
+                                    row.disbursed ? "bg-success-600" : "bg-muted-foreground/40"
                                   }`}
                                 />
                                 {row.status}{row.disbursed ? " · Disbursed" : ""}
@@ -3336,7 +3336,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </div>
                   </div>
                   {selectedRow.days_over_month > 0 && (
-                    <p className="text-[11px] text-warning-800 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded px-2 py-1">
+                    <p className="text-[11px] text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded px-2 py-1">
                       Attendance for this month totalled {selectedRow.days_over_month} day
                       {selectedRow.days_over_month === 1 ? "" : "s"} more than the {selectedRow.working_days} in{" "}
                       {formatPeriod(selectedPeriod)} — some date carries two statuses. Trimmed from leave/absent
@@ -3344,9 +3344,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </p>
                   )}
 
-                  <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-2">
+                  <div className="pt-3 border-t border-border grid grid-cols-2 gap-2">
                     <div className={throughNet && canEditSalary && !selectedRow.disbursed ? "col-span-2" : undefined}>
-                      <label className="block text-xs text-slate-500 mb-1">Base Salary</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Base Salary</label>
                       {throughNet && canEditSalary && !selectedRow.disbursed ? (
                         <>
                           <div className="flex gap-2">
@@ -3357,7 +3357,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               onChange={(e) => { setSalaryDraft(e.target.value); setSalaryMsg(null); }}
                               onFocus={() => { if (salaryDraft === "") setSalaryDraft(String(Math.round(selectedRow.base_salary))); }}
                               placeholder={String(Math.round(selectedRow.base_salary))}
-                              className="flex-1 min-w-0 px-2 py-1 border border-slate-200 rounded text-sm"
+                              className="flex-1 min-w-0 px-2 py-1 border border-border rounded text-sm"
                             />
                             <Button
                               size="sm"
@@ -3368,7 +3368,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               {salarySaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Update"}
                             </Button>
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
+                          <p className="text-[11px] text-muted-foreground mt-1">
                             Applies from 1 {formatPeriod(selectedPeriod)} and updates Assignments &amp; Pay too.
                           </p>
                           {salaryMsg && (
@@ -3382,9 +3382,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             value={selectedRow.base_salary}
                             disabled
                             readOnly
-                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                            className="w-full px-2 py-1 border border-border rounded text-sm bg-muted/50 text-muted-foreground cursor-not-allowed"
                           />
-                          <p className="text-[11px] text-slate-500 mt-1">
+                          <p className="text-[11px] text-muted-foreground mt-1">
                             {selectedRow.disbursed
                               ? "Paid out — the payslip keeps the salary it was paid at."
                               : "Change it on Assignments & Pay or the payroll Review tab."}
@@ -3393,53 +3393,53 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       )}
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-500 mb-1">Per Day (display)</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Per Day (display)</label>
                       <input
                         type="number"
                         value={selectedRow.per_day_salary ?? ""}
                         disabled
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
+                        className="w-full px-2 py-1 border border-border rounded text-sm bg-muted/50 text-muted-foreground"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-500 mb-1">Bonus</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Bonus</label>
                       <input
                         type="number"
                         value={selectedRow.bonus}
                         onChange={(e) =>
                           updateEdit(selectedRow.employee.id, { bonus: Number(e.target.value) })
                         }
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1 border border-border rounded text-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-500 mb-1">Deductions</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Deductions</label>
                       <input
                         type="number"
                         value={selectedRow.deductions}
                         onChange={(e) =>
                           updateEdit(selectedRow.employee.id, { deductions: Number(e.target.value) })
                         }
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1 border border-border rounded text-sm"
                       />
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-xs text-slate-500 mb-1">
-                        Advance <span className="text-slate-400">(from Expenses · Advances)</span>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        Advance <span className="text-muted-foreground/70">(from Expenses · Advances)</span>
                       </label>
                       <input
                         type="number"
                         value={selectedRow.advance}
                         disabled
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
+                        className="w-full px-2 py-1 border border-border rounded text-sm bg-muted/50 text-muted-foreground"
                       />
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-200 space-y-2">
+                  <div className="pt-3 border-t border-border space-y-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Allowed Leaves</span>
-                      <span className="text-slate-700">
+                      <span className="text-muted-foreground">Allowed Leaves</span>
+                      <span className="text-foreground">
                         {selectedRow.allowed_leaves}
                         {leaveOverrides.has(selectedRow.employee.id) && (
                           <span className="ml-1 text-[10px] uppercase tracking-wide text-warning-700 dark:text-warning-500">
@@ -3451,7 +3451,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     {leaveSummary.get(selectedRow.employee.id) && (() => {
                       const l = leaveSummary.get(selectedRow.employee.id)!;
                       return (
-                        <div className="text-[11px] text-slate-500 rounded border border-slate-200 px-2 py-1.5 space-y-0.5">
+                        <div className="text-[11px] text-muted-foreground rounded border border-border px-2 py-1.5 space-y-0.5">
                           <div className="flex justify-between"><span>Opening balance</span><span className="tabular-nums">{l.opening}</span></div>
                           <div className="flex justify-between">
                             <span>Earned · {l.present_days} days present → tier {l.tier} of quota {l.quota}</span>
@@ -3466,15 +3466,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           {l.unpaid > 0 && (
                             <div className="flex justify-between"><span>Unpaid leave — beyond the balance</span><span className="tabular-nums">{l.unpaid}</span></div>
                           )}
-                          <div className="flex justify-between font-medium text-slate-700"><span>Closing balance</span><span className="tabular-nums">{l.closing}</span></div>
+                          <div className="flex justify-between font-medium text-foreground"><span>Closing balance</span><span className="tabular-nums">{l.closing}</span></div>
                         </div>
                       );
                     })()}
                     {/* One employee, one month. Deliberately not a contract or
                         client setting — those apply to everyone on them, and to
                         every month after. */}
-                    <div className="rounded border border-slate-200 bg-slate-50/60 px-2 py-2 space-y-1.5">
-                      <label className="block text-[11px] text-slate-500">
+                    <div className="rounded border border-border bg-muted/50/60 px-2 py-2 space-y-1.5">
+                      <label className="block text-[11px] text-muted-foreground">
                         Override allowed leaves · {formatPeriod(selectedPeriod)} only
                       </label>
                       <div className="flex items-center gap-1.5">
@@ -3488,13 +3488,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               selectedRow.allowed_leaves,
                           )}
                           onChange={(e) => setLeaveDraft(e.target.value)}
-                          className="w-20 px-2 py-1 border border-slate-200 rounded text-sm"
+                          className="w-20 px-2 py-1 border border-border rounded text-sm"
                         />
                         <input
                           value={leaveReason}
                           placeholder="Reason (optional)"
                           onChange={(e) => setLeaveReason(e.target.value)}
-                          className="flex-1 min-w-0 px-2 py-1 border border-slate-200 rounded text-sm"
+                          className="flex-1 min-w-0 px-2 py-1 border border-border rounded text-sm"
                         />
                       </div>
                       <div className="flex items-center gap-2">
@@ -3518,25 +3518,25 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           </button>
                         )}
                       </div>
-                      <p className="text-[10px] text-slate-500">
+                      <p className="text-[10px] text-muted-foreground">
                         {leaveOverrides.get(selectedRow.employee.id)?.reason
                           ? `Reason: ${leaveOverrides.get(selectedRow.employee.id)?.reason}`
                           : "Applies to this employee for this month only. Blank = follow the contract."}
                       </p>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Leaves Taken</span>
-                      <span className="text-slate-700">{selectedRow.leave_days}</span>
+                      <span className="text-muted-foreground">Leaves Taken</span>
+                      <span className="text-foreground">{selectedRow.leave_days}</span>
                     </div>
                     {!selectedRow.override_leaves && selectedRow.extra_leave_absent > 0 && (
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Absent due to extra leaves</span>
+                        <span className="text-muted-foreground">Absent due to extra leaves</span>
                         <span className="text-danger-600">+{selectedRow.extra_leave_absent}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Effective Paid Days</span>
-                      <span className="text-slate-900">
+                      <span className="text-muted-foreground">Effective Paid Days</span>
+                      <span className="text-foreground">
                         {selectedRow.effective_present_days} / {selectedRow.working_days}
                       </span>
                     </div>
@@ -3549,9 +3549,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             override_leaves: e.target.checked,
                           })
                         }
-                        className="rounded border-slate-300"
+                        className="rounded border-border"
                       />
-                      <span className="text-slate-700">
+                      <span className="text-foreground">
                         Allow full payment despite extra leaves
                       </span>
                     </label>
@@ -3563,12 +3563,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   </div>
                   </>)}
 
-                  <div className="pt-3 border-t border-slate-200 space-y-2">
+                  <div className="pt-3 border-t border-border space-y-2">
                     {/* Allowance sits ABOVE Final Salary and is part of it — the
                         reports read final_salary, so this makes it count. */}
                     {!afterNet && (<>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Allowance</span>
+                      <span className="text-muted-foreground">Allowance</span>
                       <div className="flex items-center gap-1">
                         <span className="text-success-700">+ PKR</span>
                         <input
@@ -3580,45 +3580,45 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               allowance: Math.max(0, Number(e.target.value) || 0),
                             })
                           }
-                          className="w-24 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                          className="w-24 px-2 py-1 border border-border rounded text-sm text-right"
                         />
                       </div>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Final Salary (incl. allowance)</span>
-                      <span className="text-slate-900">PKR {selectedRow.final_salary.toLocaleString()}</span>
+                      <span className="text-muted-foreground">Final Salary (incl. allowance)</span>
+                      <span className="text-foreground">PKR {selectedRow.final_salary.toLocaleString()}</span>
                     </div>
                     {selectedRow.income_tax > 0 && (
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Income Tax (1% over 50K)</span>
+                        <span className="text-muted-foreground">Income Tax (1% over 50K)</span>
                         <span className="text-danger-700">− PKR {Math.round(selectedRow.income_tax).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedRow.eobi > 0 && (
                       <div className="flex justify-between">
-                        <span className="text-slate-500">EOBI</span>
+                        <span className="text-muted-foreground">EOBI</span>
                         <span className="text-danger-700">− PKR {Math.round(selectedRow.eobi).toLocaleString()}</span>
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Advance</span>
+                      <span className="text-muted-foreground">Advance</span>
                       <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
                     </div>
                     </>)}
                     {selectedRow.adjustment_carried !== 0 && (
                       <div className="flex justify-between">
-                        <span className="text-slate-500">
+                        <span className="text-muted-foreground">
                           Adjustment carried
-                          <span className="block text-[11px] text-slate-400">{selectedRow.adjustment_detail ?? "from an earlier period"}</span>
+                          <span className="block text-[11px] text-muted-foreground/70">{selectedRow.adjustment_detail ?? "from an earlier period"}</span>
                         </span>
                         <span className={selectedRow.adjustment_carried > 0 ? "text-success-700" : "text-danger-700"}>
                           {selectedRow.adjustment_carried > 0 ? "+" : "−"} PKR {Math.abs(Math.round(selectedRow.adjustment_carried)).toLocaleString()}
                         </span>
                       </div>
                     )}
-                    <div className="flex justify-between pt-1 border-t border-slate-100">
-                      <span className="text-base text-slate-900">Net Salary</span>
-                      <span className="text-lg text-slate-900">PKR {selectedRow.net_salary.toLocaleString()}</span>
+                    <div className="flex justify-between pt-1 border-t border-border">
+                      <span className="text-base text-foreground">Net Salary</span>
+                      <span className="text-lg text-foreground">PKR {selectedRow.net_salary.toLocaleString()}</span>
                     </div>
                     <AmountInWords value={selectedRow.net_salary} className="text-right" />
                   </div>
@@ -3633,19 +3633,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     const payNow = Math.round(Number(paymentAmountDraft) || 0);
                     const exceeds = payNow > Math.max(0, balance) + 0.5;
                     return (
-                      <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <div className="pt-3 border-t border-border space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-slate-500 text-sm">Amount Paid <span className="text-slate-400">(so far)</span></span>
-                          <span className="text-sm font-medium text-slate-900 tabular-nums">PKR {paidSoFar.toLocaleString()}</span>
+                          <span className="text-muted-foreground text-sm">Amount Paid <span className="text-muted-foreground/70">(so far)</span></span>
+                          <span className="text-sm font-medium text-foreground tabular-nums">PKR {paidSoFar.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-slate-500 text-sm">Balance <span className="text-slate-400">(Net − Paid)</span></span>
+                          <span className="text-muted-foreground text-sm">Balance <span className="text-muted-foreground/70">(Net − Paid)</span></span>
                           <span className={`text-sm font-medium tabular-nums ${balance > 0 ? "text-warning-700" : balance < 0 ? "text-danger-700" : "text-success-700"}`}>
                             PKR {balance.toLocaleString()}
                           </span>
                         </div>
                         {selectedRow.amount_paid > 0 && balance !== 0 && (
-                          <p className={`text-[11px] rounded px-2 py-1 border ${balance > 0 ? "text-warning-800 dark:text-warning-500 bg-warning-50 border-warning-200" : "text-danger-700 bg-danger-50 border-danger-200"}`}>
+                          <p className={`text-[11px] rounded px-2 py-1 border ${balance > 0 ? "text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200" : "text-danger-700 bg-danger-50 border-danger-200"}`}>
                             {balance > 0
                               ? `PKR ${balance.toLocaleString()} still owed — PKR ${paidSoFar.toLocaleString()} paid but Net is now higher. Pay the balance below.`
                               : `PKR ${Math.abs(balance).toLocaleString()} overpaid — PKR ${paidSoFar.toLocaleString()} paid but Net dropped. Save to carry it to next month as an advance.`}
@@ -3656,11 +3656,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         {balance > 0 && (
                           <div className="pt-1">
                             <label className="flex justify-between items-center mb-1">
-                              <span className="text-slate-500 text-sm">Payment Amount <span className="text-slate-400">(pay now)</span></span>
+                              <span className="text-muted-foreground text-sm">Payment Amount <span className="text-muted-foreground/70">(pay now)</span></span>
                               <span className="text-[11px] text-brand-600 cursor-pointer hover:underline" onClick={() => setPaymentAmountDraft(String(balance))}>Pay full balance</span>
                             </label>
                             <div className="flex items-center gap-1">
-                              <span className="text-slate-400 text-sm">PKR</span>
+                              <span className="text-muted-foreground/70 text-sm">PKR</span>
                               <input
                                 type="number"
                                 min={0}
@@ -3668,7 +3668,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 value={paymentAmountDraft}
                                 placeholder={`0 — up to ${balance.toLocaleString()}`}
                                 onChange={(e) => setPaymentAmountDraft(e.target.value)}
-                                className={`w-full px-2 py-1 border rounded text-sm text-right ${exceeds ? "border-danger-400 bg-danger-50" : "border-slate-200"}`}
+                                className={`w-full px-2 py-1 border rounded text-sm text-right ${exceeds ? "border-danger-200 bg-danger-50" : "border-border"}`}
                               />
                             </div>
                             <AmountInWords value={paymentAmountDraft} className="text-right" />
@@ -3686,19 +3686,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   {/* 0437: corrections sit BESIDE the payslip. The note needs no
                       amount; the adjustment needs a signed one and a reason. */}
                   {!throughNet && (
-                    <div className="pt-3 border-t border-slate-200 space-y-2">
-                      <label className="block text-xs text-slate-500">Note</label>
+                    <div className="pt-3 border-t border-border space-y-2">
+                      <label className="block text-xs text-muted-foreground">Note</label>
                       <textarea
                         value={selectedRow.notes ?? ""}
                         onChange={(e) => updateEdit(selectedRow.employee.id, { notes: e.target.value || null })}
                         placeholder="Disputed, awaiting site confirmation…"
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm h-16"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm h-16"
                       />
                       {(periodAdj.get(selectedRow.employee.id) ?? []).length > 0 && (
                         <ul className="text-xs space-y-1">
                           {(periodAdj.get(selectedRow.employee.id) ?? []).map((a) => (
                             <li key={a.id} className="flex justify-between gap-2">
-                              <span className="text-slate-500">
+                              <span className="text-muted-foreground">
                                 {a.reason} · {a.settlement === "pay_now" ? "pay now" : "next payslip"} · {a.status}
                               </span>
                               <span className={`tabular-nums ${a.amount < 0 ? "text-danger-700" : "text-success-700"}`}>
@@ -3723,13 +3723,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   )}
 
                   {!throughNet && (
-                  <div className="pt-3 border-t border-slate-200 space-y-2">
+                  <div className="pt-3 border-t border-border space-y-2">
                     {afterNet && selectedRow.disbursed && (
                       <p className="text-[11px] text-success-700 bg-success-50 border border-success-200 rounded px-2 py-1 flex items-center gap-1">
                         <Lock className="w-3 h-3" /> Disbursed — this payslip is paid and locked. Salary and payment details can no longer be changed.
                       </p>
                     )}
-                    <label className="block text-xs text-slate-500">Payment Mode</label>
+                    <label className="block text-xs text-muted-foreground">Payment Mode</label>
                     <ThemedSelect
                       value={selectedRow.payment_mode}
                       disabled={afterNet && selectedRow.disbursed}
@@ -3739,7 +3739,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           cheque_id: null,
                         })
                       }
-                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
+                      className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                     >
                       <option value="Cash">Cash</option>
                       <option value="Bank">Bank</option>
@@ -3747,12 +3747,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </ThemedSelect>
                     {selectedRow.payment_mode === "Cash" && (
                       <div>
-                        <label className="block text-xs text-slate-500 mb-1">Paid By (custodian) *</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Paid By (custodian) *</label>
                         <ThemedSelect
                           value={cashCustodianId}
                           disabled={afterNet && selectedRow.disbursed}
                           onChange={(e) => setCashCustodianId(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                         >
                           <option value="">Select who is paying this cash…</option>
                           {custodians.map((c) => (
@@ -3761,7 +3761,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             </option>
                           ))}
                         </ThemedSelect>
-                        <p className="text-[11px] text-slate-500 mt-1">
+                        <p className="text-[11px] text-muted-foreground mt-1">
                           The office-staff member physically handing out this cash. Their tracked cash decreases and it logs in Cash Custody.
                         </p>
                       </div>
@@ -3775,7 +3775,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             bank_account_id: e.target.value || null,
                           })
                         }
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                       >
                         <option value="">Select bank account</option>
                         {banks.map((b) => (
@@ -3798,7 +3798,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               bank_account_id: chq?.bank_account_id ?? null,
                             });
                           }}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                         >
                           <option value="">Select a pending cheque</option>
                           {cheques
@@ -3814,7 +3814,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               );
                             })}
                         </ThemedSelect>
-                        <p className="text-[11px] text-slate-500">
+                        <p className="text-[11px] text-muted-foreground">
                           Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts → Cheques.
                         </p>
                       </>
@@ -3832,7 +3832,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </div>
                   )}
                   {!throughNet && (
-                  <div className={`grid ${afterNet ? "grid-cols-1" : "grid-cols-2"} gap-2 pt-3 border-t border-slate-200`}>
+                  <div className={`grid ${afterNet ? "grid-cols-1" : "grid-cols-2"} gap-2 pt-3 border-t border-border`}>
                     {/* Mark Cleared is redundant on Payroll Management — the row is
                         already Cleared after the three-phase verification, so the
                         only action left here is disbursing payment. */}
@@ -3931,20 +3931,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           const paidFrom = r.bank_account_id ? banks.find((b) => b.id === r.bank_account_id) : undefined;
           const section = (heading: string, items: [string, string | null | undefined, boolean?][]) => (
             <div>
-              <h4 className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500 mb-2">{heading}</h4>
+              <h4 className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-2">{heading}</h4>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {items.map(([label, val, copyable]) => (
                   <div key={label} className="min-w-0">
-                    <dt className="text-xs text-slate-500">{label}</dt>
-                    <dd className="flex items-center gap-1.5 text-slate-900">
-                      <span className={`break-all ${copyable ? "font-mono" : ""}`}>{val || <span className="text-slate-400">—</span>}</span>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="flex items-center gap-1.5 text-foreground">
+                      <span className={`break-all ${copyable ? "font-mono" : ""}`}>{val || <span className="text-muted-foreground/70">—</span>}</span>
                       {copyable && val && (
                         <button
                           type="button"
                           title={`Copy ${label.toLowerCase()}`}
                           aria-label={`Copy ${label.toLowerCase()}`}
                           onClick={() => copyText(`view-${label}`, val)}
-                          className="flex-shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                          className="flex-shrink-0 p-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-border"
                         >
                           {copiedKey === `view-${label}` ? (
                             <Check className="w-3.5 h-3.5 text-success-600" strokeWidth={2} />
@@ -4001,39 +4001,39 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         size="lg"
       >
         {payslipData && (
-          <div className="space-y-4 bg-white">
-            <div className="text-center pb-4 border-b border-slate-200">
-              <h3 className="text-lg text-slate-900">Payslip</h3>
-              <p className="text-sm text-slate-500">{formatPeriod(payslipData.period_month)}</p>
+          <div className="space-y-4 bg-card">
+            <div className="text-center pb-4 border-b border-border">
+              <h3 className="text-lg text-foreground">Payslip</h3>
+              <p className="text-sm text-muted-foreground">{formatPeriod(payslipData.period_month)}</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-slate-500 mb-1">Employee</p>
-                <p className="text-slate-900">{payslipData.employee.full_name}</p>
+                <p className="text-muted-foreground mb-1">Employee</p>
+                <p className="text-foreground">{payslipData.employee.full_name}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Employee ID</p>
-                <p className="text-slate-900 font-mono">{empDisplay(payslipData.employee)}</p>
+                <p className="text-muted-foreground mb-1">Employee ID</p>
+                <p className="text-foreground font-mono">{empDisplay(payslipData.employee)}</p>
               </div>
               {payslipData.employee.phone && (
                 <div>
-                  <p className="text-slate-500 mb-1">Phone</p>
-                  <p className="text-slate-900">{payslipData.employee.phone}</p>
+                  <p className="text-muted-foreground mb-1">Phone</p>
+                  <p className="text-foreground">{payslipData.employee.phone}</p>
                 </div>
               )}
               <div>
-                <p className="text-slate-500 mb-1">Payment Mode</p>
-                <p className="text-slate-900">{payslipData.payment_mode}</p>
+                <p className="text-muted-foreground mb-1">Payment Mode</p>
+                <p className="text-foreground">{payslipData.payment_mode}</p>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">Attendance</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm text-foreground mb-3">Attendance</h4>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
-                <div className="bg-slate-50 p-2 rounded">
-                  <p className="text-xs text-slate-500">Working</p>
-                  <p className="text-slate-900">{payslipData.working_days}</p>
+                <div className="bg-muted/50 p-2 rounded">
+                  <p className="text-xs text-muted-foreground">Working</p>
+                  <p className="text-foreground">{payslipData.working_days}</p>
                 </div>
                 <div className="bg-success-50 p-2 rounded">
                   <p className="text-xs text-success-700">Present</p>
@@ -4054,46 +4054,46 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">Earnings &amp; Deductions</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm text-foreground mb-3">Earnings &amp; Deductions</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Allowed Leaves</span>
-                  <span className="text-slate-900">{payslipData.allowed_leaves}</span>
+                  <span className="text-muted-foreground">Allowed Leaves</span>
+                  <span className="text-foreground">{payslipData.allowed_leaves}</span>
                 </div>
                 {payslipData.override_leaves && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Leave Override</span>
+                    <span className="text-muted-foreground">Leave Override</span>
                     <span className="text-success-700">Yes (all leaves paid)</span>
                   </div>
                 )}
                 {payslipData.extra_leave_absent > 0 && !payslipData.override_leaves && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Absent (extra leaves)</span>
+                    <span className="text-muted-foreground">Absent (extra leaves)</span>
                     <span className="text-danger-600">{payslipData.extra_leave_absent}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Effective Paid Days</span>
-                  <span className="text-slate-900">
+                  <span className="text-muted-foreground">Effective Paid Days</span>
+                  <span className="text-foreground">
                     {payslipData.effective_present_days} / {payslipData.working_days}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Base Salary</span>
-                  <span className="text-slate-900">PKR {payslipData.base_salary.toLocaleString()}</span>
+                  <span className="text-muted-foreground">Base Salary</span>
+                  <span className="text-foreground">PKR {payslipData.base_salary.toLocaleString()}</span>
                 </div>
                 {payslipData.per_day_salary != null && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Per Day Salary</span>
-                    <span className="text-slate-900">
+                    <span className="text-muted-foreground">Per Day Salary</span>
+                    <span className="text-foreground">
                       PKR {Number(payslipData.per_day_salary).toLocaleString()}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Earned (Per Day × Paid Days)</span>
-                  <span className="text-slate-900">
+                  <span className="text-muted-foreground">Earned (Per Day × Paid Days)</span>
+                  <span className="text-foreground">
                     PKR{" "}
                     {Math.round(
                       (payslipData.per_day_salary ?? 0) *
@@ -4102,7 +4102,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Bonus</span>
+                  <span className="text-muted-foreground">Bonus</span>
                   <span className="text-success-600">+ PKR {payslipData.bonus.toLocaleString()}</span>
                 </div>
                 {(() => {
@@ -4113,13 +4113,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     <>
                       {fines.map((f, i) => (
                         <div key={i} className="flex justify-between gap-3">
-                          <span className="text-slate-600">Fine{f.reason ? ` — ${f.reason}` : ""}</span>
+                          <span className="text-muted-foreground">Fine{f.reason ? ` — ${f.reason}` : ""}</span>
                           <span className="text-danger-600 whitespace-nowrap">− PKR {f.amount.toLocaleString()}</span>
                         </div>
                       ))}
                       {(fines.length === 0 || other > 0) && (
                         <div className="flex justify-between">
-                          <span className="text-slate-600">{fines.length ? "Other Deductions" : "Deductions"}</span>
+                          <span className="text-muted-foreground">{fines.length ? "Other Deductions" : "Deductions"}</span>
                           <span className="text-danger-600">− PKR {(fines.length ? other : payslipData.deductions).toLocaleString()}</span>
                         </div>
                       )}
@@ -4128,47 +4128,47 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 })()}
                 {payslipData.allowance > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Allowance</span>
+                    <span className="text-muted-foreground">Allowance</span>
                     <span className="text-success-600">+ PKR {Math.round(payslipData.allowance).toLocaleString()}</span>
                   </div>
                 )}
-                <div className="flex justify-between pt-2 border-t border-slate-200">
-                  <span className="text-slate-700">Final Salary (incl. allowance)</span>
-                  <span className="text-slate-900">PKR {payslipData.final_salary.toLocaleString()}</span>
+                <div className="flex justify-between pt-2 border-t border-border">
+                  <span className="text-foreground">Final Salary (incl. allowance)</span>
+                  <span className="text-foreground">PKR {payslipData.final_salary.toLocaleString()}</span>
                 </div>
                 {payslipData.income_tax > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Income Tax (1% over PKR 50,000)</span>
+                    <span className="text-muted-foreground">Income Tax (1% over PKR 50,000)</span>
                     <span className="text-danger-600">− PKR {Math.round(payslipData.income_tax).toLocaleString()}</span>
                   </div>
                 )}
                 {payslipData.eobi > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">EOBI</span>
+                    <span className="text-muted-foreground">EOBI</span>
                     <span className="text-danger-600">− PKR {Math.round(payslipData.eobi).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Advance</span>
+                  <span className="text-muted-foreground">Advance</span>
                   <span className="text-danger-600">− PKR {payslipData.advance.toLocaleString()}</span>
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t-2 border-slate-300">
+            <div className="pt-4 border-t-2 border-border">
               <div className="flex justify-between items-center">
-                <span className="text-base text-slate-900">Net Salary</span>
-                <span className="text-xl text-slate-900">
+                <span className="text-base text-foreground">Net Salary</span>
+                <span className="text-xl text-foreground">
                   PKR {payslipData.net_salary.toLocaleString()}
                 </span>
               </div>
-              <div className="mt-2 flex justify-between text-xs text-slate-500">
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
                 <span>Status: {payslipData.status}</span>
                 <span>Disbursed: {payslipData.disbursed ? "Yes" : "No"}</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button variant="primary" size="md" className="flex-1" onClick={() => downloadPdf(payslipData)}>
                 <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Download PDF
@@ -4199,20 +4199,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
           return (
             <div className="space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
+              <div className="bg-muted/50 border border-border rounded-md p-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Rows with an unpaid balance</span>
-                  <span className="text-slate-900">{candidates.length}</span>
+                  <span className="text-muted-foreground">Rows with an unpaid balance</span>
+                  <span className="text-foreground">{candidates.length}</span>
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-slate-600">Total balance to disburse</span>
-                  <span className="text-slate-900">PKR {total.toLocaleString()}</span>
+                  <span className="text-muted-foreground">Total balance to disburse</span>
+                  <span className="text-foreground">PKR {total.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-slate-600">Period</span>
-                  <span className="text-slate-900">{formatPeriod(selectedPeriod)}</span>
+                  <span className="text-muted-foreground">Period</span>
+                  <span className="text-foreground">{formatPeriod(selectedPeriod)}</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-2">
+                <p className="text-xs text-muted-foreground mt-2">
                   {afterNet
                     ? "Only the employees you selected will be disbursed."
                     : "Only employees currently visible under the active filters will be disbursed."}
@@ -4220,15 +4220,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               </div>
 
               <div>
-                <label className="block text-sm text-slate-700 mb-2">Payment Mode</label>
+                <label className="block text-sm text-foreground mb-2">Payment Mode</label>
                 <div className="flex gap-3">
                   {(["Cash", "Bank"] as const).map((m) => (
                     <label
                       key={m}
                       className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm ${
                         bulkMode === m
-                          ? "border-slate-900 bg-slate-50"
-                          : "border-slate-200 hover:border-slate-300"
+                          ? "border-foreground bg-muted/50"
+                          : "border-border hover:border-border"
                       }`}
                     >
                       <input
@@ -4245,11 +4245,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
               {bulkMode === "Bank" && (
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+                  <label className="block text-sm text-foreground mb-1">Bank Account</label>
                   <ThemedSelect
                     value={bulkBankId}
                     onChange={(e) => setBulkBankId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="">Select bank account</option>
                     {banks.map((b) => (
@@ -4263,11 +4263,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
               {bulkMode === "Cash" && (
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Paid By (custodian) *</label>
+                  <label className="block text-sm text-foreground mb-1">Paid By (custodian) *</label>
                   <ThemedSelect
                     value={bulkCashCustodianId}
                     onChange={(e) => setBulkCashCustodianId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="">Select who is paying this cash…</option>
                     {custodians.map((c) => (
@@ -4276,21 +4276,21 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </option>
                     ))}
                   </ThemedSelect>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Current cash balance: PKR {cashBalance.toLocaleString()}. This custodian's tracked cash decreases and each payment logs in Cash Custody.
                   </p>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Disbursement Date</label>
+                <label className="block text-sm text-foreground mb-1">Disbursement Date</label>
                 <input
                   type="date"
                   value={bulkDisburseDate}
                   onChange={(e) => setBulkDisburseDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Cashflow will bucket this disbursement under the selected date's month.
                 </p>
               </div>
@@ -4337,34 +4337,34 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           const balAfter = Math.round(rowDisburseTarget.net_salary) - target;
           return (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               Paying{" "}
-              <span className="text-slate-900 font-medium">{rowDisburseTarget.employee.full_name}</span>{" "}
+              <span className="text-foreground font-medium">{rowDisburseTarget.employee.full_name}</span>{" "}
               ({empDisplay(rowDisburseTarget.employee)})
             </p>
-            <div className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-slate-500">Net Salary</span><span className="text-slate-900">PKR {Math.round(rowDisburseTarget.net_salary).toLocaleString()}</span></div>
+            <div className="rounded-md border border-border bg-muted/50/60 px-3 py-2 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-muted-foreground">Net Salary</span><span className="text-foreground">PKR {Math.round(rowDisburseTarget.net_salary).toLocaleString()}</span></div>
               {already > 0 && (
-                <div className="flex justify-between"><span className="text-slate-500">Already paid</span><span className="text-slate-900">PKR {already.toLocaleString()}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Already paid</span><span className="text-foreground">PKR {already.toLocaleString()}</span></div>
               )}
-              <div className="flex justify-between font-medium"><span className="text-slate-700">Paying now</span><span className={payNow < 0 ? "text-warning-700" : "text-slate-900"}>PKR {payNow.toLocaleString()}</span></div>
-              <div className="flex justify-between border-t border-slate-200 pt-1">
-                <span className="text-slate-500">Balance after</span>
+              <div className="flex justify-between font-medium"><span className="text-foreground">Paying now</span><span className={payNow < 0 ? "text-warning-700" : "text-foreground"}>PKR {payNow.toLocaleString()}</span></div>
+              <div className="flex justify-between border-t border-border pt-1">
+                <span className="text-muted-foreground">Balance after</span>
                 <span className={balAfter > 0 ? "text-warning-700" : balAfter < 0 ? "text-danger-700" : "text-success-700"}>
                   PKR {balAfter.toLocaleString()}{balAfter < 0 ? " (overpaid → next month)" : balAfter > 0 ? " (still owed)" : ""}
                 </span>
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Disbursement Date *</label>
+              <label className="block text-sm text-foreground mb-1">Disbursement Date *</label>
               <input
                 type="date"
                 value={rowDisburseDate}
                 onChange={(e) => setRowDisburseDate(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
                 required
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Cashflow will bucket this under the selected date's month.
               </p>
             </div>
@@ -4407,12 +4407,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         <Modal isOpen onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${selectedRow.employee.full_name}`} size="sm">
           <div className="space-y-3">
             {adjForm.kind === "fine" && !selectedRow.disbursed ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               The {formatPeriod(selectedRow.period_month)} salary has not been disbursed, so the fine comes straight off it —
               it is added to this payslip's Deductions and its reason to the payslip note. Nothing goes to the Adjustments tab.
             </p>
             ) : (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Corrects the {formatPeriod(selectedRow.period_month)} payslip without rewriting it. The cost
               posts today, in the current open period — always, even when {formatPeriod(selectedRow.period_month)} is still
               open, so the same correction lands in the same month whenever it is raised. The payslip's own period
@@ -4422,7 +4422,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             {adjErr && <div className="p-2 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{adjErr}</div>}
             <div className="flex items-center gap-4">
               {(["increment", "fine"] as const).map((k) => (
-                <label key={k} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                <label key={k} className="flex items-center gap-1.5 text-sm text-foreground cursor-pointer">
                   <input type="checkbox" checked={adjForm.kind === k}
                          onChange={(e) => setAdjForm({ ...adjForm, kind: e.target.checked ? k : null })} />
                   {k === "increment" ? "Increment" : "Fine"}
@@ -4432,7 +4432,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             {adjForm.kind === "fine" && (
               <div className="flex items-center gap-4">
                 {([["days", "By days"], ["amount", "Custom amount"]] as const).map(([v, l]) => (
-                  <label key={v} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                  <label key={v} className="flex items-center gap-1.5 text-sm text-foreground cursor-pointer">
                     <input type="radio" name="fineBy" checked={adjForm.fineBy === v}
                            onChange={() => setAdjForm({ ...adjForm, fineBy: v })} />
                     {l}
@@ -4442,11 +4442,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             )}
             {adjForm.kind === "fine" && adjForm.fineBy === "days" ? (
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Number of days</label>
-                <input type="number" min="0" step="0.5" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                <label className="block text-xs text-muted-foreground mb-1">Number of days</label>
+                <input type="number" min="0" step="0.5" className="w-full px-2 py-1.5 border border-border rounded text-sm"
                        value={adjForm.days} onChange={(e) => setAdjForm({ ...adjForm, days: e.target.value.replace(/^-/, "") })} />
                 {selectedRow.per_day_salary ? (
-                  <p className="mt-1 text-xs text-slate-600">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {Number(adjForm.days || 0)} day{Number(adjForm.days) === 1 ? "" : "s"} × PKR {Number(selectedRow.per_day_salary).toLocaleString()} per day
                     {" "}= <span className="font-medium text-danger-700">fine of PKR {adjAmount(selectedRow.per_day_salary).toLocaleString()}</span>
                   </p>
@@ -4458,22 +4458,22 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               </div>
             ) : (
               <div>
-                <label className="block text-xs text-slate-500 mb-1">
+                <label className="block text-xs text-muted-foreground mb-1">
                   {adjForm.kind === "fine" ? "Fine amount" : adjForm.kind === "increment" ? "Increment amount" : "Amount"}
                   {" "}— only the amount being {adjForm.kind === "fine" ? "deducted" : "added"}, not the new total
                 </label>
-                <input type="number" min="0" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                <input type="number" min="0" className="w-full px-2 py-1.5 border border-border rounded text-sm"
                        value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value.replace(/^-/, "") })} />
               </div>
             )}
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Reason</label>
-              <input className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+              <label className="block text-xs text-muted-foreground mb-1">Reason</label>
+              <input className="w-full px-2 py-1.5 border border-border rounded text-sm"
                      value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} />
             </div>
             {!(adjForm.kind === "fine" && !selectedRow.disbursed) && (
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Settles</label>
+              <label className="block text-xs text-muted-foreground mb-1">Settles</label>
               <ThemedSelect className="w-full" value={adjForm.settlement} onChange={(e) => setAdjForm({ ...adjForm, settlement: e.target.value as any })}>
                 <option value="carry_forward">On the next payslip, as its own line</option>
                 <option value="pay_now">Now — cash or bank, from the Adjustments tab</option>
@@ -4511,15 +4511,15 @@ function PayrollBand({ totals, clients, clientsDone, period }: {
         </div>
         <div className="flex items-center gap-3">
           <span className="font-display text-3xl font-extrabold tracking-tight">{Math.round(pct * 100)}%</span>
-          <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-[#9ad1a3]" style={{ width: `${pct * 100}%` }} /></div>
+          <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-up" style={{ width: `${pct * 100}%` }} /></div>
         </div>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         {[
           { label: "Total salaries", v: total, sub: `${slips} payslips`, tone: "text-foreground" },
-          { label: "Disbursed", v: totals.disbursed, sub: `${totals.disbursedCount} payslips`, tone: "text-[#9ad1a3]" },
-          { label: "Still to pay", v: totals.notDisbursed, sub: `${totals.notDisbursedCount} payslips`, tone: totals.notDisbursed ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
-          { label: "Advances", v: totals.advance, sub: "advances for the month", tone: "text-[#f0a99a]" },
+          { label: "Disbursed", v: totals.disbursed, sub: `${totals.disbursedCount} payslips`, tone: "text-up" },
+          { label: "Still to pay", v: totals.notDisbursed, sub: `${totals.notDisbursedCount} payslips`, tone: totals.notDisbursed ? "text-heed" : "text-up" },
+          { label: "Advances", v: totals.advance, sub: "advances for the month", tone: "text-down" },
         ].map((t) => (
           <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
             <span className="lbl">{t.label}</span>

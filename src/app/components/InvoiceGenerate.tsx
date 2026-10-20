@@ -1088,18 +1088,18 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           MANUAL review. This tab does not delete them (remove them on the Invoices
           tab after checking). Independent of the selected period/group. */}
       {/* Which tab this is — the two must never be confused. */}
-      <div className="text-xs text-slate-500">
+      <div className="text-xs text-muted-foreground">
         {isInvoiceMode
           ? "The invoice the client is billed: invoice number, date, period and one total. Posting creates an Unpaid receivable."
           : "Detailed breakdown for your own record only. Saving it creates no invoice and no receivable."}
       </div>
 
       {isInvoiceMode && outOfWindowInvoices.length > 0 && (
-        <div className="border border-warning-300 bg-warning-50 rounded-lg p-4">
+        <div className="border border-warning-200 bg-warning-50 rounded-lg p-4">
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5 text-warning-700 shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-warning-800">
+              <div className="text-sm font-medium text-warning-700 dark:text-warning-500">
                 {outOfWindowInvoices.length} invoice{outOfWindowInvoices.length === 1 ? "" : "s"} fall outside their contract's active window
               </div>
               <div className="text-xs text-warning-700 mb-2">
@@ -1108,7 +1108,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-left text-warning-800/70 border-b border-warning-300">
+                    <tr className="text-left text-warning-700/70 dark:text-warning-500 border-b border-warning-200">
                       <th className="py-1 pr-3">Invoice #</th>
                       <th className="py-1 pr-3">Client</th>
                       <th className="py-1 pr-3">Contract</th>
@@ -1144,20 +1144,20 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           immediately; there is no separate build step. */}
       <div className="bg-card border border-border rounded-2xl p-4 flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Period</label>
+          <label className="block text-xs text-muted-foreground mb-1">Period</label>
           <input
             type="month"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           />
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Client group</label>
+          <label className="block text-xs text-muted-foreground mb-1">Client group</label>
           <ThemedSelect
             value={group}
             onChange={(e) => setGroup(e.target.value as ClientInvoiceGroup)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           >
             {SELECTABLE_INVOICE_GROUPS.map((g) => (
               <option key={g} value={g}>{CLIENT_INVOICE_GROUP_LABEL[g]}</option>
@@ -1165,11 +1165,11 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           </ThemedSelect>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Status</label>
+          <label className="block text-xs text-muted-foreground mb-1">Status</label>
           <ThemedSelect
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-2 border border-border rounded-md text-sm"
           >
             <option value="all">All</option>
             <option value="pending">Pending</option>
@@ -1177,7 +1177,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           </ThemedSelect>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-muted-foreground">
             {existingRows.length} {isInvoiceMode ? "invoiced" : "recorded"} · {draftRows.length} to generate · {clearedCount} cleared
           </span>
           <Button
@@ -1194,13 +1194,13 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
       </div>
 
       {loading && (
-        <div className="text-center py-10 text-slate-500">
+        <div className="text-center py-10 text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
         </div>
       )}
 
       {!loading && rows.length === 0 && (
-        <div className="text-center py-10 text-slate-500 text-sm">
+        <div className="text-center py-10 text-muted-foreground text-sm">
           No active contracts match this period, group and status.
         </div>
       )}
@@ -1212,16 +1212,16 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           return (
             <div key={`rec-${r.key}`} className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-slate-900 truncate">{r.client.name}</div>
-                <div className="text-xs text-slate-500 font-mono">
+                <div className="text-sm font-medium text-foreground truncate">{r.client.name}</div>
+                <div className="text-xs text-muted-foreground font-mono">
                   {r.contract.contract_code} · {rec.invoice_number}
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <div className="text-sm font-semibold text-slate-900 tabular-nums">
+                <div className="text-sm font-semibold text-foreground tabular-nums">
                   PKR {Number(rec.total_due).toLocaleString()}
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200">Recorded</span>
+                <span className="text-xs px-2 py-0.5 rounded-md border bg-muted/50 text-muted-foreground border-border">Recorded</span>
                 <Button variant="secondary" size="sm" onClick={() => downloadRecord(rec)}>
                   <FileDown className="w-3.5 h-3.5 mr-1" /> PDF
                 </Button>
@@ -1240,22 +1240,22 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
         return (
           <div key={`inv-${r.key}`} className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm font-medium text-slate-900 truncate">{r.client.name}</div>
-              <div className="text-xs text-slate-500 font-mono">
+              <div className="text-sm font-medium text-foreground truncate">{r.client.name}</div>
+              <div className="text-xs text-muted-foreground font-mono">
                 {r.contract.contract_code} · {inv.invoice_number}
               </div>
             </div>
             <div className="flex items-center gap-4 shrink-0">
               <div className="text-right">
-                <div className="text-sm font-semibold text-slate-900 tabular-nums">
+                <div className="text-sm font-semibold text-foreground tabular-nums">
                   PKR {Number(inv.total_due ?? inv.invoice_amount).toLocaleString()}
                 </div>
-                <div className="text-[11px] text-slate-500">{inv.invoice_number}</div>
+                <div className="text-[11px] text-muted-foreground">{inv.invoice_number}</div>
               </div>
               <span className={`text-xs px-2 py-0.5 rounded-md border ${cleared ? "bg-success-50 text-success-700 border-success-200" : "bg-warning-50 text-warning-700 border-warning-200"}`}>
                 {cleared ? "Cleared" : "Pending"}
               </span>
-              <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/70">
                 <FileText className="w-3.5 h-3.5" /> generated
               </span>
             </div>
@@ -1271,8 +1271,8 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           <div key={`simple-${r.key}`} className="bg-card border border-border rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-900">{s.client.name}</div>
-                <div className="text-xs text-slate-500 font-mono">
+                <div className="text-sm font-medium text-foreground">{s.client.name}</div>
+                <div className="text-xs text-muted-foreground font-mono">
                   {s.client.client_code} · contract {s.contractCode}
                 </div>
               </div>
@@ -1292,37 +1292,37 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Invoice #</label>
+                <label className="block text-xs text-muted-foreground mb-1">Invoice #</label>
                 <input
                   value={s.invoiceNumber}
                   onChange={(e) => patchSimple(s.contractId, { invoiceNumber: e.target.value })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm font-mono"
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Invoice date</label>
-                <input type="date" value={s.invoiceDate} onChange={(e) => patchSimple(s.contractId, { invoiceDate: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mb-1">Invoice date</label>
+                <input type="date" value={s.invoiceDate} onChange={(e) => patchSimple(s.contractId, { invoiceDate: e.target.value })} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Period start</label>
-                <input type="date" value={s.periodStart} onChange={(e) => patchSimple(s.contractId, { periodStart: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mb-1">Period start</label>
+                <input type="date" value={s.periodStart} onChange={(e) => patchSimple(s.contractId, { periodStart: e.target.value })} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Period end</label>
-                <input type="date" value={s.periodEnd} onChange={(e) => patchSimple(s.contractId, { periodEnd: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mb-1">Period end</label>
+                <input type="date" value={s.periodEnd} onChange={(e) => patchSimple(s.contractId, { periodEnd: e.target.value })} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Total amount</label>
+                <label className="block text-xs text-muted-foreground mb-1">Total amount</label>
                 <input
                   value={s.total}
                   inputMode="decimal"
                   onChange={(e) => patchSimple(s.contractId, { total: e.target.value })}
                   onBlur={(e) => patchSimple(s.contractId, { total: formatGrouped(e.target.value) })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right tabular-nums"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm text-right tabular-nums"
                 />
               </div>
             </div>
-            <div className="text-[11px] italic text-slate-500">{amountInWords(num(s.total))}</div>
+            <div className="text-[11px] italic text-muted-foreground">{amountInWords(num(s.total))}</div>
           </div>
         );
       })}
@@ -1338,8 +1338,8 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           <div key={`draft-${r.key}`} className="bg-card border border-border rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-900">{d.client.name}</div>
-                <div className="text-xs text-slate-500 font-mono">
+                <div className="text-sm font-medium text-foreground">{d.client.name}</div>
+                <div className="text-xs text-muted-foreground font-mono">
                   {d.client.client_code} · contract {d.contractCode}
                 </div>
               </div>
@@ -1360,24 +1360,24 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Invoice #</label>
+                <label className="block text-xs text-muted-foreground mb-1">Invoice #</label>
                 <input
                   value={d.invoiceNumber}
                   onChange={(e) => patchDraft(d.contractId, { invoiceNumber: e.target.value })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm font-mono"
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Invoice date</label>
-                <input type="date" value={d.invoiceDate} onChange={(e) => patchDraft(d.contractId, { invoiceDate: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mb-1">Invoice date</label>
+                <input type="date" value={d.invoiceDate} onChange={(e) => patchDraft(d.contractId, { invoiceDate: e.target.value })} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Period start</label>
-                <input type="date" value={d.periodStart} onChange={(e) => patchDraft(d.contractId, { periodStart: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mb-1">Period start</label>
+                <input type="date" value={d.periodStart} onChange={(e) => patchDraft(d.contractId, { periodStart: e.target.value })} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Period end</label>
-                <input type="date" value={d.periodEnd} onChange={(e) => patchDraft(d.contractId, { periodEnd: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mb-1">Period end</label>
+                <input type="date" value={d.periodEnd} onChange={(e) => patchDraft(d.contractId, { periodEnd: e.target.value })} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
             </div>
 
@@ -1385,17 +1385,17 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
             {isVariable ? (
               /* Fully-manual spreadsheet grid — editable headers, add/remove
                  columns & rows, every cell typed by hand. Nothing is calculated. */
-              <div className="border border-slate-200 rounded overflow-x-auto">
+              <div className="border border-border rounded overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50">
+                    <tr className="border-b border-border bg-muted/50">
                       {d.variableColumns.map((h, ci) => {
                         const isAmount = ci === d.variableColumns.length - 1;
                         // The final "Amount" column is fixed: a static header, no
                         // rename, no remove — it's the money column that's summed.
                         if (isAmount) {
                           return (
-                            <th key={ci} className="px-2 py-1 align-top text-right text-xs font-semibold text-slate-700 min-w-[110px]" title="Fixed column — the Total Due is the sum of this column">
+                            <th key={ci} className="px-2 py-1 align-top text-right text-xs font-semibold text-foreground min-w-[110px]" title="Fixed column — the Total Due is the sum of this column">
                               {AMOUNT_COL}
                             </th>
                           );
@@ -1407,7 +1407,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                                 value={h}
                                 onChange={(e) => setVarHeader(d.contractId, ci, e.target.value)}
                                 placeholder="Column name"
-                                className="w-full min-w-[90px] px-2 py-1 border border-slate-200 rounded text-xs font-medium"
+                                className="w-full min-w-[90px] px-2 py-1 border border-border rounded text-xs font-medium"
                               />
                               <button
                                 onClick={() => removeVarColumn(d.contractId, ci)}
@@ -1428,7 +1428,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border">
                     {d.variableRows.map((row, ri) => (
                       <tr key={ri}>
                         {row.map((cell, ci) => {
@@ -1441,7 +1441,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                                 onChange={(e) => setVarCell(d.contractId, ri, ci, e.target.value)}
                                 onBlur={isAmount ? (e) => setVarCell(d.contractId, ri, ci, formatGrouped(e.target.value)) : undefined}
                                 placeholder={isAmount ? "0" : undefined}
-                                className={`w-full px-2 py-1 border border-slate-200 rounded text-sm ${isAmount ? "text-right tabular-nums" : ""}`}
+                                className={`w-full px-2 py-1 border border-border rounded text-sm ${isAmount ? "text-right tabular-nums" : ""}`}
                               />
                             </td>
                           );
@@ -1455,21 +1455,21 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                     ))}
                   </tbody>
                 </table>
-                <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 border-t border-slate-100">
+                <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 border-t border-border">
                   <button onClick={() => addVarRow(d.contractId)} className="text-xs text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" /> Add row
                   </button>
                   <button onClick={() => addVarColumn(d.contractId)} className="text-xs text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" /> Add column
                   </button>
-                  <span className="text-[11px] text-slate-400">Cells are typed by hand; the Total Due auto-sums the fixed <span className="font-medium">Amount</span> column.</span>
+                  <span className="text-[11px] text-muted-foreground/70">Cells are typed by hand; the Total Due auto-sums the fixed <span className="font-medium">Amount</span> column.</span>
                 </div>
               </div>
             ) : (
-              <div className="border border-slate-200 rounded overflow-x-auto">
+              <div className="border border-border rounded overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
+                    <tr className="text-xs text-muted-foreground uppercase border-b border-border">
                       <th className="text-left px-2 py-1.5">Description</th>
                       <th className="text-right px-2 py-1.5 w-24">Qty</th>
                       <th className="text-right px-2 py-1.5 w-32">Rate</th>
@@ -1477,27 +1477,27 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                       <th className="w-8"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border">
                     {d.lines.map((l, li) => (
                       <tr key={li}>
                         <td className="px-2 py-1">
                           <input
                             value={l.label}
                             onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, label: e.target.value } : x)) })}
-                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                            className="w-full px-2 py-1 border border-border rounded text-sm"
                           />
                         </td>
                         <td className="px-2 py-1">
                           <input type="number" min="0" value={l.quantity}
                             onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, quantity: e.target.value } : x)) })}
-                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right" />
+                            className="w-full px-2 py-1 border border-border rounded text-sm text-right" />
                         </td>
                         <td className="px-2 py-1">
                           <input type="number" min="0" step="0.01" value={l.unit_rate}
                             onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, unit_rate: e.target.value } : x)) })}
-                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right" />
+                            className="w-full px-2 py-1 border border-border rounded text-sm text-right" />
                         </td>
-                        <td className="px-2 py-1 text-right tabular-nums text-slate-700">
+                        <td className="px-2 py-1 text-right tabular-nums text-foreground">
                           {proratedAmount(l.quantity, l.unit_rate, factor).toLocaleString()}
                         </td>
                         <td className="px-1 py-1 text-center">
@@ -1521,11 +1521,11 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
             {/* Totals + taxes + remit */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-xs text-slate-500">Remit account</label>
+                <label className="block text-xs text-muted-foreground">Remit account</label>
                 <ThemedSelect
                   value={d.remitIndex}
                   onChange={(e) => patchDraft(d.contractId, { remitIndex: Number(e.target.value) })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="w-full px-2 py-1.5 border border-border rounded text-sm"
                 >
                   {remitAccounts.length === 0 && <option value={-1}>No remit accounts configured</option>}
                   {remitAccounts.map((r, ri) => (
@@ -1534,8 +1534,8 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                     </option>
                   ))}
                 </ThemedSelect>
-                <label className="block text-xs text-slate-500 mt-2">Notes</label>
-                <textarea value={d.notes} onChange={(e) => patchDraft(d.contractId, { notes: e.target.value })} rows={2} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <label className="block text-xs text-muted-foreground mt-2">Notes</label>
+                <textarea value={d.notes} onChange={(e) => patchDraft(d.contractId, { notes: e.target.value })} rows={2} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
               </div>
               {isVariable ? (
                 <div className="text-sm space-y-1">
@@ -1544,7 +1544,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                       Only offered when there IS one to roll in. */}
                   {d.previousBalance !== 0 && (
                     <label className="flex items-center justify-between gap-2 pt-0.5 cursor-pointer">
-                      <span className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <input
                           type="checkbox"
                           checked={d.includePreviousBalance}
@@ -1552,22 +1552,22 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                         />
                         Add outstanding balance
                       </span>
-                      <span className={`tabular-nums text-xs ${d.includePreviousBalance ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                      <span className={`tabular-nums text-xs ${d.includePreviousBalance ? "text-foreground" : "text-muted-foreground/70 line-through"}`}>
                         PKR {d.previousBalance.toLocaleString()}
                       </span>
                     </label>
                   )}
-                  <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
+                  <div className="flex items-center justify-between border-t border-border pt-1 font-semibold text-foreground">
                     <span>Total Due</span>
                     <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
                   </div>
-                  <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
+                  <div className="text-[11px] italic text-muted-foreground">{amountInWords(f.totalDue)}</div>
                 </div>
               ) : (
                 <div className="text-sm space-y-1">
                   <Row label="Subtotal" value={f.subtotal} />
                   {factor < 1 && (
-                    <div className="text-[11px] italic text-amber-700">
+                    <div className="text-[11px] italic text-warning-700">
                       Prorated to {Math.round(factor * 100)}% of the month ({d.periodStart.slice(8)}–{d.periodEnd.slice(8)} {d.periodStart.slice(0, 7)}); monthly rate still prints in full.
                     </div>
                   )}
@@ -1575,7 +1575,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                       Only offered when there IS one to roll in. */}
                   {d.previousBalance !== 0 && (
                     <label className="flex items-center justify-between gap-2 pt-0.5 cursor-pointer">
-                      <span className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <input
                           type="checkbox"
                           checked={d.includePreviousBalance}
@@ -1583,7 +1583,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                         />
                         Add outstanding balance
                       </span>
-                      <span className={`tabular-nums text-xs ${d.includePreviousBalance ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                      <span className={`tabular-nums text-xs ${d.includePreviousBalance ? "text-foreground" : "text-muted-foreground/70 line-through"}`}>
                         PKR {d.previousBalance.toLocaleString()}
                       </span>
                     </label>
@@ -1592,26 +1592,26 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
                     <Row key={ti} label={`${t.name} (${t.rate}%)`} value={t.direction === "WITHHELD" ? -t.amount : t.amount} muted />
                   ))}
                   {f.carried !== 0 && <Row label="Previous balance" value={f.carried} muted />}
-                  <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
+                  <div className="flex items-center justify-between border-t border-border pt-1 font-semibold text-foreground">
                     <span>Total Due</span>
                     <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
                   </div>
-                  <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
+                  <div className="text-[11px] italic text-muted-foreground">{amountInWords(f.totalDue)}</div>
                   <div className="pt-1">
-                    <label className="block text-xs text-slate-500 mb-1">Override total (optional)</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Override total (optional)</label>
                     <input
                       type="number"
                       value={d.overrideTotal}
                       onChange={(e) => patchDraft(d.contractId, { overrideTotal: e.target.value })}
                       placeholder={String(f.lineTotal)}
-                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                      className="w-full px-2 py-1.5 border border-border rounded text-sm text-right"
                     />
                     {f.overridden && (
                       <input
                         value={d.overrideReason}
                         onChange={(e) => patchDraft(d.contractId, { overrideReason: e.target.value })}
                         placeholder="Reason for override (required)"
-                        className={`w-full px-2 py-1.5 mt-1 border rounded text-sm ${d.overrideReason.trim() ? "border-slate-200" : "border-danger-300"}`}
+                        className={`w-full px-2 py-1.5 mt-1 border rounded text-sm ${d.overrideReason.trim() ? "border-border" : "border-danger-200"}`}
                       />
                     )}
                   </div>
@@ -1627,7 +1627,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
 
 function Row({ label, value, muted }: { label: string; value: number; muted?: boolean }) {
   return (
-    <div className={`flex items-center justify-between ${muted ? "text-slate-500" : "text-slate-700"}`}>
+    <div className={`flex items-center justify-between ${muted ? "text-muted-foreground" : "text-foreground"}`}>
       <span>{label}</span>
       <span className="tabular-nums">PKR {value.toLocaleString()}</span>
     </div>

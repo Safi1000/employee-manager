@@ -20,7 +20,7 @@ import { usePageState } from "../../lib/pageState";
 type Tab = "kpis" | "appraisals" | "pools" | "guard";
 
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const RAG: Record<string, string> = {
   green: "bg-success-50 text-success-700 border-success-200",
   amber: "bg-warning-50 text-warning-700 border-warning-200",
@@ -117,7 +117,7 @@ export default function Performance() {
         <div className="space-y-6">
           <section>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm text-slate-900">Enrollment (salaried staff)</h3>
+              <h3 className="text-sm text-foreground">Enrollment (salaried staff)</h3>
               <Button
                 variant="secondary"
                 size="sm"
@@ -127,10 +127,10 @@ export default function Performance() {
                 Run KPI computation (this month)
               </Button>
             </div>
-            <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+            <div className="border border-border rounded-md divide-y divide-border">
               {officeStaff.map((e) => (
                 <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="text-slate-800">{e.full_name}</span>
+                  <span className="text-foreground">{e.full_name}</span>
                   <div className="flex items-center gap-2">
                     <ThemedSelect
                       className={FIELD}
@@ -169,16 +169,16 @@ export default function Performance() {
                   </div>
                 </div>
               ))}
-              {officeStaff.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No salaried staff.</p>}
+              {officeStaff.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No salaried staff.</p>}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Enrollment requires COO approval — enforced by the RPC.</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Enrollment requires COO approval — enforced by the RPC.</p>
           </section>
 
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">KPI Dashboard</h3>
-            <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <h3 className="text-sm text-foreground mb-2">KPI Dashboard</h3>
+            <div className="overflow-x-auto border border-border rounded-md">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="text-left px-3 py-2">Employee</th>
                     <th className="text-left px-3 py-2">KPI</th>
@@ -187,24 +187,24 @@ export default function Performance() {
                     <th className="text-center px-3 py-2">RAG</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {kpiRows.map((r, i) => (
                     <tr key={i}>
-                      <td className="px-3 py-1.5 text-slate-800">{r.full_name}</td>
-                      <td className="px-3 py-1.5 text-slate-600">{r.name}</td>
+                      <td className="px-3 py-1.5 text-foreground">{r.full_name}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{r.name}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{r.target ?? "—"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{r.value ?? "—"}</td>
                       <td className="px-3 py-1.5 text-center">
                         {r.rag ? (
                           <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${RAG[r.rag]}`}>{r.rag}</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-muted-foreground/50">—</span>
                         )}
                       </td>
                     </tr>
                   ))}
                   {kpiRows.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No enrolled KPI data yet.</td></tr>
+                    <tr><td colSpan={5} className="px-3 py-3 text-muted-foreground">No enrolled KPI data yet.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -230,12 +230,12 @@ export default function Performance() {
       {/* ================= Bonus Pools ================= */}
       {tab === "pools" && (
         <div className="space-y-4">
-          <div className="p-3 bg-warning-50 border border-warning-200 rounded-md text-sm text-warning-800">
+          <div className="p-3 bg-warning-50 border border-warning-200 rounded-md text-sm text-warning-700 dark:text-warning-500">
             Regional profit is stated <strong>after</strong> head-office cost allocation. Run HO cost allocation for the period
             (Treasury → Regional P&L) before sizing pools so profit isn't overstated.
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-sm text-slate-600">Year</label>
+            <label className="text-sm text-muted-foreground">Year</label>
             <input type="number" className={FIELD + " w-24"} value={year} onChange={(e) => setYear(Number(e.target.value))} />
             {canApprovePerf && (
             <Button
@@ -265,17 +265,17 @@ export default function Performance() {
           </div>
 
           {pools.map((p) => (
-            <div key={p.id} className="border border-slate-200 rounded-md p-3">
+            <div key={p.id} className="border border-border rounded-md p-3">
               <div className="flex items-center justify-between">
-                <div className="text-sm text-slate-800">
+                <div className="text-sm text-foreground">
                   {p.period_year} · {p.scope}
                   {p.branch_id ? ` · ${branches.find((b) => b.id === p.branch_id)?.name ?? ""}` : ""}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-muted-foreground">
                     growth {Number(p.growth ?? 0).toLocaleString()} → pool {Number(p.pool_amount ?? 0).toLocaleString()}
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{p.status}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-muted border border-border">{p.status}</span>
                   {p.status === "draft" && canApprovePerf && (
                     <Button variant="primary" size="sm" disabled={busy} onClick={() => run(supabase.rpc("approve_bonus_pool", { p_pool_id: p.id }))}>
                       Approve
@@ -283,7 +283,7 @@ export default function Performance() {
                   )}
                 </div>
               </div>
-              <ul className="mt-2 text-xs text-slate-600 space-y-0.5">
+              <ul className="mt-2 text-xs text-muted-foreground space-y-0.5">
                 {allocations
                   .filter((a) => a.pool_id === p.id && Number(a.share_amount) > 0)
                   .map((a) => (
@@ -295,8 +295,8 @@ export default function Performance() {
               </ul>
             </div>
           ))}
-          {pools.length === 0 && <p className="text-sm text-slate-500">No pools generated.</p>}
-          <p className="text-xs text-slate-400">Payout to payslips happens in the payroll stream (§28).</p>
+          {pools.length === 0 && <p className="text-sm text-muted-foreground">No pools generated.</p>}
+          <p className="text-xs text-muted-foreground/70">Payout to payslips happens in the payroll stream (§28).</p>
         </div>
       )}
 
@@ -359,12 +359,12 @@ function AppraisalsTab({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <label className="text-sm text-slate-600">Year</label>
+        <label className="text-sm text-muted-foreground">Year</label>
         <input type="number" className={FIELD + " w-24"} value={year} onChange={(e) => setYear(Number(e.target.value))} />
       </div>
 
-      <section className="border border-slate-200 rounded-md p-3">
-        <h3 className="text-sm text-slate-900 mb-2">New appraisal</h3>
+      <section className="border border-border rounded-md p-3">
+        <h3 className="text-sm text-foreground mb-2">New appraisal</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <ThemedSelect className={FIELD} value={empId} onChange={(e) => setEmpId(e.target.value)}>
             <option value="">— employee —</option>
@@ -381,21 +381,21 @@ function AppraisalsTab({
         <div className="mt-2">
           <Button variant="primary" size="sm" disabled={busy || !empId} onClick={create}>Create appraisal</Button>
         </div>
-        <p className="text-xs text-slate-400 mt-1">Weighted score &amp; rating are computed by the DB; the 35% job/KPI criterion auto-fills from §14.</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">Weighted score &amp; rating are computed by the DB; the 35% job/KPI criterion auto-fills from §14.</p>
       </section>
 
       <section>
-        <h3 className="text-sm text-slate-900 mb-2">Appraisals</h3>
-        <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+        <h3 className="text-sm text-foreground mb-2">Appraisals</h3>
+        <div className="border border-border rounded-md divide-y divide-border">
           {appraisals.map((a) => (
             <div key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <span className="text-slate-800">
+              <span className="text-foreground">
                 {nameById.get(a.employee_id) ?? a.employee_id} · {a.period_year}
                 {a.rating ? ` · ${a.rating}` : ""}
                 {a.weighted_score ? ` (${Number(a.weighted_score).toFixed(2)})` : ""}
               </span>
               <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{a.status}</span>
+                <span className="text-xs px-2 py-0.5 rounded-md bg-muted border border-border">{a.status}</span>
                 {NEXT[a.status] && (
                   <Button
                     variant="secondary"
@@ -409,15 +409,15 @@ function AppraisalsTab({
               </div>
             </div>
           ))}
-          {appraisals.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No appraisals yet.</p>}
+          {appraisals.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No appraisals yet.</p>}
         </div>
       </section>
 
-      <section className="border border-slate-200 rounded-md p-3">
-        <h3 className="text-sm text-slate-900 mb-2">Appreciation (annual flat %)</h3>
+      <section className="border border-border rounded-md p-3">
+        <h3 className="text-sm text-foreground mb-2">Appreciation (annual flat %)</h3>
         <div className="flex items-center gap-2 flex-wrap">
           <input className={FIELD + " w-20"} value={apprPct} onChange={(e) => setApprPct(e.target.value)} placeholder="%" />
-          <span className="text-sm text-slate-500">effective</span>
+          <span className="text-sm text-muted-foreground">effective</span>
           <input type="date" className={FIELD} value={effDate} onChange={(e) => setEffDate(e.target.value)} />
           <Button
             variant="secondary"
@@ -428,7 +428,7 @@ function AppraisalsTab({
             Apply to all in good standing
           </Button>
         </div>
-        <p className="text-xs text-slate-400 mt-1">Writes an increment to salary history from the effective date. Below-rated are excluded.</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">Writes an increment to salary history from the effective date. Below-rated are excluded.</p>
       </section>
     </div>
   );
@@ -457,10 +457,10 @@ function GuardBonusTab({
 
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 rounded-md p-3 space-y-3">
-        <h3 className="text-sm text-slate-900">Accrue bonuses</h3>
+      <section className="border border-border rounded-md p-3 space-y-3">
+        <h3 className="text-sm text-foreground">Accrue bonuses</h3>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-slate-600 w-24">Attendance</span>
+          <span className="text-sm text-muted-foreground w-24">Attendance</span>
           <input type="date" className={FIELD} value={attMonth} onChange={(e) => setAttMonth(e.target.value)} title="Any date in the month" />
           <input className={FIELD + " w-28"} placeholder="Amount" value={attAmount} onChange={(e) => setAttAmount(e.target.value)} />
           <Button
@@ -473,7 +473,7 @@ function GuardBonusTab({
           </Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-slate-600 w-24">Eid</span>
+          <span className="text-sm text-muted-foreground w-24">Eid</span>
           <input type="date" className={FIELD} value={eidDate} onChange={(e) => setEidDate(e.target.value)} />
           <input className={FIELD + " w-28"} placeholder="Amount" value={eidAmount} onChange={(e) => setEidAmount(e.target.value)} />
           <Button
@@ -485,20 +485,20 @@ function GuardBonusTab({
             Accrue
           </Button>
         </div>
-        <p className="text-xs text-slate-400">Referral and long-service bonuses accrue automatically / per-guard. Attendance qualifies guards with zero unexcused absences.</p>
+        <p className="text-xs text-muted-foreground/70">Referral and long-service bonuses accrue automatically / per-guard. Attendance qualifies guards with zero unexcused absences.</p>
       </section>
 
       <section>
-        <h3 className="text-sm text-slate-900 mb-2">Guard bonus ledger</h3>
-        <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+        <h3 className="text-sm text-foreground mb-2">Guard bonus ledger</h3>
+        <div className="border border-border rounded-md divide-y divide-border">
           {guardBonuses.map((g) => (
             <div key={g.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <span className="text-slate-800">
+              <span className="text-foreground">
                 {nameById.get(g.employee_id) ?? g.employee_id} · {g.bonus_type}
                 {g.period_month ? ` · ${formatDate(g.period_month)}` : ""} · {Number(g.amount ?? 0).toLocaleString()}
               </span>
               <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{g.status}</span>
+                <span className="text-xs px-2 py-0.5 rounded-md bg-muted border border-border">{g.status}</span>
                 {g.status === "accrued" && canApprovePerf && (
                   <Button
                     variant="primary"
@@ -512,9 +512,9 @@ function GuardBonusTab({
               </div>
             </div>
           ))}
-          {guardBonuses.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No guard bonuses accrued.</p>}
+          {guardBonuses.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No guard bonuses accrued.</p>}
         </div>
-        <p className="text-xs text-slate-400 mt-1">Approved bonuses pay out via the guard payroll stream (§28).</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">Approved bonuses pay out via the guard payroll stream (§28).</p>
       </section>
     </div>
   );

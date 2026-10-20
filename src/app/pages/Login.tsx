@@ -204,7 +204,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="group w-full py-2.5 px-4 disabled:opacity-50 bg-brand-500 hover:bg-brand-600 text-[#241a06] rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
+                className="group w-full py-2.5 px-4 disabled:opacity-50 bg-brand-500 hover:bg-brand-600 text-on-brand rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Sign in

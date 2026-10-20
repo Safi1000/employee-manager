@@ -178,7 +178,7 @@ export default function CommandPalette({ links, onChangePassword }: { links: Pal
                     className={`group mx-2 flex items-center gap-3 rounded-xl px-3 py-2 cursor-pointer ${isActive ? "bg-muted" : ""}`}
                     onClick={it.run}
                   >
-                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-brand-500 text-[#241a06]" : "bg-muted text-muted-foreground"}`}>
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-brand-500 text-on-brand" : "bg-muted text-muted-foreground"}`}>
                       <Icon className="w-4 h-4" strokeWidth={1.75} />
                     </span>
                     <span className="min-w-0 flex-1">

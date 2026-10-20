@@ -485,7 +485,7 @@ export default function Settings() {
   const renderBranches = () => (
     <div className="bg-card rounded-2xl border border-border p-4 md:p-6">
       <div className="flex items-center justify-between gap-3 mb-6">
-        <h3 className="text-base text-slate-900">Regional Management</h3>
+        <h3 className="text-base text-foreground">Regional Management</h3>
         <Button
           variant="primary"
           size="sm"
@@ -498,14 +498,14 @@ export default function Settings() {
       </div>
       <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
         {loading && (
-          <div className="text-sm text-slate-500 flex items-center gap-2">
+          <div className="text-sm text-muted-foreground flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         )}
         {!loading && branches.map((b) => (
           <div
             key={b.id}
-            className="p-4 border border-slate-200 rounded-lg flex items-center justify-between gap-3"
+            className="p-4 border border-border rounded-lg flex items-center justify-between gap-3"
           >
             {branchEditingId === b.id ? (
               <>
@@ -513,7 +513,7 @@ export default function Settings() {
                   autoFocus
                   value={branchEditingName}
                   onChange={(e) => setBranchEditingName(e.target.value)}
-                  className="flex-1 mr-3 px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="flex-1 mr-3 px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                 />
                 <div className="flex gap-2">
                   <Button variant="primary" size="sm" onClick={() => handleSaveBranchEdit(b.id)}>
@@ -535,14 +535,14 @@ export default function Settings() {
               <>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-900">{b.name}</span>
+                    <span className="text-sm text-foreground">{b.name}</span>
                     {b.is_head_office && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 text-[11px]">
                         Default
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {b.employees} employees
                     {b.ho_excluded && (
                       <span className="ml-2 text-warning-700">
@@ -551,7 +551,7 @@ export default function Settings() {
                     )}
                   </p>
                   {b.ho_excluded && b.ho_excluded_reason && (
-                    <p className="text-[11px] text-slate-400 mt-0.5 truncate">{b.ho_excluded_reason}</p>
+                    <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">{b.ho_excluded_reason}</p>
                   )}
                 </div>
                 <div className="flex gap-1">
@@ -632,9 +632,9 @@ export default function Settings() {
 
         {canManageNotifications && (
           <div id="set-appearance" className="bg-card rounded-2xl border border-border mb-6 scroll-mt-40">
-            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="p-6 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Palette className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                <Palette className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
                 <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Appearance</h2>
               </div>
               {themeSavedAt && (
@@ -642,7 +642,7 @@ export default function Settings() {
               )}
             </div>
             <div className="p-6">
-              <p className="text-xs text-slate-500 mb-4">
+              <p className="text-xs text-muted-foreground mb-4">
                 Choose the accent color for {company?.name ?? "your company"}. This applies to
                 every user in the company — sidebar highlights, primary buttons and badges.
               </p>
@@ -660,13 +660,13 @@ export default function Settings() {
                       className={`text-left rounded-lg border p-4 transition-colors disabled:cursor-not-allowed ${
                         selected
                           ? "border-brand-600 ring-2 ring-brand-200 bg-brand-50"
-                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                          : "border-border hover:border-border hover:bg-muted/50"
                       } ${themeSaving && !busy ? "opacity-60" : ""}`}
                     >
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-slate-900">{opt.label}</span>
+                        <span className="text-sm text-foreground">{opt.label}</span>
                         {busy ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/70" />
                         ) : selected ? (
                           <Check className="w-4 h-4 text-brand-600" strokeWidth={2} />
                         ) : null}
@@ -686,7 +686,7 @@ export default function Settings() {
                           />
                         ))}
                       </div>
-                      <p className="text-xs text-slate-500">{opt.description}</p>
+                      <p className="text-xs text-muted-foreground">{opt.description}</p>
                     </button>
                   );
                 })}
@@ -700,9 +700,9 @@ export default function Settings() {
         </div>
 
         <div id="set-dashboard" className="bg-card rounded-2xl border border-border mt-6 scroll-mt-40">
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+          <div className="p-6 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <LayoutDashboard className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+              <LayoutDashboard className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
               <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Dashboard Widgets</h2>
             </div>
             <div className="flex items-center gap-3">
@@ -721,7 +721,7 @@ export default function Settings() {
             </div>
           </div>
           <div className="p-6">
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-muted-foreground mb-4">
               Hide widgets you don't want on the dashboard. This applies to every user in your company.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -730,15 +730,15 @@ export default function Settings() {
                 return (
                   <label
                     key={key}
-                    className="flex items-center gap-3 px-3 py-2 border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer"
+                    className="flex items-center gap-3 px-3 py-2 border border-border rounded-md hover:bg-muted/50 cursor-pointer"
                   >
                     <input
                       type="checkbox"
                       checked={visible}
                       onChange={() => toggleWidget(key)}
-                      className="rounded border-slate-300"
+                      className="rounded border-border"
                     />
-                    <span className="text-sm text-slate-800">{DASHBOARD_WIDGET_LABELS[key]}</span>
+                    <span className="text-sm text-foreground">{DASHBOARD_WIDGET_LABELS[key]}</span>
                   </label>
                 );
               })}
@@ -748,9 +748,9 @@ export default function Settings() {
 
         {canManageNotifications && (
           <div id="set-notifications" className="bg-card rounded-2xl border border-border mt-6 scroll-mt-40">
-            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="p-6 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                <Mail className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
                 <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Notifications</h2>
               </div>
               <div className="flex items-center gap-3">
@@ -769,24 +769,24 @@ export default function Settings() {
               </div>
             </div>
             <div className="p-6 space-y-4">
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Compliance & contract-end alerts are emailed daily via Resend to the recipient below.
                 The sender domain must be verified in your Resend account.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Recipient email</label>
+                  <label className="block text-xs text-muted-foreground mb-1">Recipient email</label>
                   <input
                     type="email"
                     value={notificationEmail}
                     onChange={(e) => setNotificationEmail(e.target.value)}
                     disabled={notificationLoading}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent disabled:bg-muted/50"
                     placeholder="alerts@example.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Sender email</label>
+                  <label className="block text-xs text-muted-foreground mb-1">Sender email</label>
                   {/* Locked: the sending address is tied to the verified mail domain, so it
                       is shown for reference but never edited from the UI. Saving still
                       round-trips the stored value, leaving it unchanged. */}
@@ -796,9 +796,9 @@ export default function Settings() {
                     readOnly
                     aria-readonly="true"
                     tabIndex={-1}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-600 cursor-not-allowed focus:outline-none"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus:outline-none"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
+                  <p className="text-[11px] text-muted-foreground mt-1">
                     Managed by your administrator — contact support to change the sending address.
                   </p>
                 </div>
@@ -839,7 +839,7 @@ export default function Settings() {
         size="md"
       >
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             {hoModalBranch?.ho_excluded
               ? "This region will start absorbing head office cost again. The pool is redistributed across every region that absorbs it."
               : "This region will stop absorbing head office cost. The pool is not reduced — it redistributes across the remaining regions by invoiced revenue, so their share goes up."}
@@ -847,33 +847,33 @@ export default function Settings() {
 
           {!hoModalBranch?.ho_excluded && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Reason *</label>
+              <label className="block text-sm text-foreground mb-1">Reason *</label>
               <textarea
                 value={hoReason}
                 onChange={(e) => setHoReason(e.target.value)}
                 rows={2}
                 placeholder="e.g. Kashmir is managed independently and receives no head office support"
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-md text-sm"
               />
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-muted-foreground mt-1">
                 Stored with the flag and required — this changes what a regional partner takes home,
                 and an exclusion with no reason cannot be told from a mistake later.
               </p>
             </div>
           )}
 
-          <div className="border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-3 py-2 bg-slate-50 lbl">
+          <div className="border border-border rounded-md overflow-hidden">
+            <div className="px-3 py-2 bg-muted/50 lbl">
               This month, if applied
             </div>
-            {hoBusy && <div className="p-3 text-sm text-slate-500">Loading preview…</div>}
+            {hoBusy && <div className="p-3 text-sm text-muted-foreground">Loading preview…</div>}
             {!hoBusy && hoPreview.length === 0 && (
-              <div className="p-3 text-sm text-slate-500">No regions to preview.</div>
+              <div className="p-3 text-sm text-muted-foreground">No regions to preview.</div>
             )}
             {!hoBusy && hoPreview.map((r) => (
-              <div key={r.branch_id} className="flex justify-between items-center px-3 py-2 text-sm border-t border-slate-100">
-                <span className="text-slate-700">{r.region_name}</span>
-                <span className="tabular-nums text-slate-600">
+              <div key={r.branch_id} className="flex justify-between items-center px-3 py-2 text-sm border-t border-border">
+                <span className="text-foreground">{r.region_name}</span>
+                <span className="tabular-nums text-muted-foreground">
                   {Math.round(r.absorbs_now).toLocaleString()} → {Math.round(r.absorbs_after).toLocaleString()}
                   {Number(r.delta) !== 0 && (
                     <span className={Number(r.delta) > 0 ? "ml-2 text-danger-600" : "ml-2 text-success-600"}>
@@ -914,7 +914,7 @@ export default function Settings() {
       >
         <form className="space-y-4" onSubmit={handleAddBranch}>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Region Name *</label>
+            <label className="block text-sm text-foreground mb-1">Region Name *</label>
             <input
               required
               autoFocus
@@ -922,9 +922,9 @@ export default function Settings() {
               value={newBranchName}
               onChange={(e) => setNewBranchName(e.target.value)}
               placeholder="e.g. Lahore HQ"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Clients and employees can be assigned to this branch. Users created with this branch
               will only see their branch's data.
             </p>
@@ -1004,9 +1004,9 @@ function CompanyProfileSection() {
 
   return (
     <div className="bg-card rounded-2xl border border-border">
-      <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+      <div className="p-6 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+          <Building2 className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
           <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Company Profile</h2>
         </div>
         <div className="flex items-center gap-3">
@@ -1018,7 +1018,7 @@ function CompanyProfileSection() {
         </div>
       </div>
       <div className="p-6 space-y-4">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Personal display only — these change what you see in the app and don't affect the
           company record or other users.
         </p>
@@ -1029,17 +1029,17 @@ function CompanyProfileSection() {
             <button onClick={() => setErr(null)}><X className="w-4 h-4" /></button>
           </div>
         )}
-        <div className="flex items-center gap-4 pb-4 border-b border-slate-200">
-          <div className="h-16 w-16 rounded-lg overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center">
+        <div className="flex items-center gap-4 pb-4 border-b border-border">
+          <div className="h-16 w-16 rounded-lg overflow-hidden bg-muted/50 border border-border flex items-center justify-center">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
             ) : (
-              <Building2 className="w-6 h-6 text-slate-300" />
+              <Building2 className="w-6 h-6 text-muted-foreground/50" />
             )}
           </div>
           <div>
-            <p className="text-sm text-slate-900">Logo</p>
-            <p className="text-xs text-slate-500 mb-2">Shown in your sidebar.</p>
+            <p className="text-sm text-foreground">Logo</p>
+            <p className="text-xs text-muted-foreground mb-2">Shown in your sidebar.</p>
             <input
               ref={fileRef}
               type="file"
@@ -1065,33 +1065,33 @@ function CompanyProfileSection() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block text-xs text-slate-500 mb-1">Company Name</label>
+            <label className="block text-xs text-muted-foreground mb-1">Company Name</label>
             <input
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               placeholder="How the company name appears to you"
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Username</label>
+            <label className="block text-xs text-muted-foreground mb-1">Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Your name"
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">User Email</label>
+            <label className="block text-xs text-muted-foreground mb-1">User Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm"
             />
-            <p className="text-[10px] text-slate-500 mt-1">Display only — does not change your sign-in email.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Display only — does not change your sign-in email.</p>
           </div>
         </div>
       </div>

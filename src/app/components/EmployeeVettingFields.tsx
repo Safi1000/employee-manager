@@ -13,7 +13,7 @@ import ThemedSelect from "./ThemedSelect";
 import { supabase, type VettingStatus } from "../lib/supabase";
 
 const FIELD =
-  "w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 
 const VETTING_BADGE: Record<VettingStatus, string> = {
   pending: "bg-warning-50 text-warning-700 border-warning-200",
@@ -71,14 +71,14 @@ export default function EmployeeVettingFields({
     statusField === "police_verification_status" ? police : nadra;
 
   return (
-    <div className="pt-3 border-t border-slate-100">
-      <p className="text-sm text-slate-700 mb-2">Vetting</p>
+    <div className="pt-3 border-t border-border">
+      <p className="text-sm text-foreground mb-2">Vetting</p>
       {err && <p className="text-xs text-danger-600 mb-2">{err}</p>}
       {VETTING_FIELDS.map(([statusField, dateField, label]) => {
         const val = valueOf(statusField);
         return (
           <div key={statusField} className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm text-slate-600">{label}</span>
+            <span className="text-sm text-muted-foreground">{label}</span>
             <div className="flex items-center gap-2">
               <span className={`inline-flex px-2 py-0.5 rounded-md text-xs border ${VETTING_BADGE[val]}`}>{val}</span>
               <ThemedSelect

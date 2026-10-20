@@ -115,7 +115,7 @@ type ReconRow = {
 const varianceBadge = (v: number) => {
   if (v === 0) return "bg-success-50 text-success-700 dark:text-success-500 border-success-200";
   if (v < 0) return "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200";
-  return "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200";
+  return "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200";
 };
 
 /**
@@ -1061,7 +1061,7 @@ export default function EmployeeAssignments() {
                   <div className="hidden md:block overflow-x-auto border-t border-border">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-border bg-slate-50">
+                        <tr className="border-b border-border bg-muted/50">
                           <th className="px-3 py-2 w-9">
                             <input
                               type="checkbox"
@@ -1075,7 +1075,7 @@ export default function EmployeeAssignments() {
                               {h}
                             </th>
                           ))}
-                          <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">
+                          <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-muted/50 border-l border-border">
                             Edit
                           </th>
                         </tr>
@@ -1243,26 +1243,26 @@ export default function EmployeeAssignments() {
               <div className="flex flex-wrap gap-2.5">
                 <div className="flex-[2_1_320px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
                   <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Strength · enrolled against contracted</span><span className="text-xs text-muted-foreground">{comparable.length} clients with a contracted figure · {totals.sites} sites</span></div>
-                  {noContractQty.length > 0 && <span className="text-xs text-[#f6d79b]">{noContractQty.length} client{noContractQty.length === 1 ? "" : "s"} with {(() => { const n = noContractQty.reduce((a, r) => a + r.enrolled_active, 0); return `${n} guard${n === 1 ? "" : "s"}`; })()} enrolled but no contracted quantity — left out of this comparison</span>}
+                  {noContractQty.length > 0 && <span className="text-xs text-heed">{noContractQty.length} client{noContractQty.length === 1 ? "" : "s"} with {(() => { const n = noContractQty.reduce((a, r) => a + r.enrolled_active, 0); return `${n} guard${n === 1 ? "" : "s"}`; })()} enrolled but no contracted quantity — left out of this comparison</span>}
                   <div className="flex items-center gap-3">
                     <span className="font-display text-3xl font-extrabold tracking-tight whitespace-nowrap">{enrolledComparable}<span className="text-lg text-muted-foreground font-semibold"> / {totals.contracted}</span></span>
-                    <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${ratio > 1.05 ? "bg-[#f6d79b]" : "bg-[#9ad1a3]"}`} style={{ width: `${pctFilled * 100}%` }} /></div>
-                    <span className={`font-ledger text-sm font-semibold ${ratio > 1.05 ? "text-[#f6d79b]" : ""}`}>{Math.round(ratio * 100)}%</span>
+                    <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${ratio > 1.05 ? "bg-heed" : "bg-up"}`} style={{ width: `${pctFilled * 100}%` }} /></div>
+                    <span className={`font-ledger text-sm font-semibold ${ratio > 1.05 ? "text-heed" : ""}`}>{Math.round(ratio * 100)}%</span>
                   </div>
                 </div>
                 <div className="flex-[1_1_150px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
-                  <span className="lbl">Understaffed</span><span className={`${fig} ${under ? "text-[#f6d79b]" : "text-[#9ad1a3]"}`}>{under}</span><span className="text-xs text-muted-foreground">heads to post</span>
+                  <span className="lbl">Understaffed</span><span className={`${fig} ${under ? "text-heed" : "text-up"}`}>{under}</span><span className="text-xs text-muted-foreground">heads to post</span>
                 </div>
                 <div className="flex-[1_1_150px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
-                  <span className="lbl">Over-enrolled</span><span className={`${fig} ${over ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{over}</span><span className="text-xs text-muted-foreground">above contract</span>
+                  <span className="lbl">Over-enrolled</span><span className={`${fig} ${over ? "text-down" : "text-up"}`}>{over}</span><span className="text-xs text-muted-foreground">above contract</span>
                 </div>
                 <button type="button" onClick={() => setOnlyMismatch((v) => !v)} className={`flex-[1_1_150px] text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 ${onlyMismatch ? "border-brand-500 bg-brand-500/15" : "border-border bg-card hover:border-brand-500/70"}`}>
-                  <span className="lbl">Clients mismatched</span><span className={`${fig} ${totals.mismatched ? "text-[#f6d79b]" : "text-[#9ad1a3]"}`}>{totals.mismatched}</span><span className="text-xs text-muted-foreground">{onlyMismatch ? "showing only these" : "tap to show only these"}</span>
+                  <span className="lbl">Clients mismatched</span><span className={`${fig} ${totals.mismatched ? "text-heed" : "text-up"}`}>{totals.mismatched}</span><span className="text-xs text-muted-foreground">{onlyMismatch ? "showing only these" : "tap to show only these"}</span>
                 </button>
                 {canAccounts && (
                   <div className="flex-[1_1_200px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
                     <span className="lbl">Monthly pay on the roster</span><span className={fig}><span className="cur">PKR</span>{Math.round(monthly).toLocaleString()}</span>
-                    <span className={`text-xs ${noBase || noJoin ? "text-[#f0a99a]" : "text-muted-foreground"}`}>{noBase || noJoin ? `${noBase} without a base salary · ${noJoin} without a joining date` : "every posting has pay and a joining date"}</span>
+                    <span className={`text-xs ${noBase || noJoin ? "text-down" : "text-muted-foreground"}`}>{noBase || noJoin ? `${noBase} without a base salary · ${noJoin} without a joining date` : "every posting has pay and a joining date"}</span>
                   </div>
                 )}
               </div>
@@ -1275,10 +1275,10 @@ export default function EmployeeAssignments() {
                         <span className="truncate group-hover:underline">{r.client_name}</span>
                         <span className="relative h-2.5 rounded-full bg-muted">
                           <span className="absolute inset-y-0 left-1/2 w-px bg-border" />
-                          <span className={`absolute inset-y-0 rounded-full ${r.variance > 0 ? "bg-brand-500" : "bg-[#d4674a]"}`}
+                          <span className={`absolute inset-y-0 rounded-full ${r.variance > 0 ? "bg-brand-500" : "bg-danger-500"}`}
                             style={r.variance > 0 ? { left: "50%", width: `${(r.variance / maxGap) * 50}%` } : { right: "50%", width: `${(-r.variance / maxGap) * 50}%` }} />
                         </span>
-                        <span className={`font-ledger text-right font-semibold ${r.variance > 0 ? "text-[#f6d79b]" : "text-[#f0a99a]"}`}>{r.variance > 0 ? `+${r.variance}` : r.variance}</span>
+                        <span className={`font-ledger text-right font-semibold ${r.variance > 0 ? "text-heed" : "text-down"}`}>{r.variance > 0 ? `+${r.variance}` : r.variance}</span>
                       </button>
                     ))}
                   </div>
@@ -1298,7 +1298,7 @@ export default function EmployeeAssignments() {
           </div>
         )}
         {notice && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-success-50 text-success-800 border border-success-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-success-50 text-success-700 dark:text-success-500 border border-success-200 rounded-md text-sm">
             <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
             <div className="flex-1">{notice}</div>
             <button onClick={() => setNotice(null)}><X className="w-4 h-4" /></button>
@@ -1348,7 +1348,7 @@ export default function EmployeeAssignments() {
         )}
 
         {strandedOnServices > 0 && (
-          <div className="mb-3 flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-warning-600" strokeWidth={2} />
             <span className="flex-1">
               {strandedOnServices} employee{strandedOnServices === 1 ? " is" : "s are"} posted to a
@@ -1476,7 +1476,7 @@ export default function EmployeeAssignments() {
                     {g.hint && <span className="text-xs text-muted-foreground truncate hidden md:inline">· {g.hint}</span>}
                     {g.gap && (
                       <span
-                        className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+                        className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
                         title={
                           g.gap === "contract"
                             ? "This client has people posted to it but no contract that is live today — either it was never entered, or it has expired."
@@ -1852,7 +1852,7 @@ export default function EmployeeAssignments() {
           size="sm"
         >
           <div className="space-y-2">
-            <p className="text-sm text-slate-600">Select the guard.</p>
+            <p className="text-sm text-muted-foreground">Select the guard.</p>
             {renderGuardPicker(warnPickFrom.rows, (e) => { setWarnTarget(e); setWarnPickFrom(null); })}
           </div>
         </Modal>
@@ -1879,7 +1879,7 @@ export default function EmployeeAssignments() {
           size="sm"
         >
           <div className="space-y-2">
-            <p className="text-sm text-slate-600">Select the guard being separated.</p>
+            <p className="text-sm text-muted-foreground">Select the guard being separated.</p>
             {renderGuardPicker(firePickFrom.rows, (e) => { setFireTarget(e); setFirePickFrom(null); })}
           </div>
         </Modal>
@@ -2332,7 +2332,7 @@ function EditRulesModal({
                       </span>
                       {b.category === null && (
                         <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
                           title="Their posting names no contract line, so the contract cannot say which post they fill. Set it with Edit on their row."
                         >
                           <AlertTriangle className="w-3 h-3" strokeWidth={2} />
@@ -2389,7 +2389,7 @@ function EditRulesModal({
             <div className="space-y-3">
               {buckets.map((b) => (
                 <div key={b.key} className="border border-border rounded-md overflow-hidden">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-border">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border">
                     <span className="text-sm font-medium text-foreground">{b.label}</span>
                     <span className="text-xs text-muted-foreground">
                       {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
@@ -2457,7 +2457,7 @@ function EditRulesModal({
           {payChanges.length > 0 && (
             <div className="mt-3 border border-border rounded-md max-h-56 overflow-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-slate-50">
+                <thead className="sticky top-0 bg-muted/50">
                   <tr className="text-left text-muted-foreground border-b border-border">
                     <th className="py-1.5 px-2 font-medium">Employee</th>
                     <th className="py-1.5 px-2 font-medium">Base</th>
@@ -2693,7 +2693,7 @@ function RowEditModal({
   };
 
   const inputCls = "w-full px-3 py-2 border border-border rounded-md text-sm bg-card";
-  const lockedCls = "w-full px-3 py-2 border border-border rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed";
+  const lockedCls = "w-full px-3 py-2 border border-border rounded-md text-sm bg-muted/50 text-muted-foreground cursor-not-allowed";
 
   return (
     <Modal

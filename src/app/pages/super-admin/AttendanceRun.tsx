@@ -228,13 +228,13 @@ export default function AttendanceRun() {
                 ].map((t, i) => (
                   <button key={t.k} type="button" disabled={!t.to} onClick={() => t.to && setTab(t.to as typeof tab)}
                     className={`text-left rounded-[14px] border px-4 py-3 flex items-center gap-3 ${t.to && tab === t.to ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"} ${t.to ? "hover:border-brand-500/70" : "cursor-default"}`}>
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-[#191a10]" style={{ background: t.c }}>{i + 1}</span>
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-ink" style={{ background: t.c }}>{i + 1}</span>
                     <span className="flex flex-col gap-0.5"><span className="lbl">{t.label}</span><span className="font-ledger text-2xl font-semibold leading-none">{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></span>
                   </button>
                 ))}
               </div>
               <div className="flex h-2.5 rounded-full overflow-hidden bg-muted" aria-hidden="true">
-                <span className="h-full bg-[#9ad1a3]" style={{ width: `${(done / total) * 100}%` }} />
+                <span className="h-full bg-up" style={{ width: `${(done / total) * 100}%` }} />
                 <span className="h-full bg-brand-500" style={{ width: `${(review / total) * 100}%` }} />
               </div>
             </div>
@@ -266,7 +266,7 @@ export default function AttendanceRun() {
         </div>
 
         {notice && (
-          <div className={`flex items-start gap-2 px-3 py-2 rounded-md text-sm ${notice.kind === "ok" ? "bg-success-50 text-success-700 border border-success-200 dark:bg-success-900/20 dark:text-success-400" : "bg-danger-50 text-danger-700 border border-danger-200"}`}>
+          <div className={`flex items-start gap-2 px-3 py-2 rounded-md text-sm ${notice.kind === "ok" ? "bg-success-50 text-success-700 border border-success-200 dark:bg-success-500/10 dark:text-success-500" : "bg-danger-50 text-danger-700 border border-danger-200"}`}>
             {notice.kind === "ok" ? <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
             <span className="flex-1">{notice.text}</span>
             <button onClick={() => setNotice(null)}><X className="w-4 h-4" /></button>
@@ -332,7 +332,7 @@ export default function AttendanceRun() {
                         : r?.ops_verified_at
                           ? { tone: "text-success-700 dark:text-success-500", text: `Ops verified${r.ops_verified_by_name ? ` by ${r.ops_verified_by_name}` : ""} · ${when(r.ops_verified_at)}` }
                           : r?.hr_verified_at
-                            ? { tone: "text-brand-700 dark:text-brand-300", text: "In Review — waiting on Ops" }
+                            ? { tone: "text-brand-700 dark:text-brand-500", text: "In Review — waiting on Ops" }
                             : { tone: "text-muted-foreground", text: "Waiting on HR" };
                       return (
                         <div key={h} className="px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -374,8 +374,8 @@ export default function AttendanceRun() {
                           </div>
 
                           {sendBack?.key === s.key && sendBack.halves.includes(h) && sendBack.halves[0] === h && (
-                            <div className="basis-full rounded-md border border-warning-300 bg-warning-50 dark:bg-warning-900/20 p-2.5 space-y-2">
-                              <p className="text-xs text-warning-900 dark:text-warning-300">
+                            <div className="basis-full rounded-md border border-warning-200 bg-warning-50 dark:bg-warning-500/10 p-2.5 space-y-2">
+                              <p className="text-xs text-warning-700 dark:text-warning-500">
                                 Send {sendBack.halves.length === 2 ? "the whole month" : `the ${h === 1 ? "1st" : "2nd"} half`} back to HR. Its days unlock for corrections, and
                                 your remark is posted to the board so HR sees what to fix.
                               </p>

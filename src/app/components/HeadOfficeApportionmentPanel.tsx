@@ -45,13 +45,13 @@ const monthName = (p: string) =>
 function YesNo({ value, disabled, onPick }: { value: boolean | null; disabled: boolean; onPick: (v: boolean) => void }) {
   const base = "px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed";
   return (
-    <div className="inline-flex rounded-md border border-slate-200 overflow-hidden">
+    <div className="inline-flex rounded-md border border-border overflow-hidden">
       <button type="button" disabled={disabled} onClick={() => onPick(false)}
-        className={`${base} ${value === false ? "bg-slate-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+        className={`${base} ${value === false ? "bg-ink text-white" : "bg-card text-muted-foreground hover:bg-muted/50"}`}>
         No — not charged
       </button>
       <button type="button" disabled={disabled} onClick={() => onPick(true)}
-        className={`${base} border-l border-slate-200 ${value === true ? "bg-brand-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+        className={`${base} border-l border-border ${value === true ? "bg-brand-600 text-white" : "bg-card text-muted-foreground hover:bg-muted/50"}`}>
         Yes — charge the region
       </button>
     </div>
@@ -216,16 +216,16 @@ export default function HeadOfficeApportionmentPanel({
   const shownValue = (m: Mode) => (pending && (pending.scope === m.branch_id || pending.scope === "all") ? pending.apportion : m.apportioned);
 
   return (
-    <div className={bare ? "" : "mt-5 pt-4 border-t border-slate-100"}>
-      {!bare && <h4 className="text-sm text-slate-900 mb-2">Head-office cost</h4>}
+    <div className={bare ? "" : "mt-5 pt-4 border-t border-border"}>
+      {!bare && <h4 className="text-sm text-foreground mb-2">Head-office cost</h4>}
       {/* ── What this is, in plain words ── */}
-      <div className="text-sm text-slate-700 space-y-2 mb-4">
+      <div className="text-sm text-foreground space-y-2 mb-4">
         <p>
           <strong>Head-office cost</strong> is everything booked to head office rather than to a region — for
           example the PTA licence and guard insurance, which cover every region&apos;s guards. For each region you decide whether that region is <strong>charged its
           share</strong> of it in its own profit.
         </p>
-        <ul className="text-xs text-slate-600 list-disc ml-5 space-y-1">
+        <ul className="text-xs text-muted-foreground list-disc ml-5 space-y-1">
           <li>
             <strong>Yes — charge the region:</strong> the region carries its share of head office, so its profit (and
             its regional partner&apos;s share) goes down by that amount.
@@ -244,8 +244,8 @@ export default function HeadOfficeApportionmentPanel({
           </li>
         </ul>
         {pool != null && (
-          <p className="text-xs text-slate-600">
-            Head-office cost for {monthName(effMonth)}: <strong className="font-mono text-slate-900">{money(pool)}</strong> (accrual).
+          <p className="text-xs text-muted-foreground">
+            Head-office cost for {monthName(effMonth)}: <strong className="font-mono text-foreground">{money(pool)}</strong> (accrual).
           </p>
         )}
         <button type="button" onClick={() => setShowHelp((v) => !v)}
@@ -253,7 +253,7 @@ export default function HeadOfficeApportionmentPanel({
           <Info className="w-3.5 h-3.5" />{showHelp ? "Hide the details" : "How the dates and partners work"}
         </button>
         {showHelp && (
-          <ul className="text-xs text-slate-600 list-disc ml-5 space-y-1 bg-slate-50 border border-slate-200 rounded p-3 pl-7">
+          <ul className="text-xs text-muted-foreground list-disc ml-5 space-y-1 bg-muted/50 border border-border rounded p-3 pl-7">
             <li>A change applies <strong>from the month you choose, onward</strong>, until you change it again. Earlier months keep the setting they had.</li>
             <li>A month that has been <strong>closed</strong> in accounting can never be changed. Choose a month after the last closed one.</li>
             <li>Before you save, the screen shows <strong>every partner&apos;s share before and after</strong> the change, worked out by the database. Charging a region lowers its profit, and so its regional partner&apos;s share; the table shows exactly who gains and who loses.</li>
@@ -272,35 +272,35 @@ export default function HeadOfficeApportionmentPanel({
 
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <div>
-          <label className="block text-xs text-slate-600 mb-1">Showing and changing from</label>
+          <label className="block text-xs text-muted-foreground mb-1">Showing and changing from</label>
           <input
             type="month"
             value={effMonth}
             disabled={busy}
             onChange={(e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { setEffMonth(e.target.value); setReviewing(false); } }}
-            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+            className="px-3 py-1.5 border border-border rounded-md text-sm"
           />
         </div>
-        {!canEdit && <span className="text-xs text-slate-500 pb-2">View only — changing this needs the accounting.edit permission.</span>}
+        {!canEdit && <span className="text-xs text-muted-foreground pb-2">View only — changing this needs the accounting.edit permission.</span>}
       </div>
 
       {loading ? (
-        <div className="text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin inline-block mr-2" />Loading…</div>
+        <div className="text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline-block mr-2" />Loading…</div>
       ) : (
         <>
           {/* ── One row per region, from ho_region_modes ── */}
-          <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
-            <div className="hidden md:grid grid-cols-[1fr_auto] px-3 py-2 text-[11px] text-slate-500 bg-slate-50">
+          <div className="border border-border rounded-md divide-y divide-border">
+            <div className="hidden md:grid grid-cols-[1fr_auto] px-3 py-2 text-[11px] text-muted-foreground bg-muted/50">
               <span>Region — charge it a share of head-office cost?</span>
             </div>
-            {modes.length === 0 && <div className="px-3 py-3 text-xs text-slate-500">No active regions.</div>}
+            {modes.length === 0 && <div className="px-3 py-3 text-xs text-muted-foreground">No active regions.</div>}
             {modes.map((m) => {
               const staged = pending != null && (pending.scope === m.branch_id || (pending.scope === "all" && m.apportioned !== pending.apportion));
               return (
                 <div key={m.branch_id} className={`flex flex-col md:flex-row md:items-center justify-between gap-2 px-3 py-2.5 ${staged ? "bg-warning-50" : ""}`}>
                   <div className="min-w-0">
-                    <div className="text-sm text-slate-900">{m.region_name}</div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-sm text-foreground">{m.region_name}</div>
+                    <div className="text-[11px] text-muted-foreground">
                       Now: {m.apportioned ? "charged its share" : "not charged"}
                       {m.own_setting && m.decided_from ? `, since ${monthName(m.decided_from)}` : " (company default)"}
                       {staged && <span className="text-warning-700 font-medium"> → changing to {(pending!.apportion) ? "charged" : "not charged"}</span>}
@@ -315,13 +315,13 @@ export default function HeadOfficeApportionmentPanel({
           {canEdit && modes.length > 1 && (
             <div className="mt-2">
               <button type="button" onClick={() => setShowAll((v) => !v)}
-                className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                 {showAll ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 Set every region at once
               </button>
               {showAll && (
-                <div className="mt-2 flex flex-wrap items-center gap-3 px-3 py-2 border border-dashed border-slate-200 rounded-md">
-                  <span className="text-xs text-slate-600">Every region:</span>
+                <div className="mt-2 flex flex-wrap items-center gap-3 px-3 py-2 border border-dashed border-border rounded-md">
+                  <span className="text-xs text-muted-foreground">Every region:</span>
                   <YesNo value={pending?.scope === "all" ? pending.apportion : null} disabled={busy} onPick={(v) => pick("all", v)} />
                 </div>
               )}
@@ -331,7 +331,7 @@ export default function HeadOfficeApportionmentPanel({
           {/* ── The staged change: price, reason, confirm ── */}
           {pending && changing && (
             <div className="mt-4 border border-warning-200 bg-warning-50/50 rounded-md p-3">
-              <div className="text-sm text-slate-900 mb-1">
+              <div className="text-sm text-foreground mb-1">
                 From <strong>{monthName(effMonth)}</strong> onward, <strong>{regionName(pending.scope)}</strong>{" "}
                 {pending.apportion
                   ? <>will be <strong>charged its share</strong> of head-office cost.</>
@@ -339,13 +339,13 @@ export default function HeadOfficeApportionmentPanel({
                       ? <>its share passes to {othersOn.map((m) => m.region_name).join(", ")}.</>
                       : <>no region is left set to Yes, so the cost stays at head office as unallocated.</>}</>}
               </div>
-              <div className="text-xs text-slate-600 mb-2">
+              <div className="text-xs text-muted-foreground mb-2">
                 What this does to each partner&apos;s share for {monthName(effMonth)}
                 {pricing && <Loader2 className="w-3 h-3 animate-spin inline-block ml-1.5" />}
               </div>
-              <div className="overflow-x-auto border border-slate-200 rounded-md bg-white">
+              <div className="overflow-x-auto border border-border rounded-md bg-card">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-500">
+                  <thead className="bg-muted/50 text-xs text-muted-foreground">
                     <tr>
                       <th className="text-left px-3 py-2 font-normal">Partner</th>
                       <th className="text-right px-3 py-2 font-normal">Now</th>
@@ -355,16 +355,16 @@ export default function HeadOfficeApportionmentPanel({
                   </thead>
                   <tbody>
                     {impact.length === 0 ? (
-                      <tr><td colSpan={4} className="px-3 py-3 text-xs text-slate-500">{pricing ? "Working it out…" : "No partners share profit in this month."}</td></tr>
+                      <tr><td colSpan={4} className="px-3 py-3 text-xs text-muted-foreground">{pricing ? "Working it out…" : "No partners share profit in this month."}</td></tr>
                     ) : impact.map((r) => (
-                      <tr key={r.partner_id} className="border-t border-slate-100">
-                        <td className="px-3 py-2 text-slate-900">
+                      <tr key={r.partner_id} className="border-t border-border">
+                        <td className="px-3 py-2 text-foreground">
                           {r.partner_name}
-                          <span className="text-[11px] text-slate-500 ml-1.5">{r.row_kind === "EQUITY_PARTNER" ? "equity" : "regional"}</span>
+                          <span className="text-[11px] text-muted-foreground ml-1.5">{r.row_kind === "EQUITY_PARTNER" ? "equity" : "regional"}</span>
                         </td>
-                        <td className="px-3 py-2 text-right font-mono text-slate-700">{money(r.current_amount)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-slate-900">{money(r.proposed_amount)}</td>
-                        <td className={`px-3 py-2 text-right font-mono ${Number(r.difference) > 0 ? "text-success-700" : Number(r.difference) < 0 ? "text-danger-700" : "text-slate-500"}`}>{signed(r.difference)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-foreground">{money(r.current_amount)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-foreground">{money(r.proposed_amount)}</td>
+                        <td className={`px-3 py-2 text-right font-mono ${Number(r.difference) > 0 ? "text-success-700" : Number(r.difference) < 0 ? "text-danger-700" : "text-muted-foreground"}`}>{signed(r.difference)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -404,14 +404,14 @@ export default function HeadOfficeApportionmentPanel({
               )}
 
               <div className="mt-3">
-                <label className="block text-xs text-slate-700 mb-1">Reason (kept with the setting) *</label>
+                <label className="block text-xs text-foreground mb-1">Reason (kept with the setting) *</label>
                 <input
                   type="text"
                   value={reason}
                   disabled={busy}
                   placeholder="e.g. Lahore now uses head-office admin for its billing"
                   onChange={(e) => setReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-card"
                 />
               </div>
 
@@ -429,7 +429,7 @@ export default function HeadOfficeApportionmentPanel({
                     </Button>
                   </>
                 )}
-                <button type="button" className="text-xs text-slate-600 hover:text-slate-900" onClick={cancel}>
+                <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={cancel}>
                   Cancel
                 </button>
               </div>
@@ -437,8 +437,8 @@ export default function HeadOfficeApportionmentPanel({
           )}
 
           {history.length > 0 && (
-            <div className="mt-4 text-[11px] text-slate-500">
-              <button type="button" onClick={() => setShowHistory((v) => !v)} className="inline-flex items-center gap-1 hover:text-slate-800">
+            <div className="mt-4 text-[11px] text-muted-foreground">
+              <button type="button" onClick={() => setShowHistory((v) => !v)} className="inline-flex items-center gap-1 hover:text-foreground">
                 {showHistory ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 History of changes ({history.length})
               </button>
@@ -447,7 +447,7 @@ export default function HeadOfficeApportionmentPanel({
                   {history.map((h) => (
                     <li key={h.id}>
                       From {monthName(h.effective_month)}, {regionName(h.branch_id)}:{" "}
-                      <span className="text-slate-700">{h.apportion ? "charged its share" : "not charged"}</span> — {h.reason}
+                      <span className="text-foreground">{h.apportion ? "charged its share" : "not charged"}</span> — {h.reason}
                     </li>
                   ))}
                 </ul>

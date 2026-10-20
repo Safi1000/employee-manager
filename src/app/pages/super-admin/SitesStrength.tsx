@@ -127,7 +127,7 @@ function computeDuration(start: string, end: string): { hours: number; crosses: 
 const varianceBadge = (v: number) => {
   if (v === 0) return "bg-success-50 text-success-700 border-success-200";
   if (v < 0) return "bg-danger-50 text-danger-700 border-danger-200"; // over-enrolled
-  return "bg-warning-50 text-warning-800 border-warning-200"; // under-enrolled
+  return "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"; // under-enrolled
 };
 
 export default function SitesStrength() {
@@ -340,7 +340,7 @@ export default function SitesStrength() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border bg-slate-50">
+                <tr className="border-b border-border bg-muted/50">
                   <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Client</th>
                   <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Sites</th>
                   <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
@@ -408,7 +408,7 @@ export default function SitesStrength() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border bg-slate-50">
+                  <tr className="border-b border-border bg-muted/50">
                     <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Client</th>
                     <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
                     <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Deployed</th>
@@ -431,7 +431,7 @@ export default function SitesStrength() {
                       <td className="px-4 py-3 text-sm text-right text-muted-foreground">{b.deployed}</td>
                       <td className="px-4 py-3 text-sm text-right text-muted-foreground">{b.attendance_on_ground}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`inline-block px-2 py-0.5 rounded-md text-xs border font-medium ${b.shortfall > 0 ? "bg-warning-50 text-warning-800 border-warning-200" : "bg-success-50 text-success-700 border-success-200"}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-xs border font-medium ${b.shortfall > 0 ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200" : "bg-success-50 text-success-700 border-success-200"}`}>
                           {b.shortfall > 0 ? `−${b.shortfall}` : "0"}
                         </span>
                       </td>

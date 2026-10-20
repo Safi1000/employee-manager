@@ -15,7 +15,7 @@ import { usePageState } from "../../lib/pageState";
 type Tab = "cockpit" | "regional" | "reserves" | "interregion" | "capital";
 
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const BAND: Record<string, string> = {
   green: "bg-success-50 text-success-700 border-success-200",
   amber: "bg-warning-50 text-warning-700 border-warning-200",
@@ -124,12 +124,12 @@ export default function Treasury() {
 
           <section>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm text-slate-900">13-week cash forecast</h3>
+              <h3 className="text-sm text-foreground">13-week cash forecast</h3>
               {firstBreach && <span className="text-xs text-danger-600">First breach: week of {firstBreach.week_start}</span>}
             </div>
-            <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <div className="overflow-x-auto border border-border rounded-md">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="text-left px-3 py-2">Week</th>
                     <th className="text-right px-3 py-2">Opening</th>
@@ -138,27 +138,27 @@ export default function Treasury() {
                     <th className="text-right px-3 py-2">Closing</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {forecast.map((w) => (
                     <tr key={w.week_no} className={w.is_breach ? "bg-danger-50" : ""}>
-                      <td className="px-3 py-1.5 text-slate-700">{w.week_start}</td>
+                      <td className="px-3 py-1.5 text-foreground">{w.week_start}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{money(w.opening_balance)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-success-700">{money(w.expected_inflow)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-danger-700">{money(w.expected_outflow)}</td>
                       <td className={`px-3 py-1.5 text-right tabular-nums ${Number(w.closing_balance) < 0 ? "text-danger-700 font-medium" : ""}`}>{money(w.closing_balance)}</td>
                     </tr>
                   ))}
-                  {forecast.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No forecast data.</td></tr>}
+                  {forecast.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-muted-foreground">No forecast data.</td></tr>}
                 </tbody>
               </table>
             </div>
           </section>
 
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">Cash entitlement by region</h3>
-            <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <h3 className="text-sm text-foreground mb-2">Cash entitlement by region</h3>
+            <div className="overflow-x-auto border border-border rounded-md">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="text-left px-3 py-2">Region</th>
                     <th className="text-right px-3 py-2">Entitlement</th>
@@ -167,10 +167,10 @@ export default function Treasury() {
                     <th className="text-right px-3 py-2">Inter-region net</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {entitlements.map((e, i) => (
                     <tr key={i}>
-                      <td className="px-3 py-1.5 text-slate-700">{e.region_name ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-foreground">{e.region_name ?? "—"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{money(e.entitlement)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{money(e.restricted_reserve)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{money(e.free_entitlement)}</td>
@@ -188,7 +188,7 @@ export default function Treasury() {
       {tab === "regional" && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-sm text-slate-600">Month</label>
+            <label className="text-sm text-muted-foreground">Month</label>
             <input type="date" className={FIELD} value={period} onChange={(e) => setPeriod(e.target.value)} />
             <Button variant="secondary" size="sm" disabled={busy}
               onClick={() => run(supabase.rpc("run_ho_cost_allocation", { p_company_id: companyId, p_period: period }))}>
@@ -203,9 +203,9 @@ export default function Treasury() {
               Mirror depreciation → reserve
             </Button>
           </div>
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <div className="overflow-x-auto border border-border rounded-md">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                 <tr>
                   <th className="text-left px-3 py-2">Month</th>
                   <th className="text-left px-3 py-2">Region</th>
@@ -215,31 +215,31 @@ export default function Treasury() {
                   <th className="text-right px-3 py-2">Net profit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {pnl.map((r, i) => (
                   <tr key={i}>
-                    <td className="px-3 py-1.5 text-slate-500">{String(r.period_month).slice(0, 7)}</td>
-                    <td className="px-3 py-1.5 text-slate-700">{r.region_name ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{String(r.period_month).slice(0, 7)}</td>
+                    <td className="px-3 py-1.5 text-foreground">{r.region_name ?? "—"}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{money(r.revenue)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{money(r.direct_cost)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{money(r.allocated_ho_cost)}</td>
                     <td className={`px-3 py-1.5 text-right tabular-nums ${Number(r.net_profit) < 0 ? "text-danger-700" : "text-success-700"}`}>{money(r.net_profit)}</td>
                   </tr>
                 ))}
-                {pnl.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-slate-500">No P&L data.</td></tr>}
+                {pnl.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-muted-foreground">No P&L data.</td></tr>}
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-400">Run HO allocation before pools/accrual so regional profit is stated after head-office cost.</p>
+          <p className="text-xs text-muted-foreground/70">Run HO allocation before pools/accrual so regional profit is stated after head-office cost.</p>
         </div>
       )}
 
       {/* ===== Reserves ===== */}
       {tab === "reserves" && (
         <div className="space-y-4">
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <div className="overflow-x-auto border border-border rounded-md">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                 <tr>
                   <th className="text-left px-3 py-2">Reserve</th>
                   <th className="text-right px-3 py-2">Balance</th>
@@ -248,10 +248,10 @@ export default function Treasury() {
                   <th className="text-right px-3 py-2">Fund</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {reserves.map((r) => (
                   <tr key={r.reserve_type}>
-                    <td className="px-3 py-1.5 text-slate-700 capitalize">{String(r.reserve_type).replace(/_/g, " ")}</td>
+                    <td className="px-3 py-1.5 text-foreground capitalize">{String(r.reserve_type).replace(/_/g, " ")}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{money(r.balance)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{money(r.target)}</td>
                     <td className={`px-3 py-1.5 text-right tabular-nums ${Number(r.shortfall) > 0 ? "text-danger-700" : "text-success-700"}`}>{money(r.shortfall)}</td>
@@ -268,7 +268,7 @@ export default function Treasury() {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-400">Funding sweeps cash into a restricted reserve account (Dr reserve / Cr bank).</p>
+          <p className="text-xs text-muted-foreground/70">Funding sweeps cash into a restricted reserve account (Dr reserve / Cr bank).</p>
         </div>
       )}
 
@@ -281,54 +281,54 @@ export default function Treasury() {
       {tab === "capital" && (
         <div className="grid md:grid-cols-2 gap-6">
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">Partner capital (from ledger)</h3>
-            <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <h3 className="text-sm text-foreground mb-2">Partner capital (from ledger)</h3>
+            <div className="overflow-x-auto border border-border rounded-md">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="text-left px-3 py-2">Partner</th>
                     <th className="text-left px-3 py-2">Region</th>
                     <th className="text-right px-3 py-2">Capital balance</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {capital.map((p) => (
                     <tr key={p.partner_id}>
-                      <td className="px-3 py-1.5 text-slate-700">{p.name}<span className="text-xs text-slate-400 ml-2 capitalize">{p.scope}</span></td>
-                      <td className="px-3 py-1.5 text-slate-500">{p.region_name ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-foreground">{p.name}<span className="text-xs text-muted-foreground/70 ml-2 capitalize">{p.scope}</span></td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{p.region_name ?? "—"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{money(p.capital_balance)}</td>
                     </tr>
                   ))}
-                  {capital.length === 0 && <tr><td colSpan={3} className="px-3 py-3 text-slate-500">No partner capital accounts.</td></tr>}
+                  {capital.length === 0 && <tr><td colSpan={3} className="px-3 py-3 text-muted-foreground">No partner capital accounts.</td></tr>}
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-slate-400 mt-1">Balances are derived from the equity sub-ledger, not the stored opening figure.</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Balances are derived from the equity sub-ledger, not the stored opening figure.</p>
           </section>
           <section>
-            <h3 className="text-sm text-slate-900 mb-2">Cash sub-ledgers</h3>
-            <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <h3 className="text-sm text-foreground mb-2">Cash sub-ledgers</h3>
+            <div className="overflow-x-auto border border-border rounded-md">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="text-left px-3 py-2">Location</th>
                     <th className="text-left px-3 py-2">Region</th>
                     <th className="text-right px-3 py-2">Balance</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {custody.map((c) => (
                     <tr key={c.cash_location_id}>
-                      <td className="px-3 py-1.5 text-slate-700">{c.name}<span className="text-xs text-slate-400 ml-2">{c.location_type}</span></td>
-                      <td className="px-3 py-1.5 text-slate-500">{c.region_name ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-foreground">{c.name}<span className="text-xs text-muted-foreground/70 ml-2">{c.location_type}</span></td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{c.region_name ?? "—"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{money(c.balance)}</td>
                     </tr>
                   ))}
-                  {custody.length === 0 && <tr><td colSpan={3} className="px-3 py-3 text-slate-500">No cash locations.</td></tr>}
+                  {custody.length === 0 && <tr><td colSpan={3} className="px-3 py-3 text-muted-foreground">No cash locations.</td></tr>}
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-slate-400 mt-1">Each cash box reconciles to its own COA sub-account.</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Each cash box reconciles to its own COA sub-account.</p>
           </section>
         </div>
       )}
@@ -338,9 +338,9 @@ export default function Treasury() {
 
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="border border-slate-200 rounded-md p-3 bg-white">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-lg text-slate-900 tabular-nums mt-1">{value}</div>
+    <div className="border border-border rounded-md p-3 bg-card">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg text-foreground tabular-nums mt-1">{value}</div>
     </div>
   );
 }
@@ -377,14 +377,14 @@ function InterRegionTab({
 
   return (
     <div className="space-y-4">
-      <section className="border border-slate-200 rounded-md p-3 space-y-2">
-        <h3 className="text-sm text-slate-900">Request inter-region funding</h3>
+      <section className="border border-border rounded-md p-3 space-y-2">
+        <h3 className="text-sm text-foreground">Request inter-region funding</h3>
         <div className="flex items-center gap-2 flex-wrap">
           <ThemedSelect className={FIELD} value={lender} onChange={(e) => setLender(e.target.value)}>
             <option value="">— lender region —</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </ThemedSelect>
-          <span className="text-slate-400">→</span>
+          <span className="text-muted-foreground/70">→</span>
           <ThemedSelect className={FIELD} value={borrower} onChange={(e) => setBorrower(e.target.value)}>
             <option value="">— borrower region —</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -394,22 +394,22 @@ function InterRegionTab({
             Request approval
           </Button>
         </div>
-        {msg && <p className="text-xs text-slate-500">{msg}</p>}
-        <p className="text-xs text-slate-400">Funding posts only after COO approval; a repayment nets the balance down.</p>
+        {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
+        <p className="text-xs text-muted-foreground/70">Funding posts only after COO approval; a repayment nets the balance down.</p>
       </section>
 
       <section>
-        <h3 className="text-sm text-slate-900 mb-2">Transactions</h3>
-        <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+        <h3 className="text-sm text-foreground mb-2">Transactions</h3>
+        <div className="border border-border rounded-md divide-y divide-border">
           {txns.map((t) => (
             <div key={t.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <span className="text-slate-700">
+              <span className="text-foreground">
                 {branchName.get(t.lender_branch_id) ?? "?"} → {branchName.get(t.borrower_branch_id) ?? "?"} · {t.txn_type}
               </span>
-              <span className="tabular-nums text-slate-800">{Number(t.amount ?? 0).toLocaleString()} · {t.txn_date}</span>
+              <span className="tabular-nums text-foreground">{Number(t.amount ?? 0).toLocaleString()} · {t.txn_date}</span>
             </div>
           ))}
-          {txns.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No inter-region transactions.</p>}
+          {txns.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No inter-region transactions.</p>}
         </div>
       </section>
     </div>

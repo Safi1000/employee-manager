@@ -9,7 +9,7 @@ import { supabase } from "../../lib/supabase";
 // Relationships panel was dissolved. Same client_complaints table and flow.
 
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const COMPLAINT_STATUS = ["open", "in_progress", "resolved", "closed"];
 
 export default function ClientComplaints() {
@@ -61,16 +61,16 @@ export default function ClientComplaints() {
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 
       <div className="space-y-4">
-        <section className="border border-slate-200 rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+        <section className="border border-border rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
           <div className="col-span-2">
-            <label className="text-xs text-slate-500 block mb-1">Client</label>
+            <label className="text-xs text-muted-foreground block mb-1">Client</label>
             <ThemedSelect className={FIELD + " w-full"} value={cpClient} onChange={(e) => setCpClient(e.target.value)}>
               <option value="">— client —</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </ThemedSelect>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Channel</label>
+            <label className="text-xs text-muted-foreground block mb-1">Channel</label>
             <ThemedSelect className={FIELD + " w-full"} value={cpChannel} onChange={(e) => setCpChannel(e.target.value)}>
               {["phone", "email", "in_person", "letter"].map((c) => <option key={c} value={c}>{c}</option>)}
             </ThemedSelect>
@@ -78,9 +78,9 @@ export default function ClientComplaints() {
           <input className={FIELD + " col-span-2 md:col-span-2"} placeholder="Description" value={cpDesc} onChange={(e) => setCpDesc(e.target.value)} />
           <Button variant="primary" size="sm" disabled={busy || !cpClient || !cpDesc.trim()} onClick={addComplaint}>Log complaint</Button>
         </section>
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto border border-border rounded-md">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="text-left px-3 py-2">Client</th>
                 <th className="text-left px-3 py-2">Raised</th>
@@ -88,12 +88,12 @@ export default function ClientComplaints() {
                 <th className="text-left px-3 py-2">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {complaints.map((c) => (
                 <tr key={c.id}>
-                  <td className="px-3 py-1.5 text-slate-700">{clientName.get(c.client_id)}</td>
-                  <td className="px-3 py-1.5 text-slate-500">{c.raised_on}</td>
-                  <td className="px-3 py-1.5 text-slate-600">{c.description}</td>
+                  <td className="px-3 py-1.5 text-foreground">{clientName.get(c.client_id)}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground">{c.raised_on}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground">{c.description}</td>
                   <td className="px-3 py-1.5">
                     <ThemedSelect className={FIELD + " py-1"} value={c.status}
                       onChange={(e) => run(supabase.from("client_complaints").update({ status: e.target.value, resolved_on: (e.target.value === "resolved" || e.target.value === "closed") ? new Date().toISOString().slice(0, 10) : null }).eq("id", c.id))}>
@@ -102,7 +102,7 @@ export default function ClientComplaints() {
                   </td>
                 </tr>
               ))}
-              {complaints.length === 0 && <tr><td colSpan={4} className="px-3 py-3 text-slate-500">No complaints.</td></tr>}
+              {complaints.length === 0 && <tr><td colSpan={4} className="px-3 py-3 text-muted-foreground">No complaints.</td></tr>}
             </tbody>
           </table>
         </div>

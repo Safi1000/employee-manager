@@ -64,7 +64,7 @@ const STATUS_CELL_CLASS: Record<Status, string> = {
   rest_day: "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200",
   double_duty: "bg-brand-50 text-brand-700 border-brand-200",
   relief_cover: "bg-brand-50 text-brand-700 border-brand-200",
-  blocked: "bg-slate-100 text-slate-500 border-slate-200",
+  blocked: "bg-muted text-muted-foreground border-border",
 };
 // The only four statuses the bulk-by-employee view offers (Leave = rotation_leave).
 // Double Duty here carries full shift context (see the shift selector), matching the
@@ -847,8 +847,8 @@ export default function AttendanceBoard() {
 
   const badge = (s: "awaiting" | "reported" | "confirmed") =>
     s === "confirmed" ? "bg-success-50 text-success-700 border-success-200"
-      : s === "reported" ? "bg-warning-50 text-warning-800 border-warning-200"
-        : "bg-slate-100 text-slate-600 border-slate-200";
+      : s === "reported" ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+        : "bg-muted text-muted-foreground border-border";
 
   // "X/Y reported" pill for a client/site header — green once all roster
   // members have a mark (present/absent/leave), amber while some are still bare.
@@ -857,7 +857,7 @@ export default function AttendanceBoard() {
     return (
       <span className={`text-xs px-2 py-0.5 rounded-md border shrink-0 ${
         all ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
-            : "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+            : "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
       }`}>
         {all ? "All reported" : `${x}/${y} reported`}
       </span>
@@ -967,7 +967,7 @@ export default function AttendanceBoard() {
                     <h2 className="font-display text-lg md:text-xl font-bold tracking-tight mt-0.5">Where every register stands</h2>
                   </div>
                   <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
-                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#3d4a2b]" />Confirmed</span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-settled" />Confirmed</span>
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-brand-500" />Reported, to confirm</span>
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-muted border border-border" />Not started</span>
                   </div>
@@ -979,7 +979,7 @@ export default function AttendanceBoard() {
                     const reported = shifts.reduce((n, r) => n + r.reported.size, 0);
                     const allConfirmed = shifts.length > 0 && shifts.every((r) => rowStatus(r) === "confirmed");
                     const started = reported > 0 || shifts.some((r) => rowStatus(r) !== "awaiting");
-                    const cls = allConfirmed ? "bg-[#3d4a2b] text-[#f3eee2]" : started ? "bg-brand-500 text-[#241a06]" : "bg-muted text-foreground border border-border";
+                    const cls = allConfirmed ? "bg-settled text-ink-foreground" : started ? "bg-brand-500 text-on-brand" : "bg-muted text-foreground border border-border";
                     return (
                       <button key={c.clientId} type="button"
                         onClick={() => {
@@ -1048,7 +1048,7 @@ export default function AttendanceBoard() {
                       </span>
                       {reportedBadge(reportedTotal, rosterTotal)}
                       {pending > 0 ? (
-                        <span className="text-xs px-2 py-0.5 rounded-md border bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200 shrink-0">
+                        <span className="text-xs px-2 py-0.5 rounded-md border bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 shrink-0">
                           {pending} to confirm
                         </span>
                       ) : (
@@ -1119,7 +1119,7 @@ export default function AttendanceBoard() {
                                 <div className={`overflow-x-auto ${flat ? "" : "border-t border-border"}`}>
                                   <table className="w-full">
                                     <thead>
-                                      <tr className="border-b border-border bg-slate-50">
+                                      <tr className="border-b border-border bg-muted/50">
                                         <th className={`text-left px-4 py-2 ${flat ? "pl-8" : "pl-14"} text-xs text-muted-foreground uppercase tracking-wide`}>Shift</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Deployed</th>
@@ -1172,8 +1172,8 @@ export default function AttendanceBoard() {
                                                   <>
                                                     <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${
                                                       all ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
-                                                          : x > 0 ? "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
-                                                                  : "bg-slate-100 text-slate-500 border-slate-200"
+                                                          : x > 0 ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                                                                  : "bg-muted text-muted-foreground border-border"
                                                     }`}>
                                                       {all ? "All" : `${x}/${y}`}
                                                     </span>
@@ -1231,9 +1231,9 @@ export default function AttendanceBoard() {
           const STATUS = [
             // Red → amber → green, and listed in that order (asked 2026-10-05):
             // what still needs HR is at the top.
-            { label: "Nothing Verified", cls: "bg-danger-50 text-danger-700 border-danger-200 dark:bg-danger-900/30 dark:text-danger-400" },
-            { label: "Half Month Verified", cls: "bg-warning-50 text-warning-800 border-warning-200 dark:bg-warning-900/30 dark:text-warning-400" },
-            { label: "Full Month Verified", cls: "bg-success-50 text-success-700 border-success-200 dark:bg-success-900/30 dark:text-success-400" },
+            { label: "Nothing Verified", cls: "bg-danger-50 text-danger-700 border-danger-200 dark:bg-danger-500/15 dark:text-danger-500" },
+            { label: "Half Month Verified", cls: "bg-warning-50 text-warning-700 border-warning-200 dark:bg-warning-500/15 dark:text-warning-500" },
+            { label: "Full Month Verified", cls: "bg-success-50 text-success-700 border-success-200 dark:bg-success-500/15 dark:text-success-500" },
           ] as const;
           const badge = (id: string) => {
             const st = STATUS[monthlyStatus.get(id) ?? 0];
@@ -1596,8 +1596,8 @@ function ShiftDrillModal({
               onChange={(e) => { setSupervisor(e.target.value); if (supError) setSupError(null); }}
               placeholder="Supervisor name *"
               aria-invalid={!!supError}
-              className={`flex-1 px-3 py-2 border rounded-md text-sm ${supError ? "border-danger-300" : "border-slate-200"}`} />
-            <ThemedSelect value={source} onChange={(e) => setSource(e.target.value as any)} className="px-2 py-2 border border-slate-200 rounded-md text-sm" >
+              className={`flex-1 px-3 py-2 border rounded-md text-sm ${supError ? "border-danger-200" : "border-border"}`} />
+            <ThemedSelect value={source} onChange={(e) => setSource(e.target.value as any)} className="px-2 py-2 border border-border rounded-md text-sm" >
               <option value="app">App</option><option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>
             </ThemedSelect>
             <Button size="sm" onClick={confirm} disabled={saving || !canMark} title={!canMark ? "You don't have permission to mark attendance" : undefined}>
@@ -1614,23 +1614,23 @@ function ShiftDrillModal({
             save; this note just explains what the gate flagged. */}
         {(blocked || needsOverride) && (
           <div className="p-3 bg-warning-50 border border-warning-200 rounded text-sm space-y-2">
-            <div className="text-warning-800">{gate?.reason} — you can still confirm.</div>
+            <div className="text-warning-700 dark:text-warning-500">{gate?.reason} — you can still confirm.</div>
             <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder="Override reason (optional)"
-              className="w-full px-3 py-2 border border-warning-300 rounded-md text-sm" />
+              className="w-full px-3 py-2 border border-warning-200 rounded-md text-sm" />
           </div>
         )}
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           {shift.roster.length} on roster — all presumed <strong>present</strong>. Mark only the exceptions, then confirm.
         </p>
         {exceptionCounts.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-xs">
-            <span className="font-medium text-slate-600">Marked exceptions:</span>
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 border border-border px-3 py-2 text-xs">
+            <span className="font-medium text-muted-foreground">Marked exceptions:</span>
             {exceptionCounts.map((x) => (
-              <span key={x.label} className="inline-flex items-center rounded-full bg-white border border-slate-200 px-2 py-0.5 font-medium text-slate-700">
+              <span key={x.label} className="inline-flex items-center rounded-full bg-card border border-border px-2 py-0.5 font-medium text-foreground">
                 {x.label}: {x.n}
               </span>
             ))}
-            <span className="text-slate-400">· {presumedPresent} presumed present</span>
+            <span className="text-muted-foreground/70">· {presumedPresent} presumed present</span>
           </div>
         )}
         <input
@@ -1638,9 +1638,9 @@ function ShiftDrillModal({
           value={rosterSearch}
           onChange={(e) => setRosterSearch(e.target.value)}
           placeholder="Search this roster by name or code (e.g. Riaz or HMC-042)…"
-          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+          className="w-full px-3 py-2 border border-border rounded-md text-sm"
         />
-        <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+        <div className="border border-border rounded-lg divide-y divide-border">
           {shift.roster
             .filter((g) => {
               // View-only filter by name / permanent code / display code. Never
@@ -1659,16 +1659,16 @@ function ShiftDrillModal({
             return (
               <div key={g.guard_id} className="flex items-center gap-3 px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-900 truncate">
+                  <p className="text-sm text-foreground truncate">
                     {g.full_name}
                     {/* Shift is a display label only — shown for reference; marking
                         and confirmation ignore it (double duty aside). */}
-                    <span className="ml-1.5 capitalize inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] align-middle">{g.scheduled_shift}</span>
+                    <span className="ml-1.5 capitalize inline-block px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] align-middle">{g.scheduled_shift}</span>
                     {g.is_reliever && (
                       <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-info-50 text-info-700 dark:text-info-500 border border-info-200 text-[10px] align-middle">cover</span>
                     )}
                   </p>
-                  <p className="text-xs text-slate-400 font-mono">{guardDisplayCode(g, shift.client_prefix)}</p>
+                  <p className="text-xs text-muted-foreground/70 font-mono">{guardDisplayCode(g, shift.client_prefix)}</p>
                   {shift.reported.has(g.guard_id) && (
                     <p className="text-[11px] text-success-700 dark:text-success-500 truncate">
                       ✓ reported{(() => { const uid = shift.reported.get(g.guard_id); const n = uid ? profilesById.get(uid) : null; return n ? ` by ${n}` : ""; })()}
@@ -1681,21 +1681,21 @@ function ShiftDrillModal({
                     const v = e.target.value as Status | "present";
                     setMark(g.guard_id, v, v === "absent" ? "awol" : null);
                   }}
-                  className="px-2 py-1.5 border border-slate-200 rounded-md text-sm"
+                  className="px-2 py-1.5 border border-border rounded-md text-sm"
                 >
                   <option value="present">Present</option>
                   {EXCEPTION_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </ThemedSelect>
                 {mk?.status === "absent" && (
                   <ThemedSelect value={mk.absent_reason ?? "awol"} onChange={(e) => setMark(g.guard_id, "absent", e.target.value as AbsentReason)}
-                    className="px-2 py-1.5 border border-slate-200 rounded-md text-sm">
+                    className="px-2 py-1.5 border border-border rounded-md text-sm">
                     <option value="awol">AWOL</option><option value="sick">Sick</option><option value="absconded">Absconded</option>
                   </ThemedSelect>
                 )}
                 {/* Double duty's two shifts are chosen automatically (see
                     secondShiftFor) — shown for reference, not a choice. */}
                 {mk?.status === "double_duty" && (
-                  <span className="text-xs text-slate-500 capitalize shrink-0">
+                  <span className="text-xs text-muted-foreground capitalize shrink-0">
                     {getWorked(g, "double_duty").join(" + ")}
                   </span>
                 )}
@@ -1975,7 +1975,7 @@ function ExportMenu({ rows, date, branding, client }: {
               onClick={() => exportClientSheet(branding, date, rows)}
             />
             <Item
-              icon={Users} tint="bg-violet-50 text-violet-600"
+              icon={Users} tint="bg-info-50 text-info-600"
               title="Per-guard payroll sheet"
               subtitle="One row per rostered guard · PDF"
               onClick={() => exportGuardSheet(branding, date, rows)}
@@ -1997,7 +1997,7 @@ function ExportMenu({ rows, date, branding, client }: {
             </div>
             {!rangeMode ? (
               <Item
-                icon={CalendarRange} tint="bg-amber-50 text-amber-600"
+                icon={CalendarRange} tint="bg-warning-50 text-warning-600"
                 title="Pick a date range"
                 subtitle={client ? `${client.name} · Excel (.xlsx)` : "Pick a client in the filter first"}
                 onClick={() => setRangeMode(true)}
@@ -2060,8 +2060,8 @@ function AttendanceBandFigures({ summary, clients, clientsDone }: {
       </div>
       {[
         { label: "On ground", value: summary.onGround, sub: "on roster, less absences", tone: "text-foreground" },
-        { label: "Exceptions", value: summary.exceptions, sub: "absent, leave, double duty", tone: summary.exceptions ? "text-[#f0a99a]" : "text-foreground" },
-        { label: "Not started", value: summary.awaiting, sub: "registers with no mark yet", tone: summary.awaiting ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+        { label: "Exceptions", value: summary.exceptions, sub: "absent, leave, double duty", tone: summary.exceptions ? "text-down" : "text-foreground" },
+        { label: "Not started", value: summary.awaiting, sub: "registers with no mark yet", tone: summary.awaiting ? "text-heed" : "text-up" },
       ].map((t) => (
         <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 flex-[1_1_160px]">
           <span className="lbl">{t.label}</span>

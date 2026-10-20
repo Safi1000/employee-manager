@@ -4,7 +4,8 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "node scripts/check-colors.mjs && vite build",
+    "check:colors": "node scripts/check-colors.mjs",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "check:migrations": "node --env-file-if-exists=.env.local scripts/check-migrations.mjs",

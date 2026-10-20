@@ -337,11 +337,11 @@ export default function Documents() {
         )}
 
         <div className="bg-card rounded-2xl border border-border">
-          <div className="p-6 border-b border-slate-200">
+          <div className="p-6 border-b border-border">
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex-1 min-w-[240px] relative">
                 <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70"
                   strokeWidth={1.5}
                 />
                 <input
@@ -349,7 +349,7 @@ export default function Documents() {
                   placeholder="Search by employee ID, name, or phone..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 />
               </div>
               <ClientFilterSelect
@@ -361,7 +361,7 @@ export default function Documents() {
               <ThemedSelect
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
               >
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
@@ -373,45 +373,45 @@ export default function Documents() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Employee ID</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Phone</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Documents</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Last Updated</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Employee ID</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Name</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Phone</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Location</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Shift</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Documents</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Last Updated</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={9} className="px-6 py-10 text-center text-muted-foreground text-sm">
                       No employees match the current filters.
                     </td>
                   </tr>
                 )}
                 {!loading &&
                   filtered.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-600 font-mono">
+                    <tr key={emp.id} className="hover:bg-muted/50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">
                         {empDisplay(emp)}
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{emp.full_name}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{emp.phone ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
+                      <td className="px-6 py-4 text-sm text-foreground">{emp.full_name}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{emp.phone ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
                         {emp.location_name ?? "—"}
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
                         {emp.client_name ?? "—"}
                       </td>
                       <td className="px-6 py-4">
@@ -419,7 +419,7 @@ export default function Documents() {
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
                             emp.shift === "day"
                               ? "bg-warning-50 text-warning-700"
-                              : "bg-indigo-50 text-indigo-700"
+                              : "bg-info-50 text-info-700"
                           }`}
                         >
                           {emp.shift}
@@ -427,13 +427,13 @@ export default function Documents() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                          <span className="text-sm text-slate-600">
+                          <FileText className="w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
+                          <span className="text-sm text-muted-foreground">
                             {emp.doc_count === 0 ? "No documents" : `${emp.doc_count} file${emp.doc_count === 1 ? "" : "s"}`}
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
                         {formatDate(emp.last_updated)}
                       </td>
                       <td className="px-6 py-4 flex gap-2">
@@ -465,42 +465,42 @@ export default function Documents() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-slate-500 mb-1">Employee ID</p>
-                <p className="text-slate-900 font-mono">{empDisplay(viewing)}</p>
+                <p className="text-muted-foreground mb-1">Employee ID</p>
+                <p className="text-foreground font-mono">{empDisplay(viewing)}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Name</p>
-                <p className="text-slate-900">{viewing.full_name}</p>
+                <p className="text-muted-foreground mb-1">Name</p>
+                <p className="text-foreground">{viewing.full_name}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Phone</p>
-                <p className="text-slate-900">{viewing.phone ?? "—"}</p>
+                <p className="text-muted-foreground mb-1">Phone</p>
+                <p className="text-foreground">{viewing.phone ?? "—"}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Shift</p>
-                <p className="text-slate-900 capitalize">{viewing.shift}</p>
+                <p className="text-muted-foreground mb-1">Shift</p>
+                <p className="text-foreground capitalize">{viewing.shift}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Location</p>
-                <p className="text-slate-900">{viewing.location_name ?? "—"}</p>
+                <p className="text-muted-foreground mb-1">Location</p>
+                <p className="text-foreground">{viewing.location_name ?? "—"}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Client</p>
-                <p className="text-slate-900">{viewing.client_name ?? "—"}</p>
+                <p className="text-muted-foreground mb-1">Client</p>
+                <p className="text-foreground">{viewing.client_name ?? "—"}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Last Updated</p>
-                <p className="text-slate-900">{formatDate(viewing.last_updated)}</p>
+                <p className="text-muted-foreground mb-1">Last Updated</p>
+                <p className="text-foreground">{formatDate(viewing.last_updated)}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">Total Documents</p>
-                <p className="text-slate-900">{viewing.doc_count}</p>
+                <p className="text-muted-foreground mb-1">Total Documents</p>
+                <p className="text-foreground">{viewing.doc_count}</p>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
+            <div className="pt-4 border-t border-border">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm text-slate-900">Documents</h4>
+                <h4 className="text-sm text-foreground">Documents</h4>
                 {canEditDocuments && (
                 <Button
                   variant="secondary"
@@ -517,23 +517,23 @@ export default function Documents() {
                 )}
               </div>
               {viewLoading ? (
-                <div className="text-sm text-slate-500 flex items-center gap-2">
+                <div className="text-sm text-muted-foreground flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                 </div>
               ) : viewDocs.length === 0 ? (
-                <p className="text-sm text-slate-500">No documents uploaded yet.</p>
+                <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
               ) : (
                 <div className="space-y-2">
                   {viewDocs.map((d) => (
                     <div
                       key={d.id}
-                      className="flex items-center justify-between p-3 border border-slate-200 rounded-lg"
+                      className="flex items-center justify-between p-3 border border-border rounded-lg"
                     >
                       <div className="flex items-start gap-3 min-w-0">
-                        <FileText className="w-4 h-4 text-slate-400 mt-0.5" strokeWidth={1.5} />
+                        <FileText className="w-4 h-4 text-muted-foreground/70 mt-0.5" strokeWidth={1.5} />
                         <div className="min-w-0">
-                          <p className="text-sm text-slate-900 truncate">{d.file_name}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="text-sm text-foreground truncate">{d.file_name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {d.doc_type} · Uploaded {formatDate(d.uploaded_at ?? null)}
                           </p>
                         </div>
@@ -544,7 +544,7 @@ export default function Documents() {
                             href={d.publicUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center px-2.5 py-1.5 rounded-md text-sm text-slate-700 hover:bg-slate-100"
+                            className="inline-flex items-center px-2.5 py-1.5 rounded-md text-sm text-foreground hover:bg-muted"
                           >
                             View
                           </a>
@@ -552,7 +552,7 @@ export default function Documents() {
                         <button
                           type="button"
                           onClick={() => downloadDoc(d)}
-                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-slate-700 hover:bg-slate-100"
+                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-foreground hover:bg-muted"
                           title="Download"
                         >
                           <Download className="w-4 h-4" strokeWidth={1.5} />
@@ -572,7 +572,7 @@ export default function Documents() {
               )}
             </div>
 
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button
                 variant="secondary"
                 size="md"
@@ -602,39 +602,39 @@ export default function Documents() {
       >
         {editing && (
           <form className="space-y-4" onSubmit={handleEditSubmit}>
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-sm">
-              <p className="text-slate-900">{editing.full_name}</p>
-              <p className="text-slate-500 text-xs mt-0.5 font-mono">{empDisplay(editing)}</p>
+            <div className="p-3 bg-muted/50 border border-border rounded-md text-sm">
+              <p className="text-foreground">{editing.full_name}</p>
+              <p className="text-muted-foreground text-xs mt-0.5 font-mono">{empDisplay(editing)}</p>
             </div>
 
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Uploading a CNIC or Police Verification replaces the existing one. "Other" documents are appended.
               Leave fields empty to skip them.
             </p>
 
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC</label>
+              <label className="block text-sm text-foreground mb-1">CNIC</label>
               <input
                 type="file"
                 onChange={(e) => setEditForm({ ...editForm, cnic: e.target.files?.[0] })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Police Verification</label>
+              <label className="block text-sm text-foreground mb-1">Police Verification</label>
               <input
                 type="file"
                 onChange={(e) => setEditForm({ ...editForm, police_verification: e.target.files?.[0] })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Other Documents</label>
+              <label className="block text-sm text-foreground mb-1">Other Documents</label>
               <input
                 type="file"
                 multiple
                 onChange={(e) => setEditForm({ ...editForm, other: e.target.files ?? undefined })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-md text-sm"
               />
             </div>
 

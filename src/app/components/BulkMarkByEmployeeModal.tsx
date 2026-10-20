@@ -40,7 +40,7 @@ const STATUS_CELL_CLASS: Record<Status, string> = {
   // (Leave) in this theme, so they were indistinguishable on the calendar.
   double_duty: "bg-info-50 text-info-700 dark:text-info-500 border-info-200",
   relief_cover: "bg-info-50 text-info-700 dark:text-info-500 border-info-200",
-  blocked: "bg-slate-100 text-slate-500 border-slate-200",
+  blocked: "bg-muted text-muted-foreground border-border",
 };
 // The only four statuses this view offers (Leave = rotation_leave). Double Duty
 // carries per-cell shift context; "Clear" is a separate revert action, not a status.
@@ -529,24 +529,24 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
         {/* Employee picker */}
         <div>
-          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">Employee</label>
+          <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Employee</label>
           {emp ? (
-            <div className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-md bg-slate-50">
+            <div className="flex items-center justify-between gap-3 p-3 border border-border rounded-md bg-muted/50">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-slate-900 truncate">{emp.full_name}</span>
+                  <span className="text-sm text-foreground truncate">{emp.full_name}</span>
                   {isSeparatedState(emp.lifecycle_state) && (
-                    <span className="shrink-0 inline-flex items-center rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-800 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-400" title={emp.termination_date ? `Separated ${emp.termination_date} — later dates can't be marked` : "Separated"}>
+                    <span className="shrink-0 inline-flex items-center rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-500" title={emp.termination_date ? `Separated ${emp.termination_date} — later dates can't be marked` : "Separated"}>
                       {lifecycleStatusLabel({ lifecycle_state: emp.lifecycle_state ?? "", status: emp.status, eligible_for_rehire: emp.eligible_for_rehire })}
                     </span>
                   )}
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border capitalize ${emp.shift === "day" ? "bg-warning-50 text-warning-700 border-warning-200" : "bg-info-50 text-info-700 border-info-200"}`} title="Guard's default shift">{emp.shift} shift</span>
                 </div>
-                <div className="text-xs text-slate-500 font-mono">
+                <div className="text-xs text-muted-foreground font-mono">
                   {guardDisplayCode(emp, emp.client_prefix)}{emp.client_name && ` · ${emp.client_name}`}
                 </div>
               </div>
-              <button type="button" onClick={() => { setEmpId(""); setSelected(new Set()); }} className="text-xs text-slate-500 hover:text-slate-900 underline">Change</button>
+              <button type="button" onClick={() => { setEmpId(""); setSelected(new Set()); }} className="text-xs text-muted-foreground hover:text-foreground underline">Change</button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -561,29 +561,29 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                   buttonClassName=""
                 />
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" strokeWidth={1.5} />
                   <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={clientFilter === "all" ? "Search name, code or client…" : "Search within this group…"}
-                    className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm" />
+                    className="w-full pl-10 pr-3 py-2 border border-border rounded-md text-sm" />
                 </div>
               </div>
-              <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md">
+              <div className="max-h-44 overflow-y-auto border border-border rounded-md">
                 {loadingEmps ? (
-                  <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</div>
                 ) : options.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-slate-500">No matches.</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">No matches.</div>
                 ) : (
                   options.map((e) => (
                     <button type="button" key={e.id} onClick={() => setEmpId(e.id)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0">
-                      <div className="text-slate-900 flex items-center gap-1.5">
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 border-b border-border last:border-b-0">
+                      <div className="text-foreground flex items-center gap-1.5">
                         <span className="truncate">{e.full_name}</span>
                         {isSeparatedState(e.lifecycle_state) && (
-                          <span className="shrink-0 inline-flex items-center rounded-sm border border-danger-200 bg-danger-50 px-1.5 py-0.5 text-[10px] font-medium text-danger-800 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-400">
+                          <span className="shrink-0 inline-flex items-center rounded-sm border border-danger-200 bg-danger-50 px-1.5 py-0.5 text-[10px] font-medium text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-500">
                             {lifecycleStatusLabel({ lifecycle_state: e.lifecycle_state ?? "", status: e.status, eligible_for_rehire: e.eligible_for_rehire })}
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 font-mono">
+                      <div className="text-xs text-muted-foreground font-mono">
                         {guardDisplayCode(e, e.client_prefix)}{e.client_name && ` · ${e.client_name}`}
                       </div>
                     </button>
@@ -598,17 +598,17 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
           <>
             {/* Month nav */}
             <div className="flex items-center justify-between">
-              <button type="button" onClick={() => shiftMonth(-1)} className="p-2 rounded hover:bg-slate-100 text-slate-700"><ChevronLeft className="w-4 h-4" /></button>
-              <div className="text-sm text-slate-900">{new Date(`${month}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}</div>
-              <button type="button" onClick={() => shiftMonth(1)} className="p-2 rounded hover:bg-slate-100 text-slate-700"><ChevronRight className="w-4 h-4" /></button>
+              <button type="button" onClick={() => shiftMonth(-1)} className="p-2 rounded hover:bg-muted text-foreground"><ChevronLeft className="w-4 h-4" /></button>
+              <div className="text-sm text-foreground">{new Date(`${month}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}</div>
+              <button type="button" onClick={() => shiftMonth(1)} className="p-2 rounded hover:bg-muted text-foreground"><ChevronRight className="w-4 h-4" /></button>
             </div>
 
             {/* Selection helpers */}
             <div className="flex flex-wrap gap-2 text-xs">
-              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) if (c.date && inWindow(c.date)) s.add(c.date); setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Select month</button>
-              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) { if (!c.date || !inWindow(c.date)) continue; const dow = new Date(`${c.date}T00:00:00`).getDay(); if (dow !== 0 && dow !== 6) s.add(c.date); } setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Weekdays only</button>
-              <button type="button" onClick={() => { setSelected(new Set()); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Clear selection</button>
-              <span className="ml-auto text-slate-500 self-center">{selected.size} day{selected.size === 1 ? "" : "s"} selected</span>
+              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) if (c.date && inWindow(c.date)) s.add(c.date); setSelected(s); }} className="px-2 py-1 rounded border border-border text-foreground hover:bg-muted/50">Select month</button>
+              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) { if (!c.date || !inWindow(c.date)) continue; const dow = new Date(`${c.date}T00:00:00`).getDay(); if (dow !== 0 && dow !== 6) s.add(c.date); } setSelected(s); }} className="px-2 py-1 rounded border border-border text-foreground hover:bg-muted/50">Weekdays only</button>
+              <button type="button" onClick={() => { setSelected(new Set()); }} className="px-2 py-1 rounded border border-border text-foreground hover:bg-muted/50">Clear selection</button>
+              <span className="ml-auto text-muted-foreground self-center">{selected.size} day{selected.size === 1 ? "" : "s"} selected</span>
             </div>
 
             {/* Calendar grid */}
@@ -628,7 +628,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                     const sel = selected.has(c.date);
                     const picks = shiftsFor(c.date);
                     const cellClass = !win
-                      ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
+                      ? "bg-muted text-muted-foreground/50 border-border cursor-not-allowed"
                       : status ? STATUS_CELL_CLASS[status] : "bg-card text-foreground border-border hover:border-brand-500/50";
                     const ring = sel ? "ring-2 ring-brand-500 ring-offset-2 ring-offset-card border-brand-500" : "";
                     return (
@@ -667,7 +667,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
             {/* Controls: status → mark / clear. Shift per date is chosen in the cells. */}
             {selected.size > 0 && (
-              <div className="space-y-3 pt-2 border-t border-slate-200">
+              <div className="space-y-3 pt-2 border-t border-border">
                 {pendingStatus === "double_duty" && (
                   <p className="text-[11px] text-info-700 dark:text-info-500 bg-info-50 border border-info-200 rounded px-2.5 py-1.5">
                     Double duty — the rostered shift (grey) is already selected on each day.
@@ -676,13 +676,13 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                 )}
 
                 <div>
-                  <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">Status</label>
+                  <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Status</label>
                   <div className="flex flex-wrap gap-2">
                     {BULK_STATUS_OPTIONS.map((o) => {
                       const active = pendingStatus === o.status;
                       return (
                         <button key={o.status} type="button" onClick={() => changeStatus(o.status)}
-                          className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${active ? o.activeBtn : "bg-card text-foreground border-slate-200 hover:border-slate-300"}`}>
+                          className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${active ? o.activeBtn : "bg-card text-foreground border-border hover:border-border"}`}>
                           {o.label}
                         </button>
                       );
@@ -691,15 +691,15 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Supervisor override reason <span className="text-slate-400">(only needed for days older than 3 days)</span>
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    Supervisor override reason <span className="text-muted-foreground/70">(only needed for days older than 3 days)</span>
                   </label>
                   <input
                     type="text"
                     value={overrideReason}
                     onChange={(e) => setOverrideReason(e.target.value)}
                     placeholder="e.g. Late WhatsApp report — approved by supervisor"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm"
                   />
                 </div>
 
@@ -713,7 +713,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                     Clear (unmark)
                   </button>
                   {submitting && (
-                    <span className="self-center text-xs text-slate-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Saving…</span>
+                    <span className="self-center text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Saving…</span>
                   )}
                 </div>
               </div>

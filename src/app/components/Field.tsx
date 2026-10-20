@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 export default function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-xs text-slate-500 uppercase tracking-wide">{label}</div>
-      <div className="text-slate-900">{children}</div>
+      <div className="text-xs text-muted-foreground uppercase tracking-wide">{label}</div>
+      <div className="text-foreground">{children}</div>
     </div>
   );
 }

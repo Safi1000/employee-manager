@@ -756,7 +756,7 @@ export default function PayrollRun() {
                   const ok = !s.verifiable || verified.has(s.key);
                   const blocked = s.verifiable && !verified.has(s.key);
                   return (
-                    <div key={s.key} className={`bg-card rounded-xl border p-4 flex items-center gap-3 ${blocked ? "border-warning-300 dark:border-warning-800 bg-warning-50/40 dark:bg-warning-900/10" : "border-border"}`}>
+                    <div key={s.key} className={`bg-card rounded-xl border p-4 flex items-center gap-3 ${blocked ? "border-warning-200 dark:border-warning-500/30 bg-warning-50/40 dark:bg-warning-500/8" : "border-border"}`}>
                       <ScopeIcon s={s} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
@@ -807,7 +807,7 @@ export default function PayrollRun() {
                           </span>
                           {/* Rule 10: OPS verification revoked while past Draft — warn, don't auto-revert. */}
                           {s.verifiable && !verified.has(s.key) && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-500/10 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
                               <ShieldAlert className="w-3 h-3" /> OPS unverified
                             </span>
                           )}
@@ -856,7 +856,7 @@ export default function PayrollRun() {
                 {financeScopes.map((s) => {
                   const locked = financeVerified.has(s.key);
                   return (
-                  <div key={s.key} className={`rounded-xl border p-4 flex items-center gap-2 flex-wrap ${locked ? "bg-success-50/40 dark:bg-success-900/10 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
+                  <div key={s.key} className={`rounded-xl border p-4 flex items-center gap-2 flex-wrap ${locked ? "bg-success-50/40 dark:bg-success-500/8 border-success-200 dark:border-success-500/30" : "bg-card border-border"}`}>
                     <ShieldCheck className={`w-5 h-5 shrink-0 ${locked ? "text-success-600" : "text-brand-600"}`} strokeWidth={1.5} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
@@ -868,7 +868,7 @@ export default function PayrollRun() {
                       )}
                     </div>
                     {!locked && s.verifiable && !verified.has(s.key) && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-500/10 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
                         <ShieldAlert className="w-3 h-3" /> OPS unverified
                       </span>
                     )}
@@ -969,11 +969,11 @@ export default function PayrollRun() {
         return (
           <Modal isOpen onClose={() => setConfirmFV(null)} title="Finance Verify — permanent" size="sm">
             <div className="space-y-4">
-              <div className="flex items-start gap-3 rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-900/15 p-3">
+              <div className="flex items-start gap-3 rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/8 p-3">
                 <ShieldAlert className="w-5 h-5 text-danger-600 shrink-0 mt-0.5" strokeWidth={2} />
-                <div className="text-sm text-danger-800 dark:text-danger-300">
+                <div className="text-sm text-danger-700 dark:text-danger-500">
                   <p className="font-semibold">This action cannot be reversed.</p>
-                  <p className="mt-1 text-danger-700 dark:text-danger-400">
+                  <p className="mt-1 text-danger-700 dark:text-danger-500">
                     Finance Verifying <span className="font-medium">{target}</span> for {fmtMonth(month)} permanently locks OPS un-verify and all phase movement (no Back to Review or Back to Draft), and moves it to the Payroll Management page for payment.
                   </p>
                 </div>

@@ -9,7 +9,7 @@ import { supabase } from "../../lib/supabase";
 // when the Client Relationships panel was dissolved. Same renewal_pipeline table.
 
 const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+  "px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent";
 const RENEWAL_STAGES = ["not_started", "contacted", "negotiating", "renewed", "lost"];
 
 export default function ContractRenewals() {
@@ -59,34 +59,34 @@ export default function ContractRenewals() {
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 
       <div className="space-y-4">
-        <section className="border border-slate-200 rounded-md p-3 flex items-end gap-2 flex-wrap">
+        <section className="border border-border rounded-md p-3 flex items-end gap-2 flex-wrap">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Client</label>
+            <label className="text-xs text-muted-foreground block mb-1">Client</label>
             <ThemedSelect className={FIELD} value={rnClient} onChange={(e) => setRnClient(e.target.value)}>
               <option value="">— client —</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </ThemedSelect>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Expected close</label>
+            <label className="text-xs text-muted-foreground block mb-1">Expected close</label>
             <input type="date" className={FIELD} value={rnDate} onChange={(e) => setRnDate(e.target.value)} />
           </div>
           <Button variant="primary" size="sm" disabled={busy || !rnClient} onClick={addRenewal}>Add to pipeline</Button>
         </section>
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto border border-border rounded-md">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="text-left px-3 py-2">Client</th>
                 <th className="text-left px-3 py-2">Expected close</th>
                 <th className="text-left px-3 py-2">Stage</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {renewals.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-3 py-1.5 text-slate-700">{clientName.get(r.client_id)}</td>
-                  <td className="px-3 py-1.5 text-slate-500">{r.expected_close_date ?? "—"}</td>
+                  <td className="px-3 py-1.5 text-foreground">{clientName.get(r.client_id)}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground">{r.expected_close_date ?? "—"}</td>
                   <td className="px-3 py-1.5">
                     <ThemedSelect className={FIELD + " py-1"} value={r.stage}
                       onChange={(e) => run(supabase.from("renewal_pipeline").update({ stage: e.target.value }).eq("id", r.id))}>
@@ -95,7 +95,7 @@ export default function ContractRenewals() {
                   </td>
                 </tr>
               ))}
-              {renewals.length === 0 && <tr><td colSpan={3} className="px-3 py-3 text-slate-500">Nothing in the pipeline.</td></tr>}
+              {renewals.length === 0 && <tr><td colSpan={3} className="px-3 py-3 text-muted-foreground">Nothing in the pipeline.</td></tr>}
             </tbody>
           </table>
         </div>

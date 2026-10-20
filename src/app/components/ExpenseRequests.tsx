@@ -39,8 +39,8 @@ export type ExpenseRequest = {
 type Option = { id: string; name: string };
 
 const STATUS: Record<ExpenseRequest["status"], { label: string; cls: string; icon: typeof Clock }> = {
-  pending: { label: "Waiting for approval", cls: "bg-warning-50 text-warning-800 border-warning-200", icon: Clock },
-  approved: { label: "Approved — to be recorded", cls: "bg-brand-50 text-brand-800 border-brand-200", icon: CheckCircle2 },
+  pending: { label: "Waiting for approval", cls: "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200", icon: Clock },
+  approved: { label: "Approved — to be recorded", cls: "bg-brand-50 text-brand-700 dark:text-brand-500 border-brand-200", icon: CheckCircle2 },
   rejected: { label: "Rejected", cls: "bg-danger-50 text-danger-700 border-danger-200", icon: XCircle },
   recorded: { label: "Recorded as an expense", cls: "bg-success-50 text-success-700 border-success-200", icon: CheckCircle2 },
 };
@@ -234,7 +234,7 @@ export function ExpenseRequestsList({
               </div>
 
               {r.decided_at && (
-                <div className={`rounded-md border px-3 py-2 ml-4 ${r.status === "rejected" ? "border-danger-200 bg-danger-50/60 dark:bg-danger-900/20" : "border-border"}`}>
+                <div className={`rounded-md border px-3 py-2 ml-4 ${r.status === "rejected" ? "border-danger-200 bg-danger-50/60 dark:bg-danger-500/10" : "border-border"}`}>
                   <p className="text-xs text-muted-foreground">
                     {r.status === "rejected" ? "Rejected" : "Approved"} by <span className="text-foreground">{r.decided_by_name ?? "Unknown"}</span> · {formatDateTime(r.decided_at)}
                   </p>

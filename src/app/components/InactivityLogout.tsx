@@ -216,7 +216,7 @@ export default function InactivityLogout() {
           <button
             type="button"
             onClick={() => resetTimer(true)}
-            className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-[#241a06] shadow-sm transition-colors hover:bg-brand-600"
+            className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-on-brand shadow-sm transition-colors hover:bg-brand-600"
           >
             Stay logged in
           </button>

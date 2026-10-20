@@ -255,7 +255,7 @@ export const TASK_PRIORITY_LABEL: Record<TaskPriority, string> = {
 };
 
 export const TASK_PRIORITY_BADGE: Record<TaskPriority, string> = {
-  low: "bg-slate-100 text-slate-600 border-slate-200",
+  low: "bg-muted text-muted-foreground border-border",
   medium: "bg-brand-50 text-brand-700 border-brand-200",
   high: "bg-warning-50 text-warning-700 border-warning-200",
   urgent: "bg-danger-50 text-danger-700 border-danger-200",
