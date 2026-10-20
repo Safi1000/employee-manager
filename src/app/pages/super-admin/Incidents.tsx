@@ -605,21 +605,10 @@ export default function Incidents() {
             <Plus className="w-4 h-4 mr-2" /> Log Incident
           </Button>
         }
-      />
-
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
-        {error && (
-          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5" />
-            <div className="flex-1">{error}</div>
-            <button onClick={() => setError(null)}>
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
+      >
+        <div className="flex flex-col gap-3">
         {/* Summary tiles (clickable filters) */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
           <SummaryTile
             label="Open"
             value={counts.open}
@@ -656,6 +645,56 @@ export default function Incidents() {
             onClick={() => setSeverityFilter(severityFilter === "critical" ? "all" : "critical")}
           />
         </div>
+          {(() => {
+            // Twelve weeks of incidents by week, and what they were — read from
+            // the rows this page loads. A quiet quarter reads as a flat line.
+            const weeks = Array.from({ length: 12 }, (_, k) => {
+              const end = new Date(); end.setHours(23, 59, 59, 999); end.setDate(end.getDate() - (11 - k) * 7);
+              const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
+              return { start, end, n: rows.filter((r) => { const d = new Date(r.occurred_at); return d >= start && d <= end; }).length };
+            });
+            const max = Math.max(1, ...weeks.map((w) => w.n));
+            const cats = new Map<string, number>();
+            for (const r of rows) cats.set(r.category, (cats.get(r.category) ?? 0) + 1);
+            const top = [...cats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-2.5">
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                  <span className="lbl">Last 12 weeks</span>
+                  <div className="flex items-end gap-1.5 h-16">
+                    {weeks.map((w, k) => (
+                      <span key={k} title={`${w.start.toLocaleDateString(undefined, { day: "numeric", month: "short" })}: ${w.n} incident${w.n === 1 ? "" : "s"}`}
+                        className={`flex-1 rounded-t ${w.n ? "bg-[#d4674a]" : "bg-muted"}`} style={{ height: `${w.n ? Math.max(12, (w.n / max) * 100) : 6}%` }} />
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
+                  <span className="lbl">What they were</span>
+                  {top.length === 0 && <span className="text-sm text-muted-foreground">No incidents logged.</span>}
+                  {top.map(([c, n]) => (
+                    <div key={c} className="grid grid-cols-[minmax(0,1fr)_2rem] gap-2 items-center text-xs">
+                      <span className="flex flex-col gap-1"><span className="capitalize truncate">{c.replace(/_/g, " ")}</span><span className="h-1.5 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-brand-500" style={{ width: `${(n / Math.max(1, rows.length)) * 100}%` }} /></span></span>
+                      <span className="font-ledger text-right font-semibold">{n}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </Header>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
+        {error && (
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
 
         {/* Filters */}
         <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -896,15 +935,15 @@ function SummaryTile({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left bg-white p-4 rounded-lg border transition-colors ${
-        active ? "border-brand-600 ring-2 ring-brand-100" : "border-slate-200 hover:border-slate-300"
+      className={`text-left rounded-[14px] border px-4 py-3 transition-colors ${
+        active ? "border-brand-500 bg-brand-500/15" : "border-border bg-card hover:border-brand-500/70"
       }`}
     >
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-1.5">
         <span className={`w-2 h-2 rounded-full ${colour}`} />
-        <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="lbl">{label}</span>
       </div>
-      <div className="text-2xl text-slate-900">{value}</div>
+      <div className="font-ledger text-2xl font-semibold leading-none text-foreground">{value}</div>
     </button>
   );
 }
