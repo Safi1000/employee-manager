@@ -162,21 +162,10 @@ export default function Licences() {
       <Header
         title="Licences & Renewals"
         subtitle="Every expiring item across guards, contracts and company compliance — sorted by days remaining"
-      />
-
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
-        {error && (
-          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5" />
-            <div className="flex-1">{error}</div>
-            <button onClick={() => setError(null)}>
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
+      >
+        <div className="flex flex-col gap-3">
         {/* Summary tiles — clickable to filter */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           <SummaryTile
             label="Expired"
             count={counts.expired}
@@ -206,6 +195,42 @@ export default function Licences() {
             onClick={() => setBandFilter(bandFilter === "future" ? "all" : "future")}
           />
         </div>
+          {rows.length > 0 && (() => {
+            // Expiry runway: how much falls due in each of the next six months
+            // (and how much has already lapsed), so a bad month shows early.
+            const buckets = [{ label: "Lapsed", n: rows.filter((r) => r.days_remaining < 0).length, lapsed: true }]
+              .concat(Array.from({ length: 6 }, (_, k) => ({ label: k === 0 ? "This month" : new Date(new Date().getFullYear(), new Date().getMonth() + k, 1).toLocaleDateString(undefined, { month: "short" }),
+                n: rows.filter((r) => r.days_remaining >= k * 30 && r.days_remaining < (k + 1) * 30).length, lapsed: false })));
+            const max = Math.max(1, ...buckets.map((b) => b.n));
+            return (
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                <span className="lbl">Expiry runway · next six months</span>
+                <div className="grid grid-cols-7 gap-2 items-end h-20">
+                  {buckets.map((b) => (
+                    <div key={b.label} className="flex flex-col items-center gap-1 h-full justify-end">
+                      <span className="font-ledger text-xs font-semibold">{b.n || ""}</span>
+                      <span className={`w-full rounded-t ${b.lapsed ? "bg-[#d4674a]" : "bg-brand-500"} ${b.n ? "" : "opacity-20"}`} style={{ height: `${Math.max(4, (b.n / max) * 70)}%` }} />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-2 text-[10px] text-muted-foreground text-center">{buckets.map((b) => <span key={b.label}>{b.label}</span>)}</div>
+              </div>
+            );
+          })()}
+        </div>
+      </Header>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
+        {error && (
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
 
         {/* Filters */}
         <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -392,15 +417,15 @@ function SummaryTile({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left bg-white p-4 rounded-lg border transition-colors ${
-        active ? "border-brand-600 ring-2 ring-brand-100" : "border-slate-200 hover:border-slate-300"
+      className={`text-left bg-card p-4 rounded-[14px] border transition-colors ${
+        active ? "border-brand-500 bg-brand-500/15" : "border-border hover:border-brand-500/70"
       }`}
     >
       <div className="flex items-center gap-2 mb-1">
         <span className={`w-2 h-2 rounded-full ${dot}`} />
-        <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="lbl">{label}</span>
       </div>
-      <div className="text-2xl text-slate-900">{count}</div>
+      <div className="font-ledger text-2xl font-semibold leading-none text-foreground">{count}</div>
     </button>
   );
 }
