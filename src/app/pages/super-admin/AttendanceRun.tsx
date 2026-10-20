@@ -198,7 +198,39 @@ export default function AttendanceRun() {
             <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
           </div>
         }
-      />
+      >
+        {(() => {
+          // The month's register as a pipeline (2026-10-20): every client's two
+          // halves move HR verified → Ops verified. The band counts where the
+          // halves stand and how far the month is through.
+          const halves = scopes.flatMap((sc) => (sc.legacyAt ? [] : [sc.halves[1], sc.halves[2]]));
+          const review = halves.filter((h) => inReview(h)).length;
+          const done = scopes.filter((sc) => sc.legacyAt).length * 2 + halves.filter((h) => opsDone(h)).length;
+          const total = Math.max(1, scopes.length * 2);
+          const waiting = Math.max(0, total - review - done);
+          return (
+            <div className="flex flex-col gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {[
+                  { k: "wait", label: "With HR", v: waiting, sub: "halves not yet HR-verified", c: "#bdb6a0", to: null },
+                  { k: "review", label: "Waiting for Ops", v: review, sub: "HR-verified, in Review", c: "#e9a73c", to: "review" },
+                  { k: "verified", label: "Ops verified", v: done, sub: "ready for payroll", c: "#9ad1a3", to: "verified" },
+                ].map((t, i) => (
+                  <button key={t.k} type="button" disabled={!t.to} onClick={() => t.to && setTab(t.to as typeof tab)}
+                    className={`text-left rounded-[14px] border px-4 py-3 flex items-center gap-3 ${t.to && tab === t.to ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"} ${t.to ? "hover:border-brand-500/70" : "cursor-default"}`}>
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-[#191a10]" style={{ background: t.c }}>{i + 1}</span>
+                    <span className="flex flex-col gap-0.5"><span className="lbl">{t.label}</span><span className="font-ledger text-2xl font-semibold leading-none">{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-muted" aria-hidden="true">
+                <span className="h-full bg-[#9ad1a3]" style={{ width: `${(done / total) * 100}%` }} />
+                <span className="h-full bg-brand-500" style={{ width: `${(review / total) * 100}%` }} />
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
