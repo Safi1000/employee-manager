@@ -25,6 +25,7 @@ import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
+import { useRegion } from "../../lib/region";
 
 type Half = 1 | 2;
 
@@ -71,6 +72,7 @@ export default function AttendanceRun() {
   const { profile, company } = useAuth();
   const canOps = hasPermission(profile, "attendance.ops_verify");
   const canHr = hasPermission(profile, "attendance.hr_verify");
+  const { regionId } = useRegion();
 
   // Opens on the previous month — the one being verified (asked 2026-10-05).
   const [month, setMonth] = usePageState("AttendanceRun.month", previousMonth());
@@ -102,11 +104,11 @@ export default function AttendanceRun() {
     const [hv, legacy, phases] = await Promise.all([
       supabase
         .from("attendance_half_verifications")
-        .select("client_id, category, branch_id, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, client:client_id(name), branch:branch_id(name)")
+        .select("client_id, category, branch_id, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, client:client_id(name, branch_id), branch:branch_id(name)")
         .eq("period_month", period),
       supabase
         .from("attendance_month_verifications")
-        .select("client_id, category, verified_at, client:client_id(name)")
+        .select("client_id, category, verified_at, client:client_id(name, branch_id)")
         .eq("period_month", period),
       supabase.from("payroll_run_phases").select("client_id, category, phase").eq("period_month", period),
     ]);
@@ -138,11 +140,19 @@ export default function AttendanceRun() {
       }
       return sc;
     };
-    for (const r of (hv.data ?? []) as any[]) scopeFor(r).halves[r.half as Half] = r as HalfRow;
-    for (const r of (legacy.data ?? []) as any[]) scopeFor(r).legacyAt = r.verified_at;
+    // The region bar: a staff group row names its region, a client row goes by
+    // its client's. A row with neither (a legacy all-regions group, a client
+    // with no region) stays visible everywhere, the way client lists do.
+    const inRegion = (r: any) => {
+      if (!regionId) return true;
+      const b = r.client_id ? r.client?.branch_id : r.branch_id;
+      return b == null || b === regionId;
+    };
+    for (const r of (hv.data ?? []) as any[]) if (inRegion(r)) scopeFor(r).halves[r.half as Half] = r as HalfRow;
+    for (const r of (legacy.data ?? []) as any[]) if (inRegion(r)) scopeFor(r).legacyAt = r.verified_at;
     setScopes([...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)));
     setLoading(false);
-  }, [period]);
+  }, [period, regionId]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setSendBack(null); setRemarksFor(null); setNotice(null); }, [month, tab]);

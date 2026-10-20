@@ -60,3 +60,20 @@ export function sectionOf(pathname: string): string | null {
   const key = parts[1] ?? "";
   return SECTION_OF[key] ?? null;
 }
+
+/**
+ * Pages whose figures belong to the company as a whole, so the region bar
+ * does not change them: month locks, the audit trail, partner and investor
+ * accounts, access, settings, the accountant's bank and cash ledgers. The top
+ * bar says so on these pages instead of promising "ISB/RWP only".
+ */
+const COMPANY_WIDE = new Set([
+  "tasks", "accountant", "partnership-run", "period-close", "treasury", "partners",
+  "project-financing", "access-governance", "users", "governance", "audit-log",
+  "reversals", "settings", "billing", "my-profile",
+]);
+
+export function isCompanyWide(pathname: string): boolean {
+  const parts = pathname.split("/").filter(Boolean);
+  return parts[0] === "super-admin" && COMPANY_WIDE.has(parts[1] ?? "");
+}

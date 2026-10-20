@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import RouteLoading from "../components/RouteLoading";
-import { Outlet, useNavigate } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
+import { isCompanyWide } from "../lib/navMeta";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
 import InactivityLogout from "../components/InactivityLogout";
@@ -76,6 +77,7 @@ export default function SuperAdminLayout() {
   const { profile, company, setViewAsCompany } = useAuth();
   const { regions, locked, region } = useRegion();
   const navigate = useNavigate();
+  const companyWidePage = isCompanyWide(useLocation().pathname);
 
   // Companies with a single region have nothing to switch between, so the bar
   // stays out of their way entirely.
@@ -356,6 +358,8 @@ export default function SuperAdminLayout() {
                 <span className="live-dot w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />
                 {locked
                   ? "You see only your region."
+                  : region && !region.is_head_office && companyWidePage
+                    ? "This page is company-wide; the region does not change it."
                   : region && !region.is_head_office
                     ? `Every figure is ${region.name} only.`
                     : "Every figure is consolidated across regions."}

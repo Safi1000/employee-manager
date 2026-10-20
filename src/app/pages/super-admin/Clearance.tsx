@@ -26,6 +26,7 @@ import StatCard from "../../components/StatCard";
 import Badge from "../../components/Badge";
 import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { supabase, friendlyDbError } from "../../lib/supabase";
+import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
 import { brandingFromCompany } from "../../lib/pdfBranding";
@@ -70,11 +71,12 @@ export default function Clearance() {
 
   const [open, setOpen] = useState<{ emp: Pending; certId: string; items: KitItem[] } | null>(null);
 
+  const { regionId } = useRegion();
   const load = useCallback(async () => {
     setLoading(true);
     const [e, c, q, t] = await Promise.all([
-      supabase.from("employees")
-        .select("id, full_name, guard_code, last_working_day, lifecycle_state")
+      withRegion(supabase.from("employees")
+        .select("id, full_name, guard_code, last_working_day, lifecycle_state"), regionId)
         .in("lifecycle_state", ["fired", "left", "absconded"])
         .not("last_working_day", "is", null)
         .order("last_working_day", { ascending: false }),
@@ -96,7 +98,7 @@ export default function Clearance() {
     setQueue(q.data ?? []);
     setTypes((t.data ?? []) as any[]);
     setLoading(false);
-  }, []);
+  }, [regionId]);
   useEffect(() => { load(); }, [load]);
 
   const typeName = useMemo(() => new Map(types.map((t) => [t.id, t.name])), [types]);

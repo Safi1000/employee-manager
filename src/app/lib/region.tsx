@@ -177,3 +177,13 @@ export function filterByRegion<T extends { branch_id?: string | null }>(
   if (!regionId) return rows;
   return rows.filter((r) => r.branch_id === regionId);
 }
+
+/**
+ * withRegion, but a row with no region recorded stays visible in every region
+ * (company licences, a client or guard nobody placed yet) — the rule the
+ * client lists follow, so narrowing to a region never hides a row entirely.
+ */
+export function withRegionOrUnassigned<T>(query: T, regionId: string | null, column = "branch_id"): T {
+  if (!regionId) return query;
+  return (query as { or: (f: string) => T }).or(`${column}.eq.${regionId},${column}.is.null`);
+}

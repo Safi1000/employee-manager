@@ -12,6 +12,7 @@ import Tabs from "../../components/Tabs";
 import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region";
 import { usePageState } from "../../lib/pageState";
 import { formatDate } from "../../lib/date";
 import {
@@ -51,13 +52,14 @@ export default function Assets() {
   const [nv, setNv] = useState({ registration_no: "", make: "", model: "" });
   const [depPeriod, setDepPeriod] = usePageState("Assets.depPeriod", monthStart());
 
+  const { regionId } = useRegion();
   const load = useCallback(async () => {
     if (!companyId) return;
     const [fa, vh, vc, am, dc, wp] = await Promise.all([
-      supabase.from("fixed_assets_register").select("*").eq("company_id", companyId).order("acquisition_date", { ascending: false }),
-      supabase.from("vehicles").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
+      withRegion(supabase.from("fixed_assets_register").select("*").eq("company_id", companyId), regionId).order("acquisition_date", { ascending: false }),
+      withRegionOrUnassigned(supabase.from("vehicles").select("*").eq("company_id", companyId), regionId).order("created_at", { ascending: false }),
       supabase.from("vehicle_monthly_cost").select("*").eq("company_id", companyId),
-      supabase.from("ammunition_counts").select("*").eq("company_id", companyId).order("count_date", { ascending: false }),
+      withRegionOrUnassigned(supabase.from("ammunition_counts").select("*").eq("company_id", companyId), regionId).order("count_date", { ascending: false }),
       supabase.from("ammunition_discrepancies").select("*").eq("company_id", companyId),
       supabase.from("inventory_items").select("id, item_type, serial_number").eq("company_id", companyId).eq("kind", "weapon"),
     ]);
@@ -67,7 +69,7 @@ export default function Assets() {
     setAmmo(am.data ?? []);
     setDiscrepancies(dc.data ?? []);
     setWeapons(wp.data ?? []);
-  }, [companyId]);
+  }, [companyId, regionId]);
 
   useEffect(() => { load(); }, [load]);
 

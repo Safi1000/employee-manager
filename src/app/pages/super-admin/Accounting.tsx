@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy } from "lucide-react";
 import Header from "../../components/Header";
+import { useRegion } from "../../lib/region";
 import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -101,6 +102,9 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 
 export default function Accounting() {
   const codeIndex = useEmployeeCodeIndex();
+  // The region bar narrows what is owed to us and what we owe (both carry a
+  // region). Banks and custodian cash are the company's and stay whole.
+  const { regionId } = useRegion();
   const { profile, company } = useAuth();
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
@@ -215,7 +219,11 @@ export default function Accounting() {
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
-  const [payables, setPayables] = useState<PayableRow[]>([]);
+  const [payablesAll, setPayables] = useState<PayableRow[]>([]);
+  const payables = useMemo(
+    () => (regionId ? payablesAll.filter((p) => (p as { branch_id?: string | null }).branch_id === regionId) : payablesAll),
+    [payablesAll, regionId],
+  );
   const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
   const [allClientsForRec, setAllClientsForRec] = useState<Client[]>([]);
   const [allInvoicesForRec, setAllInvoicesForRec] = useState<Invoice[]>([]);
@@ -549,9 +557,10 @@ export default function Accounting() {
   }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec, allPaymentEvents]);
 
   const branchScopedReceivables = useMemo(() => {
-    if (receivablesBranchFilter === "all") return displayedReceivables;
-    return displayedReceivables.filter((r) => r.branch_id === receivablesBranchFilter);
-  }, [displayedReceivables, receivablesBranchFilter]);
+    const branch = regionId ?? (receivablesBranchFilter === "all" ? null : receivablesBranchFilter);
+    if (!branch) return displayedReceivables;
+    return displayedReceivables.filter((r) => r.branch_id === branch);
+  }, [displayedReceivables, receivablesBranchFilter, regionId]);
 
   const filteredReceivables = useMemo(() => {
     const q = receivablesSearch.trim().toLowerCase();
@@ -2278,8 +2287,8 @@ export default function Accounting() {
           <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
             <span className="lbl">Net position</span>
             {[
-              { k: "Bank", v: totalAccountBalance },
-              { k: "Cash held", v: cashBalance },
+              { k: regionId ? "Bank (company)" : "Bank", v: totalAccountBalance },
+              { k: regionId ? "Cash held (company)" : "Cash held", v: cashBalance },
               { k: "Owed to us", v: receivableTotals.outstanding },
               { k: "We owe", v: -(payableTotals.pending + payableTotals.overdue) },
             ].map((x) => (
@@ -2452,7 +2461,9 @@ export default function Accounting() {
                 </ThemedSelect>
                 <label className="text-xs text-slate-500">Branch:</label>
                 <ThemedSelect
-                  value={receivablesBranchFilter}
+                  disabled={!!regionId}
+                  title={regionId ? "Set by the region bar at the top" : undefined}
+                  value={regionId ?? receivablesBranchFilter}
                   onChange={(e) => setReceivablesBranchFilter(e.target.value)}
                   className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
                 >

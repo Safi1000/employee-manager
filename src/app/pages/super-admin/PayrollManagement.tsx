@@ -2261,7 +2261,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         .select(
           "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
         )
-        .eq("period_month", selectedPeriod);
+        .eq("period_month", selectedPeriod)
+        // Every payslip carries its region; the region bar narrows them, and
+        // the cards below keep only the scopes left with a payslip (2026-10-20).
+        .match(regionId ? { branch_id: regionId } : {});
       const psRows = (ps ?? []) as any[];
       const empIds = Array.from(new Set(psRows.map((r) => r.employee_id)));
       const empScope = new Map<string, string>();
@@ -2337,7 +2340,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         totals.set(key, cur);
       }
       if (cancelled) return;
-      setFvScopes(scopes);
+      setFvScopes(regionId ? scopes.filter((sc) => totals.has(sc.key)) : scopes);
       setFvTotals(totals);
       setFvRows(rowsByScope);
       setFvIndex(index);

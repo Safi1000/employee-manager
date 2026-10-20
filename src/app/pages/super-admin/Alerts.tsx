@@ -3,6 +3,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { useRegion, withRegionOrUnassigned } from "../../lib/region";
 import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
 
 // §21 Alert Engine — three tiers. Persisted blocking/warning alerts with an
@@ -16,6 +17,7 @@ const TIER: Record<string, string> = {
 };
 
 export default function Alerts() {
+  const { regionId } = useRegion();
   const { company } = useAuth();
   const companyId = company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
@@ -27,14 +29,14 @@ export default function Alerts() {
   const load = useCallback(async () => {
     if (!companyId) return;
     const [al, wa, da] = await Promise.all([
-      supabase.from("alerts").select("*").eq("company_id", companyId).eq("state", "open").order("created_at", { ascending: false }),
-      supabase.from("warning_alerts").select("*").eq("company_id", companyId),
-      supabase.from("dashboard_alerts").select("*").eq("company_id", companyId),
+      withRegionOrUnassigned(supabase.from("alerts").select("*").eq("company_id", companyId).eq("state", "open"), regionId).order("created_at", { ascending: false }),
+      withRegionOrUnassigned(supabase.from("warning_alerts").select("*").eq("company_id", companyId), regionId),
+      withRegionOrUnassigned(supabase.from("dashboard_alerts").select("*").eq("company_id", companyId), regionId),
     ]);
     setAlerts(al.data ?? []);
     setWarnings(wa.data ?? []);
     setDashboard(da.data ?? []);
-  }, [companyId]);
+  }, [companyId, regionId]);
 
   useEffect(() => { load(); }, [load]);
 

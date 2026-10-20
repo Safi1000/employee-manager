@@ -28,6 +28,7 @@ import {
 import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
 import { useAuth } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
+import { useRegion, withRegionOrUnassigned } from "../../lib/region";
 
 type RaisedAlert = {
   id: string;
@@ -176,6 +177,7 @@ export default function Compliance() {
   const [contractAlerts, setContractAlerts] = useState<ContractEndAlert[]>([]);
   const { profile, company } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+  const { regionId } = useRegion();
   // Attendance halves that ended and are not yet HR- or Ops-verified. The email
   // repeats these on every odd day, like the invoice reminders; here they show
   // every day until Ops verifies the half.
@@ -234,25 +236,30 @@ export default function Compliance() {
       // end is the most urgent case there is, and filtering to future dates hid it.
       supabase
         .from("contracts")
-        .select("id, contract_code, end_date, is_infinite, status, clients:client_id(name)")
+        .select("id, contract_code, end_date, is_infinite, status, clients:client_id(name, branch_id)")
         .eq("status", "active")
         .eq("is_infinite", false)
         .not("end_date", "is", null)
         .lte("end_date", horizonIso)
         .order("end_date"),
-      supabase
-        .from("alerts")
-        .select("id, tier, category, message, created_at, last_seen_at, seen_count")
-        .eq("state", "open")
-        .order("created_at", { ascending: false }),
+      withRegionOrUnassigned(
+        supabase
+          .from("alerts")
+          .select("id, tier, category, message, created_at, last_seen_at, seen_count")
+          .eq("state", "open"),
+        regionId,
+      ).order("created_at", { ascending: false }),
       // Guard-data coverage, straight from the view (0306). Deliberately NOT
       // recomputed here: the hand-written version of this table got two rows
       // wrong by counting a vetting_status value the enum does not contain.
-      supabase
-        .from("vetting_dashboard")
-        .select(
-          "region_name, total, police_cleared, police_pending, police_adverse, police_not_recorded, nadra_cleared, cnic_number_recorded, cnic_expiry_recorded"
-        ),
+      withRegionOrUnassigned(
+        supabase
+          .from("vetting_dashboard")
+          .select(
+            "region_name, total, police_cleared, police_pending, police_adverse, police_not_recorded, nadra_cleared, cnic_number_recorded, cnic_expiry_recorded"
+          ),
+        regionId,
+      ),
     ]);
     if (dRes.error) setError(dRes.error.message);
     if (rRes.error) setError(rRes.error.message);
@@ -267,8 +274,8 @@ export default function Compliance() {
       id: string;
       contract_code: string | null;
       end_date: string;
-      clients: { name?: string } | null;
-    }[]).map((c) => {
+      clients: { name?: string; branch_id?: string | null } | null;
+    }[]).filter((c) => !regionId || c.clients?.branch_id == null || c.clients.branch_id === regionId).map((c) => {
       const daysRemaining = dayDiff(c.end_date);
       // 3 days or less (and anything already overdue) is critical, a week out is
       // high, the two-week heads-up is medium.
@@ -300,7 +307,8 @@ export default function Compliance() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   /** The view is per region; the band is per company. Summed here rather than
    *  in SQL so the regional breakdown stays available to a future drill-down. */

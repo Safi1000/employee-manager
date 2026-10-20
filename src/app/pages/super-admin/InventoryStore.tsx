@@ -29,6 +29,7 @@ import Badge from "../../components/Badge";
 import Tabs from "../../components/Tabs";
 import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { supabase, friendlyDbError } from "../../lib/supabase";
+import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
 import {
@@ -191,11 +192,12 @@ export default function InventoryStore() {
     lines: [{ ...emptyLine }] as PurchaseLine[],
   });
 
+  const { regionId } = useRegion();
   const load = useCallback(async () => {
     setLoading(true);
     const [t, s, g, cfg, b] = await Promise.all([
       supabase.from("inventory_item_types").select("*").order("name"),
-      supabase.from("inventory_stock").select("*"),
+      withRegionOrUnassigned(supabase.from("inventory_stock").select("*"), regionId),
       supabase.from("employees").select("id, guard_code").not("guard_code", "is", null),
       supabase.from("inventory_settings").select("kit_required_from").maybeSingle(),
       supabase.from("inventory_opening_batches").select("id", { count: "exact", head: true }),
@@ -208,7 +210,7 @@ export default function InventoryStore() {
     setKitFrom((cfg.data as any)?.kit_required_from ?? "");
     setBatches(b.count ?? 0);
     setLoading(false);
-  }, []);
+  }, [regionId]);
   useEffect(() => { load(); }, [load]);
 
   const typeById = useMemo(

@@ -955,6 +955,21 @@ export default function Invoices() {
             .filter((t) => t !== "generate" || canEditInvoices)
             .map((t) => ({ value: t, label: t === "ledger" ? "Invoices" : "Generate" }))}
         />
+        {tab === "ledger" && (
+          <div className="mt-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <StatCard title="Total invoiced" value={`PKR ${summary.invoiced.toLocaleString()}`} icon={ReceiptText} tone="brand" />
+                <StatCard title="Total received" value={`PKR ${summary.received.toLocaleString()}`} icon={CheckCircle2} tone="success" />
+                <StatCard title="Outstanding" value={`PKR ${summary.outstanding.toLocaleString()}`} icon={Clock} tone="warning" />
+                <StatCard
+                  title="Collected"
+                  value={summary.invoiced > 0 ? `${Math.round((summary.received / summary.invoiced) * 100)}%` : "—"}
+                  icon={Percent}
+                  tone="info"
+                />
+              </div>
+          </div>
+        )}
       </Header>
 
       <InvoiceStructureModal isOpen={structureOpen} onClose={() => setStructureOpen(false)} />
@@ -993,17 +1008,6 @@ export default function Invoices() {
             been deleted, or it may be outside the region you can see.
           </div>
         )}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-5 md:mb-6">
-          <StatCard title="Total invoiced" value={`PKR ${summary.invoiced.toLocaleString()}`} icon={ReceiptText} tone="brand" />
-          <StatCard title="Total received" value={`PKR ${summary.received.toLocaleString()}`} icon={CheckCircle2} tone="success" />
-          <StatCard title="Outstanding" value={`PKR ${summary.outstanding.toLocaleString()}`} icon={Clock} tone="warning" />
-          <StatCard
-            title="Collected"
-            value={summary.invoiced > 0 ? `${Math.round((summary.received / summary.invoiced) * 100)}%` : "—"}
-            icon={Percent}
-            tone="info"
-          />
-        </div>
 
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="p-4 border-b border-border flex flex-wrap items-center gap-3">

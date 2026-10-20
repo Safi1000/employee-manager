@@ -24,6 +24,7 @@ import Badge from "../../components/Badge";
 import Tabs from "../../components/Tabs";
 import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { supabase, friendlyDbError } from "../../lib/supabase";
+import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
 import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
@@ -76,15 +77,16 @@ export default function KitIssuance() {
   });
   const [actForm, setActForm] = useState({ condition: "good", to_employee: "", quantity: "", notes: "" });
 
+  const { regionId } = useRegion();
   const load = useCallback(async () => {
     setLoading(true);
     const [h, t, s, e, c, si] = await Promise.all([
-      supabase.from("kit_holdings").select("*"),
+      withRegion(supabase.from("kit_holdings").select("*"), regionId),
       supabase.from("inventory_item_types").select("id, name").eq("issuable", true).order("name"),
-      supabase.from("inventory_stock").select("*"),
-      supabase.from("employees").select("id, full_name, guard_code")
-        .eq("lifecycle_state", "active").order("full_name"),
-      supabase.from("clients").select("id, name").order("name"),
+      withRegionOrUnassigned(supabase.from("inventory_stock").select("*"), regionId),
+      withRegion(supabase.from("employees").select("id, full_name, guard_code")
+        .eq("lifecycle_state", "active"), regionId).order("full_name"),
+      withRegionOrUnassigned(supabase.from("clients").select("id, name"), regionId).order("name"),
       supabase.from("sites").select("id, name, client_id").order("name"),
     ]);
     if (h.error) setErr(h.error.message);
@@ -95,7 +97,7 @@ export default function KitIssuance() {
     setClients((c.data ?? []) as Named[]);
     setSites((si.data ?? []) as any[]);
     setLoading(false);
-  }, []);
+  }, [regionId]);
   useEffect(() => { load(); }, [load]);
 
   const typeName = useMemo(() => new Map(types.map((t) => [t.id, t.name])), [types]);

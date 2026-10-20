@@ -7,6 +7,7 @@ import MobileCardList from "../../components/MobileCardList";
 import { formatDate } from "../../lib/date";
 import { supabase } from "../../lib/supabase";
 import { usePageState } from "../../lib/pageState";
+import { useRegion, withRegionOrUnassigned } from "../../lib/region";
 
 // This page reads compliance_upcoming and nothing else.
 //
@@ -102,6 +103,7 @@ const colourFor = (days: number): { dot: string; row: string; text: string; labe
 export default function Licences() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { regionId } = useRegion();
   const [items, setItems] = useState<ComplianceRow[]>([]);
   const [kindFilter, setKindFilter] = usePageState<"all" | RowKind>("Licences.kindFilter", "all");
   const [bandFilter, setBandFilter] = usePageState<"all" | "expired" | "30" | "90" | "future">("Licences.bandFilter", "all");
@@ -111,10 +113,12 @@ export default function Licences() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("compliance_upcoming")
-      .select("kind, ref_id, label, sublabel, due_date, notice_days, days_remaining")
-      .order("days_remaining");
+    const { data, error: err } = await withRegionOrUnassigned(
+      supabase
+        .from("compliance_upcoming")
+        .select("kind, ref_id, label, sublabel, due_date, notice_days, days_remaining"),
+      regionId,
+    ).order("days_remaining");
     if (err) setError(err.message);
     setItems((data ?? []) as ComplianceRow[]);
     setLoading(false);
@@ -122,7 +126,8 @@ export default function Licences() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const rows = useMemo(
     () =>
