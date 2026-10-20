@@ -626,6 +626,23 @@ export default function EmployeeAssignments() {
     return byClient;
   }, [contracts, contractLines, addendums]);
 
+  // The reconciliation as the rows read it: v_client_strength_reconciliation's
+  // "contracted" undercounts (lines without a site or a billed_qty add
+  // nothing), so committed heads are recomputed from the contract lines —
+  // see reconByClient below. ONE corrected copy, so the band, the totals and
+  // the group rows can never disagree (2026-10-20: the totals and the band
+  // were reading the raw view and reported 54 contracted against 382 enrolled).
+  const reconFixed = useMemo(
+    () =>
+      recon.map((r) => {
+        const committed = committedPersonnelByClient.get(r.client_id) ?? 0;
+        return committed === 0
+          ? r
+          : { ...r, contracted_billed_qty: committed, required_on_ground: r.required_on_ground || committed, variance: committed - r.enrolled_active };
+      }),
+    [recon, committedPersonnelByClient],
+  );
+
   // Committed personnel headcount per SITE — the "required" side of each site
   // row's assigned/required badge. Mirrors committedPersonnelByClient but scoped
   // to the lines that name the site (a line with no site_id is contract-wide and
@@ -693,21 +710,7 @@ export default function EmployeeAssignments() {
     // read 70 enrolled against 0 contracted and a variance of -70. Recompute
     // committed from the contract lines themselves (personnel only, addendums
     // applied), which is the same arithmetic the Contracts page uses.
-    const reconByClient = new Map(
-      recon.map((r) => {
-        const committed = committedPersonnelByClient.get(r.client_id) ?? 0;
-        if (committed === 0) return [r.client_id, r] as const;
-        return [
-          r.client_id,
-          {
-            ...r,
-            contracted_billed_qty: committed,
-            required_on_ground: r.required_on_ground || committed,
-            variance: committed - r.enrolled_active,
-          },
-        ] as const;
-      }),
-    );
+    const reconByClient = new Map(reconFixed.map((r) => [r.client_id, r] as const));
     const sitesByClient = new Map<string, { id: string; name: string }[]>();
     for (const st of sites) {
       const arr = sitesByClient.get(st.client_id) ?? [];
@@ -805,9 +808,9 @@ export default function EmployeeAssignments() {
     // Fired view: only the cards that actually hold someone who left.
     if (showFired) visibleGroups = visibleGroups.filter((g) => g.rows.length > 0);
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
-    if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
+    if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0 && g.recon.contracted_billed_qty > 0);
     return visibleGroups;
-  }, [employees, clients, sites, branches, siteByGuard, lastSiteByGuard, showFired, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
+  }, [employees, clients, sites, branches, siteByGuard, lastSiteByGuard, showFired, search, reconFixed, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -828,19 +831,20 @@ export default function EmployeeAssignments() {
   // Company-wide strength totals — the old Deployment page's stat row.
   const totals = useMemo(
     () =>
-      recon
+      reconFixed
         .filter((r) => showServicesClients || !servicesOnlyClientIds.has(r.client_id))
         .reduce(
         (acc, r) => {
           acc.contracted += r.contracted_billed_qty;
           acc.enrolled += r.enrolled_active;
           acc.sites += r.site_count;
-          if (r.variance !== 0) acc.mismatched += 1;
+          // A mismatch needs something to mismatch against (see the band).
+          if (r.variance !== 0 && r.contracted_billed_qty > 0) acc.mismatched += 1;
           return acc;
         },
         { contracted: 0, enrolled: 0, sites: 0, mismatched: 0 },
       ),
-    [recon, servicesOnlyClientIds, showServicesClients],
+    [reconFixed, servicesOnlyClientIds, showServicesClients],
   );
 
   // Genuinely unplaced people only. Office staff and relievers already sit in
@@ -1186,24 +1190,32 @@ export default function EmployeeAssignments() {
           // what is contracted — then the money and the half-finished postings.
           // Every figure is read from the reconciliation rows and the roster
           // this page already loads.
-          const shownRecon = recon.filter((r) => showServicesClients || !servicesOnlyClientIds.has(r.client_id));
-          const under = shownRecon.reduce((n, r) => n + Math.max(0, r.variance), 0);
-          const over = shownRecon.reduce((n, r) => n + Math.max(0, -r.variance), 0);
+          const shownRecon = reconFixed.filter((r) => showServicesClients || !servicesOnlyClientIds.has(r.client_id));
+          // Only clients with a contracted (billed) quantity can be compared —
+          // the same rule the group rows follow: with nothing contracted every
+          // enrolled guard would read as "over-enrolled", which is noise the
+          // "No live contract" pill already explains.
+          const comparable = shownRecon.filter((r) => r.contracted_billed_qty > 0);
+          const enrolledComparable = comparable.reduce((n, r) => n + r.enrolled_active, 0);
+          const noContractQty = shownRecon.filter((r) => r.contracted_billed_qty <= 0 && r.enrolled_active > 0);
+          const under = comparable.reduce((n, r) => n + Math.max(0, r.variance), 0);
+          const over = comparable.reduce((n, r) => n + Math.max(0, -r.variance), 0);
           const live = employees.filter((e) => !isSeparatedState(e.lifecycle_state));
           const monthly = live.reduce((n, e) => n + Number(e.base_salary ?? 0) + Number(e.allowance ?? 0), 0);
           const noBase = live.filter(missingBase).length, noJoin = live.filter(missingJoin).length;
-          const ratio = totals.contracted ? totals.enrolled / totals.contracted : 0;
+          const ratio = totals.contracted ? enrolledComparable / totals.contracted : 0;
           const pctFilled = Math.min(1, ratio);
-          const gaps = shownRecon.filter((r) => r.variance !== 0).sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance)).slice(0, 10);
+          const gaps = comparable.filter((r) => r.variance !== 0).sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance)).slice(0, 10);
           const maxGap = Math.max(1, ...gaps.map((r) => Math.abs(r.variance)));
           const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
           return (
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap gap-2.5">
                 <div className="flex-[2_1_320px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
-                  <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Strength · enrolled against contracted</span><span className="text-xs text-muted-foreground">{totals.sites} sites{ratio > 1.05 ? " · more enrolled than contracts bill for" : ""}</span></div>
+                  <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Strength · enrolled against contracted</span><span className="text-xs text-muted-foreground">{comparable.length} clients with a contracted figure · {totals.sites} sites</span></div>
+                  {noContractQty.length > 0 && <span className="text-xs text-[#f6d79b]">{noContractQty.length} client{noContractQty.length === 1 ? "" : "s"} with {noContractQty.reduce((n, r) => n + r.enrolled_active, 0)} guards enrolled but no contracted quantity — left out of this comparison</span>}
                   <div className="flex items-center gap-3">
-                    <span className="font-display text-3xl font-extrabold tracking-tight whitespace-nowrap">{totals.enrolled}<span className="text-lg text-muted-foreground font-semibold"> / {totals.contracted}</span></span>
+                    <span className="font-display text-3xl font-extrabold tracking-tight whitespace-nowrap">{enrolledComparable}<span className="text-lg text-muted-foreground font-semibold"> / {totals.contracted}</span></span>
                     <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${ratio > 1.05 ? "bg-[#f6d79b]" : "bg-[#9ad1a3]"}`} style={{ width: `${pctFilled * 100}%` }} /></div>
                     <span className={`font-ledger text-sm font-semibold ${ratio > 1.05 ? "text-[#f6d79b]" : ""}`}>{Math.round(ratio * 100)}%</span>
                   </div>
