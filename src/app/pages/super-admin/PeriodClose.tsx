@@ -235,7 +235,41 @@ export default function PeriodClose() {
       <Header
         title="Period Close"
         subtitle="Lock a month so no edits can land in it. Re-opens require explicit confirmation."
-      />
+      >
+        {!loading && rows.length > 0 && (() => {
+          // Band (2026-10-20): every month as a tile — locked or open, and how
+          // much was posted into it — oldest on the left, so the close runway
+          // reads at a glance. Tapping a tile asks to close or reopen it.
+          const ordered = [...rows].sort((a, b) => a.period_month.localeCompare(b.period_month));
+          const closedN = ordered.filter((r) => r.closed_at).length;
+          const firstOpen = ordered.find((r) => !r.closed_at);
+          const max = Math.max(1, ...ordered.map((r) => r.total));
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Months locked</span><span className="font-ledger text-2xl font-semibold leading-none text-[#9ad1a3]">{closedN} / {ordered.length}</span><span className="text-xs text-muted-foreground">since the ledger began</span></div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Oldest open month</span><span className={`font-display text-2xl font-bold leading-none ${firstOpen ? "text-[#f6d79b]" : "text-[#9ad1a3]"}`}>{firstOpen ? firstOpen.label : "None"}</span><span className="text-xs text-muted-foreground">{firstOpen ? `${firstOpen.total} postings in it` : "every month is locked"}</span></div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 col-span-2 lg:col-span-1"><span className="lbl">Before you close</span><span className="text-sm leading-snug">Clear the red controls on the Accountant page's Checks, then lock the month here.</span></div>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                <span className="lbl">Close runway</span>
+                <div className="grid grid-flow-col auto-cols-[minmax(76px,1fr)] gap-1.5 overflow-x-auto pb-1">
+                  {ordered.map((r) => (
+                    <button key={r.period_month} type="button" disabled={!canManage}
+                      onClick={() => (r.closed_at ? askReopen(r) : askClose(r))}
+                      title={`${r.label}: ${r.closed_at ? "locked" : "open"} · ${r.total} postings`}
+                      className={`rounded-[10px] px-2 py-2 flex flex-col gap-1.5 text-left min-h-[64px] disabled:cursor-default ${r.closed_at ? "bg-[#3d4a2b] text-[#f3eee2]" : "bg-brand-500 text-[#241a06] hover:brightness-105"}`}>
+                      <span className="text-[11px] font-semibold leading-tight">{r.label.replace(/ (\d{4})$/, " ’$1").replace("’20", "’")}</span>
+                      <span className="h-1 rounded-full bg-black/15 overflow-hidden"><span className="block h-full bg-current opacity-70" style={{ width: `${(r.total / max) * 100}%` }} /></span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{r.closed_at ? "Locked" : "Open"}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
