@@ -4,7 +4,7 @@
 // button that hands the identical rows to exportAttendance. View without downloading.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTriangle, Lock } from "lucide-react";
+import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTriangle, Lock, Search } from "lucide-react";
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
@@ -102,6 +102,9 @@ export default function AttendanceSheetModal({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<AttendanceEmployeeRow[]>([]);
+  // Narrows the grid only. Verification, unconfirmed-day flags and the Excel
+  // download still read every row — a search must not hide what blocks Verify.
+  const [empSearch, setEmpSearch] = useState("");
   // Per-employee `${day}|${shift}` → P/A/L for every visible (confirmed/overridden)
   // mark, so each shift column renders independently and double duty shows in two.
   const [cells, setCells] = useState<Map<string, Map<string, string>>>(new Map());
@@ -348,6 +351,12 @@ export default function AttendanceSheetModal({
     return m;
   }, [rows, view, viewFirstIdx, viewLastIdx]);
 
+  const visibleRows = useMemo(() => {
+    const q = empSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => r.name.toLowerCase().includes(q) || r.empCode.toLowerCase().includes(q));
+  }, [rows, empSearch]);
+
   const shifts = useMemo(() => deriveAttendanceShifts(rows), [rows]);
   const S = shifts.length;
   const shiftIndex = useMemo(() => new Map(shifts.map((c, i) => [c, i])), [shifts]);
@@ -375,7 +384,8 @@ export default function AttendanceSheetModal({
     // Totals describe the ASSIGNED roster's strength (grand = P+A+L per day = the
     // bodies the client contracted). Relievers are cover on top of that, so they
     // are excluded here — counting them would double the head on a covered day.
-    const assigned = rows.filter((r) => !r.isReliever);
+    // Folded from the rows on screen, so a search narrows the footer with them.
+    const assigned = visibleRows.filter((r) => !r.isReliever);
     for (const row of assigned) {
       for (let i = 0; i < daysInMonth; i += 1) {
         const st = row.statusByDay[i] ?? "";
@@ -396,7 +406,7 @@ export default function AttendanceSheetModal({
       sumDD: assigned.reduce((s, r) => s + (viewCounts.get(r)?.dd ?? 0), 0),
       sumPD: assigned.reduce((s, r) => s + r.payDays, 0),
     };
-  }, [rows, daysInMonth, S, shiftIndex, viewCounts]);
+  }, [visibleRows, daysInMonth, S, shiftIndex, viewCounts]);
 
   const shiftMonth = (delta: number) => {
     const [y, m] = month.split("-").map(Number);
@@ -537,6 +547,23 @@ export default function AttendanceSheetModal({
             canHr={canHrVerify}
             onChanged={() => setReloadKey((k) => k + 1)}
           />
+          {!loading && rows.length > 0 && (
+            <div className="relative mt-2 sm:max-w-xs">
+              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
+              <input
+                type="text"
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                placeholder="Search employee by name or Emp #…"
+                className="w-full pl-8 pr-8 py-1.5 border border-border bg-card rounded-md text-sm text-foreground"
+              />
+              {empSearch && (
+                <button type="button" onClick={() => setEmpSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-accent" title="Clear search">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
           {!viewLocked && canHrVerify && !loading && rows.length > 0 && (
             <p className="mt-1.5 text-[11px] text-muted-foreground">
               {viewOutstanding.length === 0
@@ -588,7 +615,14 @@ export default function AttendanceSheetModal({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {visibleRows.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-card border border-border border-r-2 px-2 py-3 text-muted-foreground">
+                      No employee matches "{empSearch.trim()}".
+                    </td>
+                  </tr>
+                )}
+                {visibleRows.map((row) => (
                   <tr key={row.empCode + row.serial} className="hover:bg-accent/40">
                     <td style={leadCell(0)} className="sticky z-10 bg-card border border-border px-2 py-0.5 tabular-nums">{String(row.serial).padStart(2, "0")}</td>
                     <td style={leadCell(1)} className="sticky z-10 bg-card border border-border px-2 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
