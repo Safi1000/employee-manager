@@ -204,7 +204,32 @@ export default function TrialBalance() {
             }
           />
         }
-      />
+      >
+        {folded.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2.5">
+            <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+              <span className="lbl">{period ? monthLabel(period) : "All periods"} · debits against credits</span>
+              <span className={`font-display text-2xl font-bold leading-none ${balanced ? "text-[#9ad1a3]" : "text-[#f0a99a]"}`}>{balanced ? "Balanced" : `Off by ${Math.abs(totals.d - totals.c).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
+              <span className="font-ledger text-xs text-muted-foreground">Dr {totals.d.toLocaleString(undefined, { maximumFractionDigits: 0 })} · Cr {totals.c.toLocaleString(undefined, { maximumFractionDigits: 0 })}{isClosed ? " · period locked" : ""}</span>
+            </div>
+            <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
+              <span className="lbl">By account type · net</span>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-1">
+                {ACCOUNT_TYPE_ORDER.map((t) => {
+                  const list = byType.get(t) ?? [];
+                  const net = list.reduce((n, r) => n + r.debit - r.credit, 0);
+                  return (
+                    <div key={t} className="flex flex-col">
+                      <span className="text-xs text-muted-foreground">{ACCOUNT_TYPE_LABEL[t]} · {list.length}</span>
+                      <span className={`font-ledger text-sm font-semibold whitespace-nowrap ${net < 0 ? "text-[#f6d79b]" : ""}`}>{net < 0 ? "Cr " : "Dr "}{Math.abs(Math.round(net)).toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
