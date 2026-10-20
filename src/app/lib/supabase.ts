@@ -171,48 +171,37 @@ export const DEFAULT_INVOICE_SETTINGS: InvoiceStructureSettings = {
 };
 
 export const DASHBOARD_WIDGET_KEYS = [
-  "stat_employees",
-  "stat_attendance_today",
-  "stat_expenses_mtd",
-  "stat_payroll_mtd",
-  // Sprint 1-5 additions
-  "stat_active_contracts",
-  "stat_open_incidents",
-  "stat_licences_expiring",
-  "bank_overview",
-  "top_clients",
-  "attendance_trend",
-  "compliance_alerts",
-  // Sprint 1-5 additions
-  "expenses_pie",
-  "contracts_ending",
-  "incidents_recent",
-  "period_close_status",
+  "post_board",
+  "month_landing",
+  "payday",
+  "cash_month",
+  "client_map",
+  "receivables_ladder",
+  "region_cards",
+  "due_30_days",
+  "live_feed",
+  "attachments",
 ] as const;
-// Dropped with the Deployment Roster page: "stat_roster_gaps" and
-// "roster_overview". Both counted rows in roster_assignments, which nothing has
-// written since daily assignment moved to the supervisor — so they reported
-// every guard-day as a gap (2,982 of them) and "0% covered" on a fully staffed
-// company. A key left over in a company's dashboard_hidden_widgets is ignored,
-// so no cleanup is needed.
+// 2026-10-20: the command dashboard replaced the classic one and its three
+// alternate designs, so the keys name the new panels. The classic keys
+// (stat_employees, bank_overview, top_clients, attendance_trend, …) and the
+// roster keys dropped earlier ("stat_roster_gaps", "roster_overview") are
+// simply ignored if still present in a company's dashboard_hidden_widgets, so
+// no cleanup is needed — a company that hid a classic panel sees the new
+// dashboard in full until it hides panels again.
 export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number];
 
 export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
-  stat_employees: "Total Employees (stat card)",
-  stat_attendance_today: "Attendance Today (stat card)",
-  stat_expenses_mtd: "Expenses MTD (stat card)",
-  stat_payroll_mtd: "Payroll MTD (stat card)",
-  stat_active_contracts: "Active Contracts (stat card)",
-  stat_open_incidents: "Open Incidents (stat card)",
-  stat_licences_expiring: "Licences expiring <30d (stat card)",
-  bank_overview: "Bank Account Overview",
-  top_clients: "Top 10 Clients",
-  attendance_trend: "Attendance Trend (7 days)",
-  compliance_alerts: "Compliance Alerts",
-  expenses_pie: "Expenses by Category (pie chart)",
-  contracts_ending: "Contracts ending soon",
-  incidents_recent: "Recent incidents",
-  period_close_status: "Period close status",
+  post_board: "Post board — guards on post per client",
+  month_landing: "Where the month will land",
+  payday: "Next salary run — is it covered",
+  cash_month: "Cash this month (waterfall)",
+  client_map: "Client map — revenue against margin",
+  receivables_ladder: "Money owed to us, by age",
+  region_cards: "Region scorecards",
+  due_30_days: "Next 30 days — what is coming due",
+  live_feed: "Live activity",
+  attachments: "Saved files and links",
 };
 
 export const INVOICE_TEMPLATE_FIELDS = [

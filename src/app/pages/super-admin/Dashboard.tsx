@@ -1,55 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Users,
-  Calendar,
-  Receipt,
-  DollarSign,
-  Building2,
-  TrendingUp,
-  AlertCircle,
-  Loader2,
-  Trophy,
-  FileSignature,
-  Siren,
-  ShieldAlert,
-  Lock,
-  Unlock,
-  PieChart as PieIcon,
-} from "lucide-react";
-import { Link } from "react-router";
-import Header from "../../components/Header";
+import { Loader2 } from "lucide-react";
 import { formatDate } from "../../lib/date";
-import StatCard from "../../components/StatCard";
-import ActivityFeed, { type FeedItem } from "../../components/ActivityFeed";
-import DashboardAttachments from "../../components/DashboardAttachments";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
-import { CHART_TT, CHART_GRID, CHART_LEGEND, CHART_ANIM, CHART_COLORS } from "../../lib/chart";
+import { type FeedItem } from "../../components/ActivityFeed";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { supabase, fetchAllRows } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import {
   type AlertRow, type AttendancePoint, type BankRow, type ContractEndingRow, type DashData,
   type ExpensePieRow, type IncidentRow, type RecentPaymentRow, type TopClientRow,
-  compact, currency, deltaLabel, monthLabel,
+  compact,
 } from "./dashboard/shared";
-import DesignSwitcher, { type DesignId, readDesign, saveDesign } from "./dashboard/DesignSwitcher";
-import WatchtowerDesign from "./dashboard/WatchtowerDesign";
-import LedgerDesign from "./dashboard/LedgerDesign";
-import AuroraDesign from "./dashboard/AuroraDesign";
-
-const PIE_COLORS = CHART_COLORS;
+import CommandDesign from "./dashboard/CommandDesign";
+import { useCommandData } from "./dashboard/useCommandData";
 
 // compliance_upcoming rows -> the panel's shape. One mapper, used by both the
 // initial load and the realtime refresh, so the two cannot drift.
@@ -95,20 +57,6 @@ const daysAheadIso = (n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-const PRIORITY_COLOR: Record<string, string> = {
-  critical: "text-danger-700 bg-danger-50",
-  high: "text-warning-700 bg-warning-50",
-  medium: "text-brand-700 bg-brand-50",
-  low: "text-slate-600 bg-slate-100",
-};
-
-const SEVERITY_COLOR: Record<string, string> = {
-  critical: "bg-danger-600 text-[#fff] border-danger-700",
-  high: "bg-danger-50 text-danger-700 border-danger-200",
-  medium: "bg-warning-50 text-warning-700 border-warning-200",
-  low: "bg-slate-100 text-slate-700 border-slate-200",
-};
-
 export default function SuperAdminDashboard() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
@@ -138,8 +86,6 @@ export default function SuperAdminDashboard() {
     !can.payroll && !can.accounting && !can.reports && !can.contracts &&
     !can.roster && !can.incidents;
 
-  const [design, setDesignState] = useState<DesignId>(readDesign);
-  const setDesign = (id: DesignId) => { setDesignState(id); saveDesign(id); };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -637,8 +583,6 @@ export default function SuperAdminDashboard() {
   }, [refreshFeed]);
 
   const totalBankBalance = useMemo(() => banks.reduce((s, b) => s + b.balance, 0), [banks]);
-  const maxBank = useMemo(() => Math.max(1, ...banks.map((b) => b.balance)), [banks]);
-  const maxClient = useMemo(() => Math.max(1, ...topClients.map((c) => c.revenue)), [topClients]);
 
   const branchScopeNote = profile?.branch_id ? "Scoped to your branch." : null;
 
@@ -688,418 +632,35 @@ export default function SuperAdminDashboard() {
     return dated.sort((a, b) => b.at.localeCompare(a.at)).map((d) => d.item);
   }, [recentPayments, recentIncidents, alerts]);
 
-  const switcher = <DesignSwitcher value={design} onChange={setDesign} />;
+  // The command dashboard (2026-10-20) replaces the classic layout and the
+  // three alternate designs that sat behind a floating switcher: one home
+  // screen, read the same way by everyone.
+  const command = useCommandData(company?.id, regionId, can.reports);
+  const data: DashData = {
+    can, show, nothingToShow, branchScopeNote,
+    companyName: profile?.display_company_name || company?.name || "Bastion",
+    userName: profile?.full_name ?? "",
+    employeeCount, attendanceTodayPct, attendanceYesterdayPct,
+    expensesMtd, expensesPrev, payrollMtd, payrollPrev,
+    banks, totalBankBalance, topClients, attendanceTrend, alerts,
+    activeContracts, openIncidents, licencesExpiring, licencesOverdue,
+    expensesPie, contractsEnding, recentIncidents, recentPayments,
+    periodClosedThisMonth, lastClosedMonth, feedItems,
+  };
 
-  if (design !== "classic") {
-    if (loading) {
-      return (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading dashboard…
-          {switcher}
-        </div>
-      );
-    }
-    const data: DashData = {
-      can, show, nothingToShow, branchScopeNote,
-      companyName: company?.name ?? "Bastion",
-      userName: profile?.full_name ?? "",
-      employeeCount, attendanceTodayPct, attendanceYesterdayPct,
-      expensesMtd, expensesPrev, payrollMtd, payrollPrev,
-      banks, totalBankBalance, topClients, attendanceTrend, alerts,
-      activeContracts, openIncidents, licencesExpiring, licencesOverdue,
-      expensesPie, contractsEnding, recentIncidents, recentPayments,
-      periodClosedThisMonth, lastClosedMonth, feedItems,
-    };
+  if (loading) {
     return (
-      <>
-        {error && (
-          <div className="p-3 bg-danger-50 text-danger-700 border-b border-danger-200 text-sm">{error}</div>
-        )}
-        {design === "watchtower" && <WatchtowerDesign d={data} />}
-        {design === "ledger" && <LedgerDesign d={data} />}
-        {design === "aurora" && <AuroraDesign d={data} />}
-        {switcher}
-      </>
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading dashboard…
+      </div>
     );
   }
-
   return (
     <>
-      {switcher}
-      <Header
-        title="Dashboard"
-        subtitle={`Financial overview — ${new Date().toLocaleDateString(undefined, {
-          weekday: "long", day: "numeric", month: "long", year: "numeric",
-        })}`}
-      />
-
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-        {error && (
-          <div className="mb-4 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{error}</div>
-        )}
-
-        {branchScopeNote && (
-          <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-brand-50 text-brand-700 text-xs">
-            <Building2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-            {branchScopeNote}
-          </div>
-        )}
-
-        {nothingToShow && (
-          <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
-            <h3 className="text-base text-slate-900 mb-2">Nothing to show yet</h3>
-            <p className="text-sm text-slate-500">
-              You don&apos;t have any feature permissions yet. Ask a Super Admin to grant you access.
-            </p>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading dashboard…
-          </div>
-        ) : (
-          <>
-            {/* Primary stat cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
-              {can.employees && show("stat_employees") && (
-                <StatCard title="Total Employees" value={employeeCount} icon={Users} tone="brand" />
-              )}
-              {can.attendance && show("stat_attendance_today") && (
-                <StatCard
-                  title="Attendance Today"
-                  value={`${attendanceTodayPct}%`}
-                  icon={Calendar}
-                  tone="info"
-                  trend={attendanceTodayPct === 0 && attendanceYesterdayPct === 0 ? undefined : {
-                    value: `${attendanceTodayPct - attendanceYesterdayPct >= 0 ? "+" : ""}${attendanceTodayPct - attendanceYesterdayPct}% from yesterday`,
-                    positive: attendanceTodayPct - attendanceYesterdayPct >= 0,
-                  }}
-                />
-              )}
-              {can.expenses && show("stat_expenses_mtd") && (
-                <StatCard title={`Expenses · ${monthLabel(0)}`} value={compact(expensesMtd)} icon={Receipt} tone="danger" trend={deltaLabel(expensesMtd, expensesPrev)} />
-              )}
-              {can.payroll && show("stat_payroll_mtd") && (
-                <StatCard title={`Payroll · ${monthLabel(0)}`} value={compact(payrollMtd)} icon={DollarSign} tone="warning" trend={deltaLabel(payrollMtd, payrollPrev)} />
-              )}
-            </div>
-
-            {/* Sprint 1-5 stat cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-              {can.contracts && show("stat_active_contracts") && (
-                <StatCard title="Active Contracts" value={activeContracts} icon={FileSignature} tone="brand" />
-              )}
-              {can.incidents && show("stat_open_incidents") && (
-                <StatCard title="Open Incidents" value={openIncidents} icon={Siren} tone={openIncidents > 0 ? "danger" : "info"} />
-              )}
-              {can.compliance && show("stat_licences_expiring") && (
-                <StatCard
-                  title={licencesOverdue > 0 ? `Compliance due <30d (${licencesOverdue} overdue)` : "Compliance due <30d"}
-                  value={licencesExpiring}
-                  icon={ShieldAlert}
-                  tone={licencesOverdue > 0 ? "danger" : licencesExpiring > 0 ? "warning" : "info"}
-                />
-              )}
-            </div>
-
-            {/* Bank overview + Top clients */}
-            <div className={`grid grid-cols-1 ${can.accounting && show("bank_overview") && can.reports && show("top_clients") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-              {can.accounting && show("bank_overview") && (
-                <div className="bg-white rounded-lg border border-slate-200 p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-base text-slate-900">Bank Account Overview</h3>
-                    <Building2 className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
-                  </div>
-                  {banks.length === 0 ? (
-                    <p className="text-sm text-slate-500">No bank accounts yet.</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {banks.map((b) => {
-                        const color = PIE_COLORS[banks.indexOf(b) % PIE_COLORS.length];
-                        return (
-                          <div key={b.id} className="border-l-4 pl-4 py-2" style={{ borderColor: color }}>
-                            <div className="flex justify-between items-center mb-1">
-                              <p className="text-sm text-slate-700">{b.bank_name}</p>
-                              <p className="text-base" style={{ color }}>{currency(b.balance)}</p>
-                            </div>
-                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${(b.balance / maxBank) * 100}%`, backgroundColor: color }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
-                        <span className="text-sm text-slate-600">Total Bank Balance</span>
-                        <span className="text-lg text-slate-900">{currency(totalBankBalance)}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {can.reports && show("top_clients") && (
-                <div className="bg-white rounded-lg border border-slate-200 p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-base text-slate-900 flex items-center gap-2">
-                        <Trophy className="w-4 h-4 text-warning-500" strokeWidth={1.5} />
-                        Top 10 Clients · {monthLabel(0)}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">By payments received this month.</p>
-                    </div>
-                    <TrendingUp className="w-5 h-5 text-success-600" strokeWidth={1.5} />
-                  </div>
-                  {topClients.length === 0 ? (
-                    <p className="text-sm text-slate-500">No client payments received this month yet.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {topClients.map((c, idx) => (
-                        <div key={c.id} className="flex items-center gap-3">
-                          <span className="w-6 text-xs text-slate-400 text-right tabular-nums">{idx + 1}.</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2 mb-1">
-                              <span className="text-sm text-slate-800 truncate">{c.name}</span>
-                              <span className="text-xs text-slate-600 tabular-nums">{currency(c.revenue)}</span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full bg-gradient-to-r from-success-400 to-success-600" style={{ width: `${Math.max(2, (c.revenue / maxClient) * 100)}%` }} />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Live activity feed (landing-page style). Always rendered: hiding
-                it on an empty list is what made a quiet week look like a broken
-                dashboard, with nothing on screen to say which it was. */}
-            <div className="mb-6 md:mb-8">
-              <h3 className="text-base font-bold text-foreground mb-3">Live activity</h3>
-              {feedItems.length > 0 ? (
-                <ActivityFeed items={feedItems} />
-              ) : (
-                <div className="bg-white dark:bg-card border border-border rounded-lg p-6 text-center">
-                  <p className="text-sm text-muted-foreground">No recent activity.</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Payments received, incidents logged and upcoming compliance dates appear here.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Expenses pie chart */}
-            {can.expenses && show("expenses_pie") && (
-              <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 md:mb-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-base text-slate-900 flex items-center gap-2">
-                      <PieIcon className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
-                      Expenses by Category · {monthLabel(0)}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Where the money went this month.</p>
-                  </div>
-                </div>
-                {expensesPie.length === 0 ? (
-                  <p className="text-sm text-slate-500">No expenses recorded this month.</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                    <ResponsiveContainer width="100%" height={260}>
-                      <PieChart>
-                        <Pie {...CHART_ANIM} cornerRadius={5} stroke="var(--card)" strokeWidth={2} data={expensesPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={45} paddingAngle={2}>
-                          {expensesPie.map((_, i) => (
-                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip {...CHART_TT} formatter={(value: number) => currency(value)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="space-y-2">
-                      {expensesPie.slice(0, 10).map((row, i) => {
-                        const total = expensesPie.reduce((s, r) => s + r.value, 0);
-                        const pct = total > 0 ? Math.round((row.value / total) * 100) : 0;
-                        return (
-                          <div key={row.name} className="flex items-center gap-3 text-sm">
-                            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                            <span className="flex-1 truncate text-slate-700">{row.name}</span>
-                            <span className="text-xs text-slate-500 w-10 text-right tabular-nums">{pct}%</span>
-                            <span className="text-sm text-slate-900 w-24 text-right tabular-nums">{currency(row.value)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Attendance trend + Compliance alerts */}
-            <div className={`grid grid-cols-1 ${can.attendance && show("attendance_trend") && show("compliance_alerts") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-              {can.attendance && show("attendance_trend") && (
-                <div className="bg-white rounded-lg border border-slate-200 p-6">
-                  <h3 className="text-base mb-6 text-slate-900">Attendance Trend · Last 7 Days</h3>
-                  {attendanceTrend.every((p) => p.present + p.absent + p.leave === 0) ? (
-                    <p className="text-sm text-slate-500">No attendance recorded in the last 7 days.</p>
-                  ) : (
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={attendanceTrend}>
-                        <CartesianGrid {...CHART_GRID} />
-                        <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                        <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                        <Tooltip {...CHART_TT} />
-                        <Legend {...CHART_LEGEND} />
-                        <Line {...CHART_ANIM} type="monotone" dataKey="present" stroke="var(--color-success-500)" strokeWidth={2} dot={{ fill: "var(--color-success-500)" }} name="Present" />
-                        <Line {...CHART_ANIM} type="monotone" dataKey="absent" stroke="var(--color-danger-500)" strokeWidth={2} dot={{ fill: "var(--color-danger-500)" }} name="Absent" />
-                        <Line {...CHART_ANIM} type="monotone" dataKey="leave" stroke="var(--color-warning-500)" strokeWidth={2} dot={{ fill: "var(--color-warning-500)" }} name="Leave" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              )}
-
-              {show("compliance_alerts") && (
-                <div className="bg-white rounded-lg border border-slate-200">
-                  <div className="p-6 border-b border-slate-200">
-                    <h3 className="text-base text-slate-900">Compliance · Overdue and Next 60 Days</h3>
-                  </div>
-                  {alerts.length === 0 ? (
-                    <div className="p-6 text-sm text-slate-500">Nothing overdue or due in the next 60 days.</div>
-                  ) : (
-                    <div className="divide-y divide-slate-200">
-                      {alerts.map((a) => {
-                        // Not recomputed and NOT clamped at zero — the view
-                        // already answered this against the server's date.
-                        const daysLeft = a.days_remaining;
-                        const priorityClass = PRIORITY_COLOR[a.priority] ?? PRIORITY_COLOR.low;
-                        return (
-                          <div key={a.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                            <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${daysLeft < 0 ? "text-danger-600" : "text-warning-600"}`} strokeWidth={1.5} />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="text-sm text-slate-900 truncate">{a.title}</p>
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ${priorityClass}`}>{a.priority}</span>
-                              </div>
-                              <p className="text-xs text-slate-500">{a.category} · due {formatDate(a.due_date)}</p>
-                            </div>
-                            <span className={`text-xs tabular-nums ${daysLeft < 0 ? "text-danger-600" : "text-slate-400"}`}>
-                              {daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? "today" : `${daysLeft}d`}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Contracts ending + Recent incidents */}
-            <div className={`grid grid-cols-1 ${can.contracts && show("contracts_ending") && can.incidents && show("incidents_recent") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-              {can.contracts && show("contracts_ending") && (
-                <div className="bg-white rounded-lg border border-slate-200">
-                  <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="text-base text-slate-900 flex items-center gap-2">
-                      <FileSignature className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
-                      Contracts ending soon
-                    </h3>
-                    <Link to="/super-admin/contracts" className="text-xs text-brand-600 hover:text-brand-700">All contracts →</Link>
-                  </div>
-                  {contractsEnding.length === 0 ? (
-                    <div className="p-6 text-sm text-slate-500">No active contracts ending in the next 60 days.</div>
-                  ) : (
-                    <div className="divide-y divide-slate-200">
-                      {contractsEnding.map((c) => {
-                        const tone = c.days_left <= 7 ? "text-danger-700" : c.days_left <= 30 ? "text-warning-700" : "text-slate-700";
-                        return (
-                          <div key={c.id} className="p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-mono text-slate-500">{c.code}</span>
-                                <span className="text-sm text-slate-900 truncate">{c.client_name}</span>
-                              </div>
-                              <p className="text-xs text-slate-500">Ends {formatDate(c.end_date)}</p>
-                            </div>
-                            <span className={`text-sm tabular-nums ${tone}`}>{c.days_left}d</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {can.incidents && show("incidents_recent") && (
-                <div className="bg-white rounded-lg border border-slate-200">
-                  <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="text-base text-slate-900 flex items-center gap-2">
-                      <Siren className="w-4 h-4 text-danger-600" strokeWidth={1.5} />
-                      Recent incidents · last 30 days
-                    </h3>
-                    <Link to="/super-admin/incidents" className="text-xs text-brand-600 hover:text-brand-700">All incidents →</Link>
-                  </div>
-                  {recentIncidents.length === 0 ? (
-                    <div className="p-6 text-sm text-slate-500">No incidents in the last 30 days.</div>
-                  ) : (
-                    <div className="divide-y divide-slate-200">
-                      {recentIncidents.map((i) => (
-                        <div key={i.id} className="p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors">
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] uppercase border ${SEVERITY_COLOR[i.severity] ?? SEVERITY_COLOR.low}`}>
-                            {i.severity}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-mono text-slate-500">{i.code}</span>
-                              <span className="text-sm text-slate-700 capitalize">{i.category.replace(/_/g, " ")}</span>
-                            </div>
-                            <p className="text-xs text-slate-500">{new Date(i.occurred_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</p>
-                          </div>
-                          <span className="text-xs text-slate-400 capitalize">{i.status.replace(/_/g, " ")}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* The "Deployment roster · next 7 days" panel stood here. It read
-                roster_assignments, which nothing has written since the roster
-                page was retired, so it announced 2,982 gaps and 0% coverage on
-                a company with 426 guards on the ground. Removed with its stat
-                card rather than left to contradict the Attendance board. */}
-
-            {/* Period close status */}
-            {can.periodClose && show("period_close_status") && (
-              <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 md:mb-8">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {periodClosedThisMonth ? (
-                      <Lock className="w-5 h-5 text-success-600" />
-                    ) : (
-                      <Unlock className="w-5 h-5 text-warning-600" />
-                    )}
-                    <div>
-                      <h3 className="text-base text-slate-900">Period Close Status</h3>
-                      <p className="text-xs text-slate-500">
-                        {periodClosedThisMonth
-                          ? `${monthLabel(0)} is closed — writes to this month are blocked.`
-                          : `${monthLabel(0)} is open. ${lastClosedMonth ? `Last closed: ${lastClosedMonth.slice(0, 7)}.` : "No months closed yet."}`}
-                      </p>
-                    </div>
-                  </div>
-                  <Link to="/super-admin/period-close" className="text-xs text-brand-600 hover:text-brand-700">Manage →</Link>
-                </div>
-              </div>
-            )}
-
-            {/* Company-wide saved files, images and links (§ dashboard scratch board). */}
-            <DashboardAttachments />
-          </>
-        )}
-      </div>
+      {error && (
+        <div role="alert" className="mx-3 md:mx-8 mt-3 p-3 rounded-xl bg-danger-50 text-danger-700 dark:text-danger-500 border border-danger-200 text-sm">{error}</div>
+      )}
+      <CommandDesign d={data} c={command} />
     </>
   );
 }

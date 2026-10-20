@@ -45,7 +45,7 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 bg-[#191a10]/55 backdrop-blur-[2px]" onClick={onClose} />
       {/* Three regions in a bounded flex column: header (fixed), body (the only
           scroller), footer (fixed). min-h-0 lets the body actually shrink and
           scroll instead of pushing the footer off-screen. */}
@@ -55,20 +55,21 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
           and its Save button, off the bottom of the screen. */}
       <div
         style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
-        className={`relative bg-white rounded-lg shadow-lg ${sizeStyles[size]} w-full mx-3 md:mx-4 max-h-[90dvh] flex flex-col`}
+        className={`relative bg-card border border-border rounded-2xl md:rounded-[20px] shadow-[0_24px_60px_rgba(25,26,16,0.28)] ${sizeStyles[size]} w-full mx-3 md:mx-4 max-h-[90dvh] flex flex-col`}
       >
-        <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 flex-shrink-0">
-          <h3 className="text-base md:text-lg text-slate-900 truncate pr-2">{title}</h3>
+        <div className="flex items-center justify-between gap-3 px-4 md:px-6 py-4 md:py-5 border-b border-border flex-shrink-0">
+          <h3 className="font-display text-lg md:text-xl font-bold tracking-tight text-foreground truncate pr-2">{title}</h3>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            aria-label="Close"
+            className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
           >
-            <X className="w-5 h-5" strokeWidth={1.5} />
+            <X className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
         <div className="p-4 md:p-6 overflow-y-auto flex-1 min-h-0">
           {error && (
-            <div className="mb-4 flex items-start gap-2 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-danger-200 bg-danger-50 px-3 py-2.5 text-sm text-danger-700 dark:text-danger-500">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
               <span className="flex-1 break-words">{error}</span>
               {onDismissError && (
@@ -85,7 +86,7 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
           {children}
         </div>
         {footer && (
-          <div className="px-4 md:px-6 py-3 border-t border-slate-200 flex-shrink-0 bg-white rounded-b-lg">
+          <div className="px-4 md:px-6 py-3.5 border-t border-border flex-shrink-0 bg-muted/40 rounded-b-2xl md:rounded-b-[20px]">
             {footer}
           </div>
         )}

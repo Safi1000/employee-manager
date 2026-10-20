@@ -15,7 +15,9 @@ import ThemeToggle from "./ThemeToggle";
  */
 export default function TopBar({ children }: { children?: ReactNode }) {
   return (
-    <div className="flex-shrink-0 border-b border-border bg-card px-2 md:px-8 py-1.5 flex items-center gap-2 md:gap-3 min-h-12">
+    // Same paper as the page, no rule: the band below is the page's frame, so
+    // the bar reads as part of the canvas rather than a second header.
+    <div className="flex-shrink-0 bg-background px-2 md:px-8 pt-1.5 md:pt-3 flex items-center gap-2 md:gap-3 min-h-12">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent("sidebar:open"))}

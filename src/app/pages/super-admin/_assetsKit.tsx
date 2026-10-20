@@ -19,7 +19,7 @@ export const money = (n: unknown) => Number(n ?? 0).toLocaleString();
 
 /** Page body: the scroller under each tab's sticky Header. */
 export function PageBody({ children }: { children: ReactNode }) {
-  return <div className="flex-1 overflow-y-auto px-3 md:px-8 py-4 md:py-6 space-y-5">{children}</div>;
+  return <div className="flex-1 overflow-y-auto px-3 md:px-8 py-4 md:py-5 space-y-5">{children}</div>;
 }
 
 /** A titled card section: icon chip, heading, one-line description, actions. */
@@ -43,22 +43,22 @@ export function Panel({
     info: "bg-info-50 border-info-200 text-info-700 dark:text-info-500",
   };
   return (
-    <section className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 md:px-5 py-3.5 border-b border-border">
+    <section className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 md:px-6 py-4 border-b border-border">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {Icon && (
-            <div className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${chip[tone]}`}>
-              <Icon className="w-4 h-4" strokeWidth={1.75} />
+            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${chip[tone]}`}>
+              <Icon className="w-4 h-4" strokeWidth={2} />
             </div>
           )}
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-            {description && <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>}
+            <h3 className="font-display text-base md:text-[17px] font-bold tracking-tight text-foreground">{title}</h3>
+            {description && <p className="text-xs md:text-[13px] text-muted-foreground mt-0.5 leading-relaxed">{description}</p>}
           </div>
         </div>
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
       </div>
-      {children != null && <div className={flush ? "" : "p-4 md:p-5"}>{children}</div>}
+      {children != null && <div className={flush ? "" : "p-4 md:p-6"}>{children}</div>}
     </section>
   );
 }

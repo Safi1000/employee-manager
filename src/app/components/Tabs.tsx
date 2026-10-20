@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
-// Canonical tab control for the whole app — a segmented amber-pill group matching
-// the flagship Employees All/Active/Fired switch. Use for primary section nav so
-// every page's tabs look identical (replaces the old ad-hoc border-b underline
-// bars). Fully theme-token based, so it follows light/dark automatically.
+// Canonical tab control for the whole app — a segmented track: the active tab
+// is a raised card on a recessed strip. Use for primary section nav so every
+// page's tabs look identical. Fully token based, so it follows light/dark and
+// renders correctly inside the dark page band (.on-dark) too.
 
 export type TabItem<T extends string> = {
   value: T;
@@ -24,9 +24,9 @@ export default function Tabs<T extends string>({
   size?: "sm" | "md";
   className?: string;
 }) {
-  const pad = size === "sm" ? "px-2.5 py-1" : "px-3 py-1.5";
+  const pad = size === "sm" ? "px-2.5 py-1 text-xs min-h-8" : "px-3.5 py-1.5 text-sm min-h-9";
   return (
-    <div className={`inline-flex flex-wrap items-center gap-1.5 ${className ?? ""}`} role="tablist">
+    <div className={`inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-muted border border-border/60 max-w-full ${className ?? ""}`} role="tablist">
       {items.map((it) => {
         const active = it.value === value;
         return (
@@ -36,17 +36,17 @@ export default function Tabs<T extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(it.value)}
-            className={`inline-flex items-center gap-1.5 rounded-md border text-sm transition-colors ${pad} ${
+            className={`inline-flex items-center gap-1.5 rounded-lg transition-all ${pad} ${
               active
-                ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
-                : "border-border text-muted-foreground hover:bg-accent"
+                ? "bg-card text-foreground font-semibold shadow-[0_1px_3px_rgba(40,30,10,0.14)]"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {it.label}
             {it.count != null && (
               <span
-                className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full ${
-                  active ? "bg-brand-500 text-[#241a06]" : "bg-secondary text-muted-foreground"
+                className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold rounded-full ${
+                  active ? "bg-brand-500 text-[#241a06]" : "bg-background text-muted-foreground"
                 }`}
               >
                 {it.count}

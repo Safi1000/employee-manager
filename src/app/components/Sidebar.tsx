@@ -31,7 +31,7 @@ export type SidebarItem = SidebarLink | SidebarGroup;
 /** Bastion shield mark — amber, matches the landing brand. */
 function BrandMark() {
   return (
-    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-brand-600 dark:text-brand-500">
+    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-500 text-[#241a06]">
       <svg viewBox="0 0 32 32" fill="none" className="h-5 w-5">
         <path d="M16 2.5 4.5 7v8.5c0 6.6 4.7 10.5 11.5 13.3C22.8 25.9 27.5 22 27.5 15.5V7z" stroke="currentColor" strokeWidth="1.8" />
         <path d="M13 15.5a3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3M19 16.5a3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -166,7 +166,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
         className={({ isActive }) =>
           `flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-colors ${
             isActive
-              ? "bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium border-l-2 border-brand-500"
+              ? "bg-sidebar-accent text-foreground font-semibold shadow-[inset_3px_0_0_var(--color-brand-500)]"
               : "text-muted-foreground hover:bg-accent hover:text-foreground"
           }`
         }
@@ -185,7 +185,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
   const initials = (profile?.full_name || profile?.email || "?").trim().slice(0, 1).toUpperCase();
   const footer = (
-    <div className="p-4 border-t border-slate-200 space-y-2">
+    <div className="p-4 border-t border-sidebar-border space-y-1">
       {profile && (
         <button
           onClick={() => setProfileModalOpen(true)}
@@ -242,7 +242,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
           className={({ isActive }) =>
             `w-11 h-10 rounded-lg flex items-center justify-center transition-colors ${
               isActive
-                ? "bg-brand-500/15 text-brand-700 dark:text-brand-500"
+                ? "bg-sidebar-accent text-brand-500 shadow-[inset_3px_0_0_var(--color-brand-500)]"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground"
             }`
           }
@@ -293,7 +293,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
       {/* Mobile drawer */}
       <aside
         style={{ paddingTop: "var(--safe-top, 0px)", paddingBottom: "var(--safe-bottom, 0px)" }}
-        className={`md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-transform duration-200 ${
+        className={`on-dark md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-transform duration-200 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -316,7 +316,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className={`hidden md:flex ${collapsed ? "w-16" : "w-64"} bg-sidebar border-r border-sidebar-border flex-col transition-[width] duration-200 ease-out`}>
+      <aside className={`on-dark hidden md:flex ${collapsed ? "w-16" : "w-64"} bg-sidebar border-r border-sidebar-border flex-col transition-[width] duration-200 ease-out`}>
         <div className={`h-16 border-b border-sidebar-border flex items-center ${collapsed ? "justify-center" : "px-4 gap-2.5"}`}>
           <BrandMark />
           {!collapsed && (
@@ -383,7 +383,7 @@ function SidebarSection({
       <button
         type="button"
         onClick={onToggle}
-        className={`w-full flex items-center gap-2 px-4 py-2 rounded-md text-xs uppercase tracking-wider transition-colors ${
+        className={`w-full flex items-center gap-2 px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-[0.09em] transition-colors ${
           isAnyChildActive
             ? "text-slate-900 bg-slate-100"
             : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
