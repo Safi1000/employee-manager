@@ -596,7 +596,24 @@ export default function Settings() {
       <Header
         title="Settings"
         subtitle="Branches, regions and dashboard widgets"
-      />
+      >
+        {/* Section navigator (2026-10-20): a long page of unrelated settings
+            reads as a list of places to go, not a scroll to search. */}
+        <nav aria-label="Settings sections" className="flex flex-wrap gap-2">
+          {[
+            { id: "set-company", label: "Company profile", show: true },
+            { id: "set-appearance", label: "Appearance", show: canManageNotifications },
+            { id: "set-branches", label: `Regions & branches · ${branches.length}`, show: true },
+            { id: "set-dashboard", label: "Dashboard panels", show: true },
+            { id: "set-notifications", label: "Notifications", show: canManageNotifications },
+          ].filter((x) => x.show).map((x) => (
+            <button key={x.id} type="button" onClick={() => document.getElementById(x.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              className="px-3.5 py-2 rounded-xl border border-border bg-card text-sm text-foreground hover:border-brand-500/70 min-h-10">
+              {x.label}
+            </button>
+          ))}
+        </nav>
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
@@ -609,16 +626,16 @@ export default function Settings() {
           </div>
         )}
 
-        <div className="mb-6">
+        <div id="set-company" className="mb-6 scroll-mt-40">
           <CompanyProfileSection />
         </div>
 
         {canManageNotifications && (
-          <div className="bg-card rounded-2xl border border-border mb-6">
+          <div id="set-appearance" className="bg-card rounded-2xl border border-border mb-6 scroll-mt-40">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-                <h2 className="text-base text-slate-900">Appearance</h2>
+                <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Appearance</h2>
               </div>
               {themeSavedAt && (
                 <span className="text-xs text-success-600">Saved at {themeSavedAt}</span>
@@ -678,15 +695,15 @@ export default function Settings() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-6 mb-6">
+        <div id="set-branches" className="grid grid-cols-1 gap-6 mb-6 scroll-mt-40">
           {renderBranches()}
         </div>
 
-        <div className="bg-card rounded-2xl border border-border mt-6">
+        <div id="set-dashboard" className="bg-card rounded-2xl border border-border mt-6 scroll-mt-40">
           <div className="p-6 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <LayoutDashboard className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-              <h2 className="text-base text-slate-900">Dashboard Widgets</h2>
+              <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Dashboard Widgets</h2>
             </div>
             <div className="flex items-center gap-3">
               {dashboardSavedAt && (
@@ -730,11 +747,11 @@ export default function Settings() {
         </div>
 
         {canManageNotifications && (
-          <div className="bg-card rounded-2xl border border-border mt-6">
+          <div id="set-notifications" className="bg-card rounded-2xl border border-border mt-6 scroll-mt-40">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-                <h2 className="text-base text-slate-900">Notifications</h2>
+                <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Notifications</h2>
               </div>
               <div className="flex items-center gap-3">
                 {notificationSavedAt && (
@@ -990,7 +1007,7 @@ function CompanyProfileSection() {
       <div className="p-6 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Building2 className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-          <h2 className="text-base text-slate-900">Company Profile</h2>
+          <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Company Profile</h2>
         </div>
         <div className="flex items-center gap-3">
           {savedAt && <span className="text-xs text-success-600">Saved at {savedAt}</span>}
