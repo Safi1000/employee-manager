@@ -419,7 +419,37 @@ export default function JournalView() {
             />
           </div>
         }
-      />
+      >
+        {lines.length > 0 && (() => {
+          // Band (2026-10-20): what the loaded journal holds — entries, the
+          // total moved, and where the postings came from. Manual entries and
+          // reversals are called out because they are the ones people check.
+          const entries = new Set(lines.map((l) => l.journal_entry_id)).size;
+          const moved = lines.reduce((n, l) => n + Number(l.debit ?? 0), 0);
+          const manual = new Set(lines.filter((l) => l.manual).map((l) => l.journal_entry_id)).size;
+          const reversals = new Set(lines.filter((l) => l.is_reversal).map((l) => l.journal_entry_id)).size;
+          const bySource = new Map<string, number>();
+          for (const l of lines) bySource.set(l.source_table ?? "manual", (bySource.get(l.source_table ?? "manual") ?? 0) + Number(l.debit ?? 0));
+          const top = [...bySource.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,2fr)] gap-2.5">
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Entries</span><span className="font-ledger text-2xl font-semibold leading-none">{entries.toLocaleString()}</span><span className="text-xs text-muted-foreground">{lines.length.toLocaleString()} lines</span></div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">Moved</span><span className="font-ledger text-2xl font-semibold leading-none whitespace-nowrap"><span className="cur">PKR</span>{Math.round(moved).toLocaleString()}</span><span className="text-xs text-muted-foreground">total debits</span></div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">By hand</span><span className={`font-ledger text-2xl font-semibold leading-none ${manual ? "text-[#f6d79b]" : ""}`}>{manual}</span><span className="text-xs text-muted-foreground">manual entries · {reversals} reversals</span></div>
+              <div className="col-span-2 lg:col-span-1 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
+                <span className="lbl">Where postings came from</span>
+                {top.map(([src, v]) => (
+                  <div key={src} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_auto] gap-2 items-center text-xs">
+                    <span className="truncate capitalize">{src.replace(/_/g, " ")}</span>
+                    <span className="h-1.5 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-brand-500" style={{ width: `${(v / Math.max(1, moved)) * 100}%` }} /></span>
+                    <span className="font-ledger">{Math.round(v).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
