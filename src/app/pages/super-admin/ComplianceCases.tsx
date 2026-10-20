@@ -5,6 +5,7 @@ import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { useRegion, withRegionOrUnassigned } from "../../lib/region";
 import { usePageState } from "../../lib/pageState";
 
 // §19 Compliance Process Engine: every licence/renewal/NOC as a staged case
@@ -20,6 +21,7 @@ const CASE_TYPES = ["licence", "renewal", "noc", "registration", "other"] as con
 const FILING_TYPES = ["eobi", "social_security", "withholding_tax", "income_tax", "other"] as const;
 
 export default function ComplianceCases() {
+  const { regionId } = useRegion();
   const { company } = useAuth();
   const companyId = company?.id ?? "";
   const [tab, setTab] = usePageState<Tab>("ComplianceCases.tab", "cases");
@@ -37,14 +39,14 @@ export default function ComplianceCases() {
   const load = useCallback(async () => {
     if (!companyId) return;
     const [cs, rg, fl] = await Promise.all([
-      supabase.from("compliance_cases").select("*").eq("company_id", companyId).order("target_date", { ascending: true }),
+      withRegionOrUnassigned(supabase.from("compliance_cases").select("*").eq("company_id", companyId), regionId).order("target_date", { ascending: true }),
       supabase.from("compliance_jurisdiction_register").select("*").eq("company_id", companyId),
-      supabase.from("statutory_filings").select("*").eq("company_id", companyId).order("due_date", { ascending: false }),
+      withRegionOrUnassigned(supabase.from("statutory_filings").select("*").eq("company_id", companyId), regionId).order("due_date", { ascending: false }),
     ]);
     setCases(cs.data ?? []);
     setRegister(rg.data ?? []);
     setFilings(fl.data ?? []);
-  }, [companyId]);
+  }, [companyId, regionId]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -10,6 +10,7 @@ import {
   LIFECYCLE_STATE_LABEL,
   type Branch,
 } from "../../lib/supabase";
+import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region";
 import { usePageState } from "../../lib/pageState";
 
 // Part IV — Performance & Rewards (§14 KPI, §15 Appraisal, §16 Bonus Pools) plus
@@ -38,6 +39,7 @@ type EmpLite = {
 };
 
 export default function Performance() {
+  const { regionId } = useRegion();
   const { company, profile } = useAuth();
   // Approving pools / appraisals / bonuses requires performance.approve
   // (super_admin + SSA implicit). NOTE: backend enforcement for these RPCs/tables
@@ -60,13 +62,13 @@ export default function Performance() {
 
   const load = useCallback(async () => {
     const [emp, br, kpi, app, pl, al, gb] = await Promise.all([
-      supabase.from("employees").select("id, full_name, category, kpi_seat, performance_enrolled, lifecycle_state").order("full_name"),
+      withRegion(supabase.from("employees").select("id, full_name, category, kpi_seat, performance_enrolled, lifecycle_state"), regionId).order("full_name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       supabase.from("kpi_dashboard").select("*"),
       supabase.from("appraisals").select("*").order("period_year", { ascending: false }),
-      supabase.from("bonus_pools").select("*").order("period_year", { ascending: false }),
+      withRegionOrUnassigned(supabase.from("bonus_pools").select("*"), regionId).order("period_year", { ascending: false }),
       supabase.from("bonus_pool_allocations").select("*"),
-      supabase.from("guard_bonuses").select("*").order("created_at", { ascending: false }),
+      withRegion(supabase.from("guard_bonuses").select("*"), regionId).order("created_at", { ascending: false }),
     ]);
     setEmployees((emp.data ?? []) as EmpLite[]);
     setBranches((br.data ?? []) as Branch[]);
@@ -75,7 +77,7 @@ export default function Performance() {
     setPools(pl.data ?? []);
     setAllocations(al.data ?? []);
     setGuardBonuses(gb.data ?? []);
-  }, []);
+  }, [regionId]);
 
   useEffect(() => {
     load();

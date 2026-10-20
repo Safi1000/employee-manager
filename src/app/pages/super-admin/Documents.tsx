@@ -12,6 +12,7 @@ import {
   type Employee,
   type EmployeeDocument,
 } from "../../lib/supabase";
+import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { saveBlob } from "../../lib/saveFile";
@@ -41,6 +42,7 @@ const formatDate = (iso: string | null) => {
 };
 
 export default function Documents() {
+  const { regionId } = useRegion();
   const { profile, company } = useAuth();
   // Upload / delete documents — gated on documents.edit (super_admin + SSA
   // implicit). Backend RLS (0312) enforces it on employee_documents.
@@ -68,11 +70,13 @@ export default function Documents() {
     setLoading(true);
     setError(null);
     const [cliRes, empRes, docRes] = await Promise.all([
-      supabase.from("clients").select("*").order("name"),
-      supabase
-        .from("employees")
-        .select("*, location:location_id(name), client:client_id(name)")
-        .order("full_name"),
+      withRegionOrUnassigned(supabase.from("clients").select("*"), regionId).order("name"),
+      withRegion(
+        supabase
+          .from("employees")
+          .select("*, location:location_id(name), client:client_id(name)"),
+        regionId,
+      ).order("full_name"),
       supabase.from("employee_documents").select("employee_id, uploaded_at"),
     ]);
 
@@ -108,7 +112,8 @@ export default function Documents() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
