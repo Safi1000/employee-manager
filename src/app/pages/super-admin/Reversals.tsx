@@ -124,17 +124,18 @@ export default function Reversals() {
 
   return (
     <>
-      <Header title="Reversals" subtitle="Undo a recorded action — the opposite entry is posted and the reason kept" />
+      <Header title="Reversals" subtitle="Undo a recorded action — the opposite entry is posted and the reason kept">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <StatCard title="Reversible in view" value={reversible} icon={Undo2} tone="brand" />
+          <StatCard title="Reversed (last 30 days)" value={open30} icon={RotateCcw} tone="warning" />
+          <StatCard title="Reversals on record" value={history.length} icon={History} tone="neutral" />
+        </div>
+      </Header>
 
       <PageBody>
         {err && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
         {notice && <Notice kind="success" onClose={() => setNotice(null)}>{notice}</Notice>}
 
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          <StatCard title="Reversible in view" value={reversible} icon={Undo2} tone="brand" />
-          <StatCard title="Reversed (last 30 days)" value={open30} icon={RotateCcw} tone="warning" />
-          <StatCard title="Reversals on record" value={history.length} icon={History} tone="neutral" />
-        </div>
 
         <Tabs<"actions" | "history">
           value={tab}

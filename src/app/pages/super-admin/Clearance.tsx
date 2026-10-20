@@ -239,18 +239,19 @@ export default function Clearance() {
 
   return (
     <>
-      <Header title="Clearance" subtitle="Operations assesses the kit; finance settles the dues" />
-
-      <PageBody>
-        {err && !open && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
-        {notice && <Notice kind="success" onClose={() => setNotice(null)}>{notice}</Notice>}
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <Header title="Clearance" subtitle="Operations assesses the kit; finance settles the dues">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           <StatCard title="Waiting on operations" value={notCleared.length} icon={AlertTriangle} tone={notCleared.length ? "warning" : "neutral"} />
           <StatCard title="Awaiting signature" value={awaitingSig} icon={PenLine} tone="info" />
           <StatCard title="Ready to release" value={readyToRelease} icon={Wallet} tone="brand" />
           <StatCard title="Dues released" value={released} icon={ShieldCheck} tone="success" />
         </div>
+      </Header>
+
+      <PageBody>
+        {err && !open && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
+        {notice && <Notice kind="success" onClose={() => setNotice(null)}>{notice}</Notice>}
+
 
         {/* ---- STAGE 1 ---- */}
         <Panel

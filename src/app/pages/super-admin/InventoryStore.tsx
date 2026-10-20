@@ -485,23 +485,24 @@ export default function InventoryStore() {
             </Button>
           </>
         ) : undefined}
-      />
+      >
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+  <StatCard title="Stock value" value={`PKR ${money(heldValue)}`} icon={Wallet} tone="brand" />
+  <StatCard title="Units in store" value={money(unitsHeld)} icon={Boxes} tone="info" />
+  <StatCard title="Item types" value={types.length} icon={Tags} tone="neutral" />
+  <StatCard
+    title="Kit required"
+    value={settings?.kit_required_from ? formatDate(settings.kit_required_from) : "Off"}
+    icon={settings?.kit_required_from ? ShieldCheck : ShieldOff}
+    tone={settings?.kit_required_from ? "success" : "warning"}
+  />
+</div>
+      </Header>
 
       <PageBody>
         {err && !anyModal && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
         {notice && <Notice kind="success" onClose={() => setNotice(null)}>{notice}</Notice>}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <StatCard title="Stock value" value={`PKR ${money(heldValue)}`} icon={Wallet} tone="brand" />
-          <StatCard title="Units in store" value={money(unitsHeld)} icon={Boxes} tone="info" />
-          <StatCard title="Item types" value={types.length} icon={Tags} tone="neutral" />
-          <StatCard
-            title="Kit required"
-            value={settings?.kit_required_from ? formatDate(settings.kit_required_from) : "Off"}
-            icon={settings?.kit_required_from ? ShieldCheck : ShieldOff}
-            tone={settings?.kit_required_from ? "success" : "warning"}
-          />
-        </div>
 
         {/* ---- WHEN THE RULE STARTS ---- */}
         {canEdit && settings && (

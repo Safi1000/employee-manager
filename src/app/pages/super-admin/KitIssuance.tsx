@@ -242,17 +242,18 @@ export default function KitIssuance() {
             <PackageOpen className="w-4 h-4" /> Issue kit
           </Button>
         ) : undefined}
-      />
+      >
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+  <StatCard title="Issuances out" value={holdings.length} icon={PackageOpen} tone="brand" />
+  <StatCard title="Units out" value={unitsOut.toLocaleString()} icon={Boxes} tone="info" />
+  <StatCard title="Guards holding kit" value={guardsHolding} icon={Users} tone="success" />
+  <StatCard title="Sites holding kit" value={sitesHolding} icon={MapPin} tone="neutral" />
+</div>
+      </Header>
 
       <PageBody>
         {err && !issueOpen && !act && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <StatCard title="Issuances out" value={holdings.length} icon={PackageOpen} tone="brand" />
-          <StatCard title="Units out" value={unitsOut.toLocaleString()} icon={Boxes} tone="info" />
-          <StatCard title="Guards holding kit" value={guardsHolding} icon={Users} tone="success" />
-          <StatCard title="Sites holding kit" value={sitesHolding} icon={MapPin} tone="neutral" />
-        </div>
 
         <Panel
           icon={ArrowRightLeft}
