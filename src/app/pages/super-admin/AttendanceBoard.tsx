@@ -876,10 +876,27 @@ export default function AttendanceBoard() {
           // The day picker drives the Daily board only; the Monthly board has its own month.
           tab === "monthly" ? undefined : (
             <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
-              className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
+              className="px-3 py-2 border border-border bg-card rounded-xl text-sm text-foreground min-h-10" />
           )
         }
-      />
+      >
+        <div className="flex flex-col gap-3">
+          <Tabs
+            value={tab}
+            onChange={(v) => setTab(v as typeof tab)}
+            items={[
+              { value: "board", label: "Daily board" },
+              { value: "monthly", label: "Monthly board" },
+              { value: "vacancies", label: "Vacancies", count: vacancies.length },
+              ...(canShiftMgmt ? [{ value: "shifts", label: "Shift Management" }] : []),
+            ]}
+          />
+          {tab === "board" && !loading && (
+            <AttendanceBandFigures summary={summary} clients={tree.length}
+              clientsDone={tree.filter((c) => c.sites.every((st) => st.shifts.every((r) => rowStatus(r) === "confirmed"))).length} />
+          )}
+        </div>
+      </Header>
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
@@ -888,21 +905,11 @@ export default function AttendanceBoard() {
           </div>
         )}
 
-        <Tabs
-          value={tab}
-          onChange={(v) => setTab(v as typeof tab)}
-          items={[
-            { value: "board", label: "Daily board" },
-            { value: "monthly", label: "Monthly board" },
-            { value: "vacancies", label: "Vacancies", count: vacancies.length },
-            ...(canShiftMgmt ? [{ value: "shifts", label: "Shift Management" }] : []),
-          ]}
-        />
 
         {tab === "board" && (
           <>
             {/* Filter + search + Mark-All (added alongside the Phase 6 model). */}
-            <div className="bg-card border border-border rounded-lg p-3 flex flex-col md:flex-row gap-2 md:items-center">
+            <div className="bg-card border border-border rounded-2xl p-3 flex flex-col md:flex-row gap-2 md:items-center">
               <ThemedSelect
                 value={clientFilter}
                 onChange={(e) => setClientFilter(e.target.value)}
@@ -929,7 +936,7 @@ export default function AttendanceBoard() {
                     onClick={() => setSiteWise(v)}
                     aria-pressed={siteWise === v}
                     className={`px-3 py-2 text-sm whitespace-nowrap transition-colors ${
-                      siteWise === v ? "bg-brand-600 text-white" : "bg-card text-foreground hover:bg-accent"
+                      siteWise === v ? "bg-foreground text-background font-semibold" : "bg-card text-foreground hover:bg-accent"
                     }`}
                   >
                     {label}
@@ -949,21 +956,49 @@ export default function AttendanceBoard() {
               </div>
             </div>
 
-            {/* Compact summary strip — clear at a glance, minimal footprint. */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: "Confirmed", value: `${summary.confirmed}/${summary.total}`, icon: CheckCircle2, tint: "text-success-600 dark:text-success-500" },
-                { label: "On ground", value: summary.onGround, icon: Users, tint: "text-brand-600 dark:text-brand-500" },
-                { label: "Exceptions", value: summary.exceptions, icon: AlertCircle, tint: "text-danger-600 dark:text-danger-500" },
-                { label: "Awaiting", value: summary.awaiting, icon: Clock, tint: "text-warning-600 dark:text-warning-500" },
-              ].map((t) => (
-                <div key={t.label} className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
-                  <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
-                  <span className="text-base font-semibold tabular-nums text-foreground">{t.value}</span>
+            {/* REGISTER BOARD (2026-10-20): every client as a tile, coloured by
+                where its register stands today — confirmed, reported but not
+                confirmed, or not started. Tap one to open it in the list. */}
+            {!loading && tree.length > 0 && (
+              <section className="bg-card border border-border rounded-2xl p-4 md:p-5 flex flex-col gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <p className="lbl">Register board</p>
+                    <h2 className="font-display text-lg md:text-xl font-bold tracking-tight mt-0.5">Where every register stands</h2>
+                  </div>
+                  <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#3d4a2b]" />Confirmed</span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-brand-500" />Reported, to confirm</span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-muted border border-border" />Not started</span>
+                  </div>
                 </div>
-              ))}
-            </div>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-2">
+                  {tree.map((c) => {
+                    const shifts = c.sites.flatMap((st) => st.shifts);
+                    const roster = shifts.reduce((n, r) => n + r.roster.length, 0);
+                    const reported = shifts.reduce((n, r) => n + r.reported.size, 0);
+                    const allConfirmed = shifts.length > 0 && shifts.every((r) => rowStatus(r) === "confirmed");
+                    const started = reported > 0 || shifts.some((r) => rowStatus(r) !== "awaiting");
+                    const cls = allConfirmed ? "bg-[#3d4a2b] text-[#f3eee2]" : started ? "bg-brand-500 text-[#241a06]" : "bg-muted text-foreground border border-border";
+                    return (
+                      <button key={c.clientId} type="button"
+                        onClick={() => {
+                          setOpenClients((prev) => new Set(prev).add(c.clientId));
+                          setTimeout(() => document.getElementById(`att-client-${c.clientId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                        }}
+                        className={`${cls} rounded-[10px] px-2.5 py-2 min-h-[64px] flex flex-col justify-between gap-1.5 text-left transition-transform hover:-translate-y-0.5 hover:shadow-md`}
+                        aria-label={`${c.clientName}: ${reported} of ${roster} reported${allConfirmed ? ", confirmed" : ""}`}>
+                        <span className="text-xs font-semibold leading-tight line-clamp-2">{c.clientName}</span>
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-ledger text-[13px] font-semibold">{reported}/{roster}</span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{allConfirmed ? "Done" : started ? "Confirm" : "Start"}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* Client → site → shift. The shift row is the unit of work: opening
                 one is what marks attendance, exactly as the flat list did. */}
@@ -986,7 +1021,7 @@ export default function AttendanceBoard() {
                 const reportedTotal = allShifts.reduce((n, r) => n + r.reported.size, 0);
                 const pending = allShifts.filter((r) => rowStatus(r) !== "confirmed").length;
                 return (
-                  <div key={c.clientId} className="bg-card border border-border rounded-lg overflow-hidden">
+                  <div key={c.clientId} id={`att-client-${c.clientId}`} className="bg-card border border-border rounded-2xl overflow-hidden scroll-mt-48">
                     <div className="flex items-stretch">
                     <button
                       type="button"
@@ -999,7 +1034,12 @@ export default function AttendanceBoard() {
                         strokeWidth={1.75}
                       />
                       <Building2 className="w-4 h-4 shrink-0 text-brand-600 dark:text-brand-500" strokeWidth={1.5} />
-                      <span className="font-medium text-foreground truncate flex-1">{c.clientName}</span>
+                      <span className="flex-1 min-w-0 flex flex-col gap-1">
+                        <span className="font-semibold text-foreground truncate">{c.clientName}</span>
+                        <span className="h-1.5 rounded-full bg-muted overflow-hidden max-w-72" aria-hidden="true">
+                          <span className={`block h-full rounded-full ${pending === 0 ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${rosterTotal ? Math.min(100, (reportedTotal / rosterTotal) * 100) : 0}%` }} />
+                        </span>
+                      </span>
                       <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
                         {/* Shifts are merged now — one row per site. Show sites
                             (when there's more than one) and the roster total. */}
@@ -1204,7 +1244,7 @@ export default function AttendanceBoard() {
               {/* Same shape as the Daily board's filter bar: a themed dropdown
                   (it opens above the page, so the board below cannot cover it)
                   and a search box that narrows the dropdown. */}
-              <div className="bg-card border border-border rounded-lg p-3 flex flex-col md:flex-row gap-2 md:items-center">
+              <div className="bg-card border border-border rounded-2xl p-3 flex flex-col md:flex-row gap-2 md:items-center">
                 <ThemedSelect
                   value={chosen}
                   onChange={(e) => setMonthlyClient(e.target.value)}
@@ -1991,6 +2031,44 @@ function ExportMenu({ rows, date, branding, client }: {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+
+/** The day's register on the band: confirmation ring and the four counts. */
+function AttendanceBandFigures({ summary, clients, clientsDone }: {
+  summary: { confirmed: number; total: number; onGround: number; exceptions: number; awaiting: number };
+  clients: number; clientsDone: number;
+}) {
+  const C = 2 * Math.PI * 30;
+  const pct = summary.total ? summary.confirmed / summary.total : 0;
+  const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none";
+  return (
+    <div className="flex flex-wrap items-stretch gap-3">
+      <div className="flex items-center gap-4 rounded-[14px] border border-border bg-card px-4 py-3 flex-[1_1_260px]">
+        <svg width="76" height="76" viewBox="0 0 76 76" role="img" aria-label={`${Math.round(pct * 100)} percent of registers confirmed`} className="flex-shrink-0">
+          <circle cx="38" cy="38" r="30" fill="none" stroke="#2e3125" strokeWidth="9" />
+          <circle cx="38" cy="38" r="30" fill="none" stroke="#9ad1a3" strokeWidth="9" strokeLinecap="round" strokeDasharray={`${(C * pct).toFixed(1)} ${C.toFixed(1)}`} transform="rotate(-90 38 38)" />
+          <text x="38" y="43" textAnchor="middle" fontFamily="Bricolage Grotesque, sans-serif" fontSize="16" fontWeight="700" fill="#f3eee2">{Math.round(pct * 100)}%</text>
+        </svg>
+        <div className="flex flex-col gap-1 min-w-0">
+          <span className="lbl">Registers confirmed</span>
+          <span className={fig}>{summary.confirmed}<span className="text-base text-muted-foreground"> / {summary.total}</span></span>
+          <span className="text-xs text-muted-foreground">{clientsDone} of {clients} clients fully done</span>
+        </div>
+      </div>
+      {[
+        { label: "On ground", value: summary.onGround, sub: "on roster, less absences", tone: "text-foreground" },
+        { label: "Exceptions", value: summary.exceptions, sub: "absent, leave, double duty", tone: summary.exceptions ? "text-[#f0a99a]" : "text-foreground" },
+        { label: "Not started", value: summary.awaiting, sub: "registers with no mark yet", tone: summary.awaiting ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+      ].map((t) => (
+        <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 flex-[1_1_160px]">
+          <span className="lbl">{t.label}</span>
+          <span className={`${fig} ${t.tone}`}>{t.value.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">{t.sub}</span>
+        </div>
+      ))}
     </div>
   );
 }
