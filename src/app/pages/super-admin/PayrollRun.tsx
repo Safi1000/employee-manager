@@ -620,7 +620,36 @@ export default function PayrollRun() {
 
   return (
     <>
-      <Header title="Payroll Run" subtitle="Draft → Review → Finance Verify, per client & staff group" />
+      <Header title="Payroll Run" subtitle="Draft → Review → Finance Verify, per client & staff group">
+        {(() => {
+          // The run as a pipeline (2026-10-20): every client and staff group
+          // sits in exactly one stage; the bar shows how far the month is
+          // through. Tapping a stage opens it.
+          const total = Math.max(1, TABS.reduce((n, t) => n + t.count, 0));
+          const desc: Record<string, string> = { draft: "being prepared", review: "checked by HR and Ops", finance_verify: "verified — ready to disburse" };
+          const tone: Record<string, string> = { draft: "#bdb6a0", review: "#e9a73c", finance_verify: "#9ad1a3" };
+          return (
+            <div className="flex flex-col gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {TABS.map((t, k) => (
+                  <button key={t.key} type="button" onClick={() => setTab(t.key)}
+                    className={`relative text-left rounded-[14px] border px-4 py-3 flex items-center gap-3 transition-colors ${tab === t.key ? "border-brand-500 bg-brand-500/15" : "border-border bg-card hover:border-brand-500/70"}`}>
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: tone[t.key], color: "#191a10" }}>{k + 1}</span>
+                    <span className="flex flex-col gap-0.5 min-w-0">
+                      <span className="lbl">{t.label}</span>
+                      <span className="font-ledger text-2xl font-semibold leading-none">{t.count}</span>
+                      <span className="text-xs text-muted-foreground truncate">{desc[t.key]}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-muted" aria-hidden="true">
+                {TABS.map((t) => <span key={t.key} className="h-full" style={{ width: `${(t.count / total) * 100}%`, background: tone[t.key] }} />)}
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 md:px-8 pb-6"
@@ -633,16 +662,9 @@ export default function PayrollRun() {
       >
         {/* Tabs, filters and (on Review) the KPI cards stay pinned while the
             client list scrolls under them (asked 2026-10-05). */}
-        <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-6 pb-4 mb-2 bg-slate-50">
+        <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-4 pb-4 mb-2 bg-background">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5">
-            {TABS.map((t) => (
-              <button key={t.key} type="button" onClick={() => setTab(t.key)}
-                className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === t.key ? "bg-card text-brand-700 dark:text-brand-400 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                {t.label} <span className="ml-1 text-xs text-muted-foreground">({t.count})</span>
-              </button>
-            ))}
-          </div>
+          <span className="font-display text-lg font-bold tracking-tight">{TABS.find((t) => t.key === tab)?.label} · {TABS.find((t) => t.key === tab)?.count}</span>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" strokeWidth={1.5} />
