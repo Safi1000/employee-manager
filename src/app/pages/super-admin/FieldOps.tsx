@@ -482,7 +482,36 @@ export default function FieldOps() {
       <Header
         title="Daily Reports"
         subtitle="A written note per active client, day by day, exported as a branded PDF"
-      />
+      >
+        {visibleClients.length > 0 && (() => {
+          // The day's notes as progress (2026-10-20): written, marked "nothing
+          // to report", or still blank — so the end-of-day PDF is never sent
+          // with gaps nobody noticed.
+          const written = visibleClients.filter((c) => (details.get(c.id) ?? "").trim().length > 0).length;
+          const none = visibleClients.filter((c) => noReport.has(c.id) && !(details.get(c.id) ?? "").trim()).length;
+          const blank = Math.max(0, visibleClients.length - written - none);
+          const total = visibleClients.length;
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))] gap-2.5">
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                <div className="flex justify-between"><span className="lbl">{isToday ? "Today's" : "This day's"} notes</span><span className="font-ledger text-sm font-semibold">{written + none} / {total}</span></div>
+                <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+                  <span className="h-full bg-[#9ad1a3]" style={{ width: `${(written / total) * 100}%` }} />
+                  <span className="h-full bg-[#7fa3c4]" style={{ width: `${(none / total) * 100}%` }} />
+                </div>
+                <span className="text-xs text-muted-foreground">{blank ? `${blank} client${blank === 1 ? "" : "s"} still blank before the PDF goes out` : "Every client has a note — ready to export"}</span>
+              </div>
+              {[
+                { label: "Written", v: written, tone: "text-[#9ad1a3]" },
+                { label: "Nothing to report", v: none, tone: "text-[#7fa3c4]" },
+                { label: "Blank", v: blank, tone: blank ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+              ].map((t) => (
+                <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1"><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span></div>
+              ))}
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
