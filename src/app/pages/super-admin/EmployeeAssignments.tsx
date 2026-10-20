@@ -272,6 +272,9 @@ export default function EmployeeAssignments() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [search, setSearch] = usePageState("EmployeeAssignments.search", "");
+  // Quick filter and sort for the client list (2026-10-20).
+  const [quick, setQuick] = usePageState<"all" | "under" | "over" | "paydata" | "nocontract">("EmployeeAssignments.quick", "all");
+  const [sortBy, setSortBy] = usePageState<"name" | "gap" | "pay" | "size">("EmployeeAssignments.sortBy", "name");
   /** Per-client search (keyed by group key) — filters that client's sites + people. */
   const [groupSearch, setGroupSearch] = usePageState<Record<string, string>>("EmployeeAssignments.groupSearch", {});
   // Show separated staff instead of active ones. Off by default.
@@ -815,6 +818,30 @@ export default function EmployeeAssignments() {
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
   // has people on it, say so and offer a way back in.
+  // The list as shown: the page's groups, narrowed by the quick filter and
+  // ordered by the chosen sort. Office Staff / Relievers buckets (no client)
+  // always sit at the end, where they have always been.
+  const payOf = (g: Group) => g.rows.reduce((n, e) => n + Number(e.base_salary ?? 0) + Number(e.allowance ?? 0), 0);
+  const displayGroups = useMemo(() => {
+    const comparable = (g: Group) => (g.recon?.contracted_billed_qty ?? 0) > 0;
+    let list = groups;
+    if (quick === "under") list = list.filter((g) => comparable(g) && (g.recon?.variance ?? 0) > 0);
+    else if (quick === "over") list = list.filter((g) => comparable(g) && (g.recon?.variance ?? 0) < 0);
+    else if (quick === "paydata") list = list.filter((g) => g.rows.some((e) => missingBase(e) || missingJoin(e)));
+    else if (quick === "nocontract") list = list.filter((g) => g.gap === "contract");
+    const clientsFirst = (a: Group, b: Group) => Number(!a.clientId) - Number(!b.clientId);
+    const sorted = [...list].sort((a, b) => {
+      const c = clientsFirst(a, b);
+      if (c) return c;
+      if (sortBy === "gap") return Math.abs(b.recon?.variance ?? 0) - Math.abs(a.recon?.variance ?? 0);
+      if (sortBy === "pay") return payOf(b) - payOf(a);
+      if (sortBy === "size") return b.rows.length - a.rows.length;
+      return a.label.localeCompare(b.label);
+    });
+    return sorted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, quick, sortBy]);
+
   const strandedOnServices = useMemo(
     () =>
       showServicesClients
@@ -1348,12 +1375,42 @@ export default function EmployeeAssignments() {
           </div>
         )}
 
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {([
+            ["all", "All clients"],
+            ["under", "Understaffed"],
+            ["over", "Over-enrolled"],
+            ["paydata", "Missing pay data"],
+            ["nocontract", "No live contract"],
+          ] as const).map(([k, label]) => {
+            const n = k === "all" ? groups.length
+              : k === "under" ? groups.filter((g) => (g.recon?.contracted_billed_qty ?? 0) > 0 && (g.recon?.variance ?? 0) > 0).length
+              : k === "over" ? groups.filter((g) => (g.recon?.contracted_billed_qty ?? 0) > 0 && (g.recon?.variance ?? 0) < 0).length
+              : k === "paydata" ? groups.filter((g) => g.rows.some((e) => missingBase(e) || missingJoin(e))).length
+              : groups.filter((g) => g.gap === "contract").length;
+            return (
+              <button key={k} type="button" onClick={() => setQuick(k)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm min-h-9 transition-colors ${quick === k ? "border-foreground bg-foreground text-background font-semibold" : "border-border bg-card text-foreground hover:border-brand-500/60"}`}>
+                {label}<span className={`font-ledger text-xs ${quick === k ? "opacity-80" : "text-muted-foreground"}`}>{n}</span>
+              </button>
+            );
+          })}
+          <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            Sort
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="px-3 py-1.5 border border-border rounded-xl text-sm min-h-9">
+              <option value="name">Name</option>
+              <option value="gap">Biggest gap</option>
+              <option value="pay">Monthly pay</option>
+              <option value="size">Most guards</option>
+            </select>
+          </label>
+        </div>
         <p className="mb-3 text-xs text-muted-foreground">
           Variance = contracted − enrolled (active). Positive = understaffed; negative = over-enrolled.
         </p>
 
         <div className="space-y-3">
-          {groups.map((g) => {
+          {displayGroups.map((g) => {
             const open = expanded.has(g.key);
             const sel = selectionFor(g.key);
             const monthly = g.rows.reduce(
@@ -1370,7 +1427,7 @@ export default function EmployeeAssignments() {
                   <button
                     type="button"
                     onClick={() => toggleGroup(g.key)}
-                    className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-[16rem] flex-1 text-left"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1.5 basis-full 2xl:basis-0 flex-1 text-left"
                     aria-expanded={open}
                   >
                     <ChevronRight
@@ -1429,7 +1486,7 @@ export default function EmployeeAssignments() {
                     )}
                   </button>
                   {g.recon && (
-                    <span className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
+                    <span className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0 ml-auto 2xl:ml-0 pl-6 2xl:pl-0">
                       <span title="Sites">{g.recon.site_count} site{g.recon.site_count === 1 ? "" : "s"}</span>
                       {/* Reconciliation only makes sense against a live contract.
                           With 0 contracted every enrolled guard reads as "over-
@@ -1438,7 +1495,11 @@ export default function EmployeeAssignments() {
                           head-count until there's a contract to compare to. */}
                       {g.recon.contracted_billed_qty > 0 ? (
                         <>
-                          <span title="Contracted (billed) vs enrolled (active)">
+                          <span title="Enrolled (active) against contracted (billed)" className="flex items-center gap-2">
+                            <span className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                              <span className={`block h-full rounded-full ${g.recon.variance > 0 ? "bg-brand-500" : g.recon.variance < 0 ? "bg-danger-500" : "bg-success-500"}`}
+                                style={{ width: `${Math.min(100, (g.recon.enrolled_active / g.recon.contracted_billed_qty) * 100)}%` }} />
+                            </span>
                             {g.recon.enrolled_active}/{g.recon.contracted_billed_qty} enrolled
                           </span>
                           <span title="On-ground requirement">req. {g.recon.required_on_ground}</span>
