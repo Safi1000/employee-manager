@@ -352,12 +352,13 @@ export default function SuperAdminLayout() {
                   names the current scope ("Head Office / All Regions", or the
                   region), so on a phone this sentence only ever appeared as a
                   truncated fragment competing for the same row. */}
-              <span className="hidden lg:inline text-xs text-muted-foreground truncate">
+              <span className="hidden lg:inline-flex items-center gap-2 text-xs text-muted-foreground truncate">
+                <span className="live-dot w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />
                 {locked
                   ? "You see only your region."
-                  : region
-                    ? `Showing ${region.name} only.`
-                    : "Showing all regions (consolidated)."}
+                  : region && !region.is_head_office
+                    ? `Every figure is ${region.name} only.`
+                    : "Every figure is consolidated across regions."}
               </span>
             </>
           )}
