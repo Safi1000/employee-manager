@@ -232,7 +232,7 @@
   --sidebar-accent-foreground: #f3eee2;
   --sidebar-border: #23261d;
   --sidebar-ring: #e9a73c;
-  --band: #16180f;
+  --band: #1b1d13;
 }
 
 /* ---- ON-DARK: the palette for anything drawn on a command surface (the
@@ -278,6 +278,15 @@
   position: relative;
   background-color: var(--band);
   isolation: isolate;
+}
+/* Dark mode: the page is nearly as dark as the band, so the band carries its
+ * own edge — a faint amber hairline and a lift off the page — instead of
+ * relying on contrast it no longer has (2026-10-21). */
+.dark .band {
+  box-shadow:
+    inset 0 0 0 1px rgba(233, 167, 60, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 40px -24px rgba(0, 0, 0, 0.8);
 }
 .band::before {
   content: "";
