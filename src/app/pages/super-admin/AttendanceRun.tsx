@@ -25,7 +25,6 @@ import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
-import { LanguageToggle, useLang } from "../../lib/lang";
 
 type Half = 1 | 2;
 
@@ -70,7 +69,6 @@ const opsDone = (h: HalfRow | null) => !!h?.ops_verified_at;
 
 export default function AttendanceRun() {
   const { profile, company } = useAuth();
-  const { lang, t } = useLang();
   const canOps = hasPermission(profile, "attendance.ops_verify");
   const canHr = hasPermission(profile, "attendance.hr_verify");
 
@@ -124,11 +122,11 @@ export default function AttendanceRun() {
       const key = r.client_id ?? `cat:${r.category}@${branchId ?? ""}`;
       let sc = byKey.get(key);
       if (!sc) {
-        const group = t(CATEGORY_LABEL[r.category] ?? String(r.category ?? "—"));
+        const group = CATEGORY_LABEL[r.category] ?? String(r.category ?? "—");
         sc = {
           key,
           name: r.client?.name
-            ?? (r.branch?.name ? `${group} — ${r.branch.name}` : r.half === undefined ? `${group} (${t("all regions")})` : group),
+            ?? (r.branch?.name ? `${group} — ${r.branch.name}` : r.half === undefined ? `${group} (all regions)` : group),
           clientId: r.client_id ?? null,
           category: r.client_id ? null : r.category,
           branchId,
@@ -144,8 +142,7 @@ export default function AttendanceRun() {
     for (const r of (legacy.data ?? []) as any[]) scopeFor(r).legacyAt = r.verified_at;
     setScopes([...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)));
     setLoading(false);
-    // lang: staff-group names are built here, so a language switch rebuilds them.
-  }, [period, lang]);
+  }, [period]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setSendBack(null); setRemarksFor(null); setNotice(null); }, [month, tab]);
@@ -169,14 +166,14 @@ export default function AttendanceRun() {
     });
     setBusyKey(null);
     if (e) { setNotice({ kind: "err", text: `${s.name}: ${e.message}` }); return; }
-    const what = halves.length === 2 ? t("both halves") : halves[0] === 1 ? t("the 1st half") : t("the 2nd half");
+    const what = halves.length === 2 ? "both halves" : `the ${halves[0] === 1 ? "1st" : "2nd"} half`;
     setNotice({
       kind: "ok",
       text: action === "ops_verify"
-        ? t("{name}: {what} Ops-verified.", { name: s.name, what })
+        ? `${s.name}: ${what} Ops-verified.`
         : action === "return_to_hr"
-          ? t("{name}: {what} sent back to HR with your remark.", { name: s.name, what })
-          : t("{name}: {what} moved back to Review.", { name: s.name, what }),
+          ? `${s.name}: ${what} sent back to HR with your remark.`
+          : `${s.name}: ${what} moved back to Review.`,
     });
     setSendBack(null);
     setSendNote("");
@@ -190,16 +187,15 @@ export default function AttendanceRun() {
   };
 
   return (
-    <div lang={lang} className="contents">
+    <>
       <Header
-        title={t("Attendance Run")}
-        subtitle={t("HR-verified halves wait in Review for Ops, who verify them or send them back to HR")}
+        title="Attendance Run"
+        subtitle="HR-verified halves wait in Review for Ops, who verify them or send them back to HR"
         actions={
           <div className="flex items-center gap-1">
-            <LanguageToggle className="mr-2" />
-            <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title={t("Previous month")}><ChevronLeft className="w-4 h-4" /></button>
+            <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
             <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
-            <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title={t("Next month")}><ChevronRight className="w-4 h-4" /></button>
+            <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
           </div>
         }
       />
@@ -216,13 +212,13 @@ export default function AttendanceRun() {
             value={tab}
             onChange={(v) => setTab(v as typeof tab)}
             items={[
-              { value: "review", label: t("Review"), count: scopes.filter((s) => !s.legacyAt && (inReview(s.halves[1]) || inReview(s.halves[2]))).length },
-              { value: "verified", label: t("Ops Verify"), count: scopes.filter((s) => s.legacyAt || opsDone(s.halves[1]) || opsDone(s.halves[2])).length },
+              { value: "review", label: "Review", count: scopes.filter((s) => !s.legacyAt && (inReview(s.halves[1]) || inReview(s.halves[2]))).length },
+              { value: "verified", label: "Ops Verify", count: scopes.filter((s) => s.legacyAt || opsDone(s.halves[1]) || opsDone(s.halves[2])).length },
             ]}
           />
           <div className="relative sm:ml-auto sm:w-72">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("Search clients…")}
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search clients…"
               className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
           </div>
         </div>
@@ -236,18 +232,18 @@ export default function AttendanceRun() {
         )}
 
         {!canOps && (
-          <p className="text-xs text-muted-foreground">{t('You can see the run, but verifying or sending back needs the "OPS-verify" attendance permission.')}</p>
+          <p className="text-xs text-muted-foreground">You can see the run, but verifying or sending back needs the "OPS-verify" attendance permission.</p>
         )}
 
         {loading ? (
           <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
-            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> {t("Loading…")}
+            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
           </div>
         ) : visible.length === 0 ? (
           <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
             {tab === "review"
-              ? t("Nothing waiting for Ops. A half appears here once HR verifies it on the Monthly board.")
-              : t("Nothing Ops-verified for this month yet.")}
+              ? "Nothing waiting for Ops. A half appears here once HR verifies it on the Monthly board."
+              : "Nothing Ops-verified for this month yet."}
           </div>
         ) : (
           <div className="space-y-3">
@@ -261,28 +257,28 @@ export default function AttendanceRun() {
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border">
                     <p className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">{s.name}</p>
                     {s.frozen && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-warning-700 dark:text-warning-500" title={t("Payroll for this month has moved past Draft")}>
-                        <Lock className="w-3 h-3" /> {t("Payroll in progress — frozen")}
+                      <span className="inline-flex items-center gap-1 text-[11px] text-warning-700 dark:text-warning-500" title="Payroll for this month has moved past Draft">
+                        <Lock className="w-3 h-3" /> Payroll in progress — frozen
                       </span>
                     )}
                     {tab === "review" && canAct && reviewHalves.length === 2 && (
                       <>
                         <Button size="sm" variant="primary" disabled={busy} onClick={() => act(s, [1, 2], "ops_verify")}>
-                          {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1.5" />} {t("Verify whole month")}
+                          {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1.5" />} Verify whole month
                         </Button>
                         <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setSendNote(""); setSendBack({ key: s.key, halves: [1, 2] }); }}>
-                          <RotateCcw className="w-4 h-4 mr-1.5" /> {t("Send whole month back")}
+                          <RotateCcw className="w-4 h-4 mr-1.5" /> Send whole month back
                         </Button>
                       </>
                     )}
                     {tab === "verified" && canAct && verifiedHalves.length === 2 && (
                       <Button size="sm" variant="secondary" disabled={busy}
-                        onClick={() => { if (window.confirm(t("Move both halves of {name} back to Review?", { name: s.name }))) void act(s, [1, 2], "undo_ops"); }}>
-                        <Undo2 className="w-4 h-4 mr-1.5" /> {t("Move month back to Review")}
+                        onClick={() => { if (window.confirm(`Move both halves of ${s.name} back to Review?`)) void act(s, [1, 2], "undo_ops"); }}>
+                        <Undo2 className="w-4 h-4 mr-1.5" /> Move month back to Review
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" onClick={() => setBoardFor(s)}>
-                      <ExternalLink className="w-4 h-4 mr-1.5" /> {t("Open board")}
+                      <ExternalLink className="w-4 h-4 mr-1.5" /> Open board
                     </Button>
                   </div>
 
@@ -290,16 +286,16 @@ export default function AttendanceRun() {
                     {([1, 2] as Half[]).map((h) => {
                       const r = s.halves[h];
                       const state = s.legacyAt
-                        ? { tone: "text-success-700 dark:text-success-500", text: `${t("Verified under the old monthly process")} · ${when(s.legacyAt)}` }
+                        ? { tone: "text-success-700 dark:text-success-500", text: `Verified under the old monthly process · ${when(s.legacyAt)}` }
                         : r?.ops_verified_at
-                          ? { tone: "text-success-700 dark:text-success-500", text: `${r.ops_verified_by_name ? t("Ops verified by {names}", { names: r.ops_verified_by_name }) : t("Ops verified")} · ${when(r.ops_verified_at)}` }
+                          ? { tone: "text-success-700 dark:text-success-500", text: `Ops verified${r.ops_verified_by_name ? ` by ${r.ops_verified_by_name}` : ""} · ${when(r.ops_verified_at)}` }
                           : r?.hr_verified_at
-                            ? { tone: "text-brand-700 dark:text-brand-300", text: t("In Review — waiting on Ops") }
-                            : { tone: "text-muted-foreground", text: t("Waiting on HR") };
+                            ? { tone: "text-brand-700 dark:text-brand-300", text: "In Review — waiting on Ops" }
+                            : { tone: "text-muted-foreground", text: "Waiting on HR" };
                       return (
                         <div key={h} className="px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                           <span className="text-sm text-foreground w-36 shrink-0">
-                            {h === 1 ? t("1st half") : t("2nd half")} <span className="text-muted-foreground tabular-nums">{halfLabels[h]}</span>
+                            {h === 1 ? "1st" : "2nd"} half <span className="text-muted-foreground tabular-nums">{halfLabels[h]}</span>
                           </span>
                           <span className="flex-1 min-w-0 text-xs">
                             <span className={state.tone}>
@@ -308,7 +304,7 @@ export default function AttendanceRun() {
                             </span>
                             {r?.hr_verified_at && (
                               <span className="block text-muted-foreground">
-                                {r.hr_verified_by_name ? t("HR verified by {names}", { names: r.hr_verified_by_name }) : t("HR verified")} · {when(r.hr_verified_at)}
+                                HR verified{r.hr_verified_by_name ? ` by ${r.hr_verified_by_name}` : ""} · {when(r.hr_verified_at)}
                               </span>
                             )}
                           </span>
@@ -316,17 +312,17 @@ export default function AttendanceRun() {
                             {tab === "review" && canAct && inReview(r) && (
                               <>
                                 <Button size="sm" variant={reviewHalves.length === 2 ? "secondary" : "primary"} disabled={busy} onClick={() => act(s, [h], "ops_verify")}>
-                                  <ShieldCheck className="w-4 h-4 mr-1.5" /> {t("Verify")}
+                                  <ShieldCheck className="w-4 h-4 mr-1.5" /> Verify
                                 </Button>
                                 <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setSendNote(""); setSendBack({ key: s.key, halves: [h] }); }}>
-                                  <RotateCcw className="w-4 h-4 mr-1.5" /> {t("Send back")}
+                                  <RotateCcw className="w-4 h-4 mr-1.5" /> Send back
                                 </Button>
                               </>
                             )}
                             {tab === "verified" && canAct && opsDone(r) && (
                               <Button size="sm" variant="secondary" disabled={busy}
-                                onClick={() => { if (window.confirm(t(h === 1 ? "Move the 1st half of {name} back to Review?" : "Move the 2nd half of {name} back to Review?", { name: s.name }))) void act(s, [h], "undo_ops"); }}>
-                                <Undo2 className="w-4 h-4 mr-1.5" /> {t("Back to Review")}
+                                onClick={() => { if (window.confirm(`Move the ${h === 1 ? "1st" : "2nd"} half of ${s.name} back to Review?`)) void act(s, [h], "undo_ops"); }}>
+                                <Undo2 className="w-4 h-4 mr-1.5" /> Back to Review
                               </Button>
                             )}
                             <Button size="sm" variant="ghost"
@@ -338,22 +334,21 @@ export default function AttendanceRun() {
                           {sendBack?.key === s.key && sendBack.halves.includes(h) && sendBack.halves[0] === h && (
                             <div className="basis-full rounded-md border border-warning-300 bg-warning-50 dark:bg-warning-900/20 p-2.5 space-y-2">
                               <p className="text-xs text-warning-900 dark:text-warning-300">
-                                {t("Send {what} back to HR. Its days unlock for corrections, and your remark is posted to the board so HR sees what to fix.", {
-                                  what: sendBack.halves.length === 2 ? t("the whole month") : h === 1 ? t("the 1st half") : t("the 2nd half"),
-                                })}
+                                Send {sendBack.halves.length === 2 ? "the whole month" : `the ${h === 1 ? "1st" : "2nd"} half`} back to HR. Its days unlock for corrections, and
+                                your remark is posted to the board so HR sees what to fix.
                               </p>
                               <textarea
                                 autoFocus
                                 rows={2}
                                 value={sendNote}
                                 onChange={(e) => setSendNote(e.target.value)}
-                                placeholder={t("e.g. Ali Raza is absent on 4 Oct but was on approved leave")}
+                                placeholder="e.g. Ali Raza is absent on 4 Oct but was on approved leave"
                                 className="w-full px-2.5 py-1.5 border border-border rounded-md text-sm bg-card"
                               />
                               <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="secondary" onClick={() => setSendBack(null)} disabled={busy}>{t("Cancel")}</Button>
+                                <Button size="sm" variant="secondary" onClick={() => setSendBack(null)} disabled={busy}>Cancel</Button>
                                 <Button size="sm" variant="primary" disabled={busy || !sendNote.trim()} onClick={() => act(s, sendBack.halves, "return_to_hr", sendNote)}>
-                                  {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1.5" />} {t("Send back to HR")}
+                                  {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1.5" />} Send back to HR
                                 </Button>
                               </div>
                             </div>
@@ -388,6 +383,6 @@ export default function AttendanceRun() {
           onClose={() => { setBoardFor(null); void load(); }}
         />
       )}
-    </div>
+    </>
   );
 }

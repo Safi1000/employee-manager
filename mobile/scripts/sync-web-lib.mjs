@@ -22,8 +22,6 @@ const FILES = [
   "invoicePdf.ts", "invoiceTemplates.ts", "idCardPdf.ts", "employeeFormPdf.ts", "dischargeSheetPdf.ts",
   "clearanceCertificatePdf.ts", "clientReportPdf.ts", "dailyReportPdf.ts", "depositSlip.ts", "custodian.ts",
   "monthRange.ts", "employeeExportFields.ts", "validation.ts", "billing.ts", "pricing.ts",
-  // The Urdu dictionary for Attendance (web lib/lang.tsx ↔ mobile src/lib/lang.tsx).
-  "lang.ur.ts",
 ];
 
 function once(src, file, from, to) {

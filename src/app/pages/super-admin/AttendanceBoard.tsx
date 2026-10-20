@@ -29,7 +29,6 @@ import { hiddenFromAttendance } from "../../lib/employmentWindow";
 import { saveText } from "../../lib/saveFile";
 import { useRegion } from "../../lib/region";
 import { usePageState } from "../../lib/pageState";
-import { LanguageToggle, useLang } from "../../lib/lang";
 
 // ── Phase 6: Attendance board by client-shift (§8.1-8.10) ─────────────────────
 // Unit of work = client-shift-day. Presume present; operator enters only
@@ -207,7 +206,6 @@ type Vacancy = {
 export default function AttendanceBoard() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
-  const { lang, t } = useLang();
   const branding = brandingFromCompany(company);
   const [date, setDate] = usePageState("AttendanceBoard.date", today());
   const [tab, setTab] = usePageState<"board" | "monthly" | "vacancies" | "shifts">("AttendanceBoard.tab", "board");
@@ -844,7 +842,7 @@ export default function AttendanceBoard() {
     const counts = new Map<Status, number>();
     for (const m of r.marks.values()) counts.set(m.status, (counts.get(m.status) ?? 0) + 1);
     // Guard the label lookup — a normalized status is always valid, but never throw.
-    return [...counts.entries()].map(([s, n]) => `${n} ${t(STATUS_LABEL[s] ?? String(s)).toLowerCase()}`).join(", ");
+    return [...counts.entries()].map(([s, n]) => `${n} ${(STATUS_LABEL[s] ?? String(s)).toLowerCase()}`).join(", ");
   };
 
   const badge = (s: "awaiting" | "reported" | "confirmed") =>
@@ -861,7 +859,7 @@ export default function AttendanceBoard() {
         all ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
             : "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
       }`}>
-        {all ? t("All reported") : t("{x}/{y} reported", { x, y })}
+        {all ? "All reported" : `${x}/${y} reported`}
       </span>
     );
   };
@@ -870,19 +868,16 @@ export default function AttendanceBoard() {
     [...new Set([...r.reported.values()].map((id) => (id ? profilesById.get(id) ?? "—" : null)).filter(Boolean) as string[])];
 
   return (
-    <div lang={lang} className="contents">
+    <>
       <Header
-        title={t("Attendance")}
-        subtitle={t("Daily board by client/site — presume present, enter only exceptions, confirm per site")}
+        title="Attendance"
+        subtitle="Daily board by client/site — presume present, enter only exceptions, confirm per site"
         actions={
-          <>
-            <LanguageToggle />
-            {/* The day picker drives the Daily board only; the Monthly board has its own month. */}
-            {tab === "monthly" ? null : (
-              <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
-                className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
-            )}
-          </>
+          // The day picker drives the Daily board only; the Monthly board has its own month.
+          tab === "monthly" ? undefined : (
+            <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
+              className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
+          )
         }
       />
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
@@ -897,10 +892,10 @@ export default function AttendanceBoard() {
           value={tab}
           onChange={(v) => setTab(v as typeof tab)}
           items={[
-            { value: "board", label: t("Daily board") },
-            { value: "monthly", label: t("Monthly board") },
-            { value: "vacancies", label: t("Vacancies"), count: vacancies.length },
-            ...(canShiftMgmt ? [{ value: "shifts", label: t("Shift Management") }] : []),
+            { value: "board", label: "Daily board" },
+            { value: "monthly", label: "Monthly board" },
+            { value: "vacancies", label: "Vacancies", count: vacancies.length },
+            ...(canShiftMgmt ? [{ value: "shifts", label: "Shift Management" }] : []),
           ]}
         />
 
@@ -913,7 +908,7 @@ export default function AttendanceBoard() {
                 onChange={(e) => setClientFilter(e.target.value)}
                 className="px-3 py-2 border border-border bg-card rounded-md text-sm md:w-56"
               >
-                <option value="all">{t("All groups")}</option>
+                <option value="all">All groups</option>
                 {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </ThemedSelect>
               <div className="relative flex-1">
@@ -922,11 +917,11 @@ export default function AttendanceBoard() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder={clientFilter === "all" ? t("Search guards by name or ID…") : t("Search within this client…")}
+                  placeholder={clientFilter === "all" ? "Search guards by name or ID…" : "Search within this client…"}
                   className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
                 />
               </div>
-              <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0" role="group" aria-label={t("Group by site")}>
+              <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0" role="group" aria-label="Group by site">
                 {([[true, "Site wise"], [false, "No site wise"]] as const).map(([v, label]) => (
                   <button
                     key={label}
@@ -937,13 +932,13 @@ export default function AttendanceBoard() {
                       siteWise === v ? "bg-brand-600 text-white" : "bg-card text-foreground hover:bg-accent"
                     }`}
                   >
-                    {t(label)}
+                    {label}
                   </button>
                 ))}
               </div>
               {canBulk && (
                 <Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}>
-                  <CalendarRange className="w-4 h-4 mr-1" /> {t("Bulk Mark by Employee")}
+                  <CalendarRange className="w-4 h-4 mr-1" /> Bulk Mark by Employee
                 </Button>
               )}
               {/* Exports (§8.9) — one menu at the TOP, accessible without scrolling.
@@ -957,10 +952,10 @@ export default function AttendanceBoard() {
             {/* Compact summary strip — clear at a glance, minimal footprint. */}
             <div className="flex flex-wrap gap-2">
               {[
-                { label: t("Confirmed"), value: `${summary.confirmed}/${summary.total}`, icon: CheckCircle2, tint: "text-success-600 dark:text-success-500" },
-                { label: t("On ground"), value: summary.onGround, icon: Users, tint: "text-brand-600 dark:text-brand-500" },
-                { label: t("Exceptions"), value: summary.exceptions, icon: AlertCircle, tint: "text-danger-600 dark:text-danger-500" },
-                { label: t("Awaiting"), value: summary.awaiting, icon: Clock, tint: "text-warning-600 dark:text-warning-500" },
+                { label: "Confirmed", value: `${summary.confirmed}/${summary.total}`, icon: CheckCircle2, tint: "text-success-600 dark:text-success-500" },
+                { label: "On ground", value: summary.onGround, icon: Users, tint: "text-brand-600 dark:text-brand-500" },
+                { label: "Exceptions", value: summary.exceptions, icon: AlertCircle, tint: "text-danger-600 dark:text-danger-500" },
+                { label: "Awaiting", value: summary.awaiting, icon: Clock, tint: "text-warning-600 dark:text-warning-500" },
               ].map((t) => (
                 <div key={t.label} className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
                   <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
@@ -974,12 +969,12 @@ export default function AttendanceBoard() {
                 one is what marks attendance, exactly as the flat list did. */}
             {loading && (
               <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> {t("Loading…")}
+                <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
               </div>
             )}
             {!loading && tree.length === 0 && (
               <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
-                {t("No client-shifts match the current filter/search.")}
+                No client-shifts match the current filter/search.
               </div>
             )}
 
@@ -1008,17 +1003,17 @@ export default function AttendanceBoard() {
                       <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
                         {/* Shifts are merged now — one row per site. Show sites
                             (when there's more than one) and the roster total. */}
-                        {c.sites.length > 1 ? `${t("{n} sites", { n: c.sites.length })} · ` : ""}
-                        {t("{n} on roster", { n: rosterTotal })}
+                        {c.sites.length > 1 ? `${c.sites.length} sites · ` : ""}
+                        {rosterTotal} on roster
                       </span>
                       {reportedBadge(reportedTotal, rosterTotal)}
                       {pending > 0 ? (
                         <span className="text-xs px-2 py-0.5 rounded-md border bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200 shrink-0">
-                          {t("{n} to confirm", { n: pending })}
+                          {pending} to confirm
                         </span>
                       ) : (
                         <span className="text-xs px-2 py-0.5 rounded-md border bg-success-50 text-success-700 dark:text-success-500 border-success-200 shrink-0">
-                          {t("All confirmed")}
+                          All confirmed
                         </span>
                       )}
                     </button>
@@ -1026,10 +1021,10 @@ export default function AttendanceBoard() {
                       type="button"
                       onClick={() => setSheetView({ clientId: c.clientId, clientName: c.clientName })}
                       className="px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:bg-accent border-l border-border shrink-0"
-                      title={t("Open the Monthly Board")}
+                      title="Open the Monthly Board"
                     >
                       <FileSpreadsheet className="w-4 h-4" strokeWidth={1.5} />
-                      <span className="hidden md:inline">{t("Monthly Board")}</span>
+                      <span className="hidden md:inline">Monthly Board</span>
                     </button>
                     </div>
 
@@ -1062,9 +1057,9 @@ export default function AttendanceBoard() {
                                   strokeWidth={1.75}
                                 />
                                 <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-                                <span className="text-sm text-foreground truncate flex-1">{st.siteId === "__none__" || st.siteId === "__all__" ? t(st.siteName) : st.siteName}</span>
+                                <span className="text-sm text-foreground truncate flex-1">{st.siteName}</span>
                                 <span className="text-xs text-muted-foreground shrink-0">
-                                  {t("{n} on roster", { n: sRoster })}
+                                  {sRoster} on roster
                                 </span>
                                 {reportedBadge(sReported, sRoster)}
                               </button>
@@ -1072,10 +1067,10 @@ export default function AttendanceBoard() {
                                 type="button"
                                 onClick={() => setSheetView({ clientId: c.clientId, clientName: c.clientName, siteId: st.siteId, siteName: st.siteName })}
                                 className="px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:bg-accent border-l border-border shrink-0"
-                                title={t("Open this site's Monthly Board")}
+                                title="Open this site's Monthly Board"
                               >
                                 <FileSpreadsheet className="w-4 h-4" strokeWidth={1.5} />
-                                <span className="hidden md:inline">{t("Monthly Board")}</span>
+                                <span className="hidden md:inline">Monthly Board</span>
                               </button>
                               </div>
                               )}
@@ -1085,12 +1080,12 @@ export default function AttendanceBoard() {
                                   <table className="w-full">
                                     <thead>
                                       <tr className="border-b border-border bg-slate-50">
-                                        <th className={`text-left px-4 py-2 ${flat ? "pl-8" : "pl-14"} text-xs text-muted-foreground uppercase tracking-wide`}>{t("Shift")}</th>
-                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">{t("Contracted")}</th>
-                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">{t("Deployed")}</th>
-                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">{t("Reported")}</th>
-                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">{t("Exceptions")}</th>
-                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">{t("Status")}</th>
+                                        <th className={`text-left px-4 py-2 ${flat ? "pl-8" : "pl-14"} text-xs text-muted-foreground uppercase tracking-wide`}>Shift</th>
+                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
+                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Deployed</th>
+                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Reported</th>
+                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
+                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
                                         <th className="px-4 py-2"></th>
                                       </tr>
                                     </thead>
@@ -1112,7 +1107,7 @@ export default function AttendanceBoard() {
                                                 return (
                                                   <span className="flex flex-wrap gap-1">
                                                     {shifts.map((s) => (
-                                                      <span key={s} className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">{t(s)}</span>
+                                                      <span key={s} className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">{s}</span>
                                                     ))}
                                                   </span>
                                                 );
@@ -1124,7 +1119,7 @@ export default function AttendanceBoard() {
                                               {(() => {
                                                 const cov = r.roster.filter((g) => g.is_reliever).length;
                                                 return cov > 0 ? (
-                                                  <span className="block text-[11px] text-info-600 dark:text-info-500">{t("incl. {n} cover", { n: cov })}</span>
+                                                  <span className="block text-[11px] text-info-600 dark:text-info-500">incl. {cov} cover</span>
                                                 ) : null;
                                               })()}
                                             </td>
@@ -1140,11 +1135,11 @@ export default function AttendanceBoard() {
                                                           : x > 0 ? "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
                                                                   : "bg-slate-100 text-slate-500 border-slate-200"
                                                     }`}>
-                                                      {all ? t("All") : `${x}/${y}`}
+                                                      {all ? "All" : `${x}/${y}`}
                                                     </span>
                                                     {names.length > 0 && (
-                                                      <span className="block text-[11px] text-muted-foreground mt-0.5 truncate max-w-[160px]" title={t("Reported by {names}", { names: names.join(", ") })}>
-                                                        {t("by {names}", { names: names.slice(0, 2).join(", ") })}{names.length > 2 ? "…" : ""}
+                                                      <span className="block text-[11px] text-muted-foreground mt-0.5 truncate max-w-[160px]" title={`Reported by ${names.join(", ")}`}>
+                                                        by {names.slice(0, 2).join(", ")}{names.length > 2 ? "…" : ""}
                                                       </span>
                                                     )}
                                                   </>
@@ -1153,10 +1148,10 @@ export default function AttendanceBoard() {
                                             </td>
                                             <td className="px-4 py-3 text-sm text-muted-foreground">{exceptionSummary(r)}</td>
                                             <td className="px-4 py-3">
-                                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs border capitalize ${badge(rst)}`}>{t(rst)}</span>
+                                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs border capitalize ${badge(rst)}`}>{rst}</span>
                                               {r.confirmation && (
                                                 <span className="block text-[11px] text-muted-foreground mt-0.5">
-                                                  {t("by {names}", { names: r.confirmation.supervisor_name })}
+                                                  by {r.confirmation.supervisor_name}
                                                 </span>
                                               )}
                                             </td>
@@ -1196,9 +1191,9 @@ export default function AttendanceBoard() {
           const STATUS = [
             // Red → amber → green, and listed in that order (asked 2026-10-05):
             // what still needs HR is at the top.
-            { label: t("Nothing Verified"), cls: "bg-danger-50 text-danger-700 border-danger-200 dark:bg-danger-900/30 dark:text-danger-400" },
-            { label: t("Half Month Verified"), cls: "bg-warning-50 text-warning-800 border-warning-200 dark:bg-warning-900/30 dark:text-warning-400" },
-            { label: t("Full Month Verified"), cls: "bg-success-50 text-success-700 border-success-200 dark:bg-success-900/30 dark:text-success-400" },
+            { label: "Nothing Verified", cls: "bg-danger-50 text-danger-700 border-danger-200 dark:bg-danger-900/30 dark:text-danger-400" },
+            { label: "Half Month Verified", cls: "bg-warning-50 text-warning-800 border-warning-200 dark:bg-warning-900/30 dark:text-warning-400" },
+            { label: "Full Month Verified", cls: "bg-success-50 text-success-700 border-success-200 dark:bg-success-900/30 dark:text-success-400" },
           ] as const;
           const badge = (id: string) => {
             const st = STATUS[monthlyStatus.get(id) ?? 0];
@@ -1234,18 +1229,18 @@ export default function AttendanceBoard() {
                     type="text"
                     value={monthlySearch}
                     onChange={(e) => setMonthlySearch(e.target.value)}
-                    placeholder={t("Search clients…")}
+                    placeholder="Search clients…"
                     className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
                   />
                 </div>
                 {chosen && badge(chosen)}
               </div>
               <p className="text-xs text-muted-foreground -mt-1">
-                {t("Guard-deployment clients. The status is HR verification for the month shown; Ops verifies on the Attendance Run.")}
+                Guard-deployment clients. The status is HR verification for the month shown; Ops verifies on the Attendance Run.
               </p>
               {monthlyScopes.length === 0 ? (
                 <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
-                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> {t("Loading…")}
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </div>
               ) : (
                 <AttendanceSheetModal
@@ -1311,7 +1306,7 @@ export default function AttendanceBoard() {
           onClose={() => setSheetView(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -1327,7 +1322,6 @@ function ShiftDrillModal({
   // has to travel with the row rather than being left to the fill_company_id
   // trigger — the ON CONFLICT arbiter names company_id.
   const { company, profile } = useAuth();
-  const { lang, t } = useLang();
   // Marking / confirming attendance requires attendance.edit (bulk-mark holders
   // can mark too). Backend RLS (0310) enforces it; this disables the control.
   const canMark = hasPermission(profile, "attendance.edit") || hasPermission(profile, "attendance.bulk_mark");
@@ -1455,7 +1449,7 @@ function ShiftDrillModal({
     // override uses) so the confirmed-month-end and backdate DB locks let them
     // through. The employment-window and OPS-verified locks remain hard DB
     // constraints and will surface a clear error via fail() if ever hit.
-    if (!supervisor.trim()) { setSupError(t("Supervisor name is required to confirm.")); return; }
+    if (!supervisor.trim()) { setSupError("Supervisor name is required to confirm."); return; }
     setSupError(null);
     setSaving(true);
     setErr(null);
@@ -1546,65 +1540,64 @@ function ShiftDrillModal({
   // Live tally of what's been marked — marks holds ONLY non-present exceptions
   // (setMark deletes a guard when set back to Present), so each entry is one.
   const exceptionCounts = EXCEPTION_STATUSES
-    .map((s) => ({ label: t(STATUS_LABEL[s]), n: [...marks.values()].filter((m) => m.status === s).length }))
+    .map((s) => ({ label: STATUS_LABEL[s], n: [...marks.values()].filter((m) => m.status === s).length }))
     .filter((x) => x.n > 0);
   const presumedPresent = shift.roster.length - marks.size;
 
   return (
     <Modal isOpen onClose={onClose} size="lg"
       error={err}
-      headerActions={<LanguageToggle />}
       onDismissError={() => setErr(null)}
-      title={`${shift.client_name} · ${shift.site_id ? shift.site_name : t(shift.site_name)}${shift.shift_code === "all" ? "" : ` · ${shift.shift_code}`} — ${date}`}
+      title={`${shift.client_name} · ${shift.site_name}${shift.shift_code === "all" ? "" : ` · ${shift.shift_code}`} — ${date}`}
       footer={
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <input value={supervisor}
               onChange={(e) => { setSupervisor(e.target.value); if (supError) setSupError(null); }}
-              placeholder={t("Supervisor name *")}
+              placeholder="Supervisor name *"
               aria-invalid={!!supError}
               className={`flex-1 px-3 py-2 border rounded-md text-sm ${supError ? "border-danger-300" : "border-slate-200"}`} />
             <ThemedSelect value={source} onChange={(e) => setSource(e.target.value as any)} className="px-2 py-2 border border-slate-200 rounded-md text-sm" >
-              <option value="app">{t("App")}</option><option value="whatsapp">WhatsApp</option><option value="manual">{t("Manual")}</option>
+              <option value="app">App</option><option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>
             </ThemedSelect>
-            <Button size="sm" onClick={confirm} disabled={saving || !canMark} title={!canMark ? t("You don't have permission to mark attendance") : undefined}>
-              {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} {t("Confirm shift")}
+            <Button size="sm" onClick={confirm} disabled={saving || !canMark} title={!canMark ? "You don't have permission to mark attendance" : undefined}>
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Confirm shift
             </Button>
           </div>
           {supError && <p className="text-xs text-danger-600">{supError}</p>}
         </div>
       }
     >
-      <div className="space-y-3" lang={lang}>
+      <div className="space-y-3">
         {/* Informational only — Confirm always proceeds. A genuinely hard lock
             (employment window, OPS-verified month) still surfaces as an error on
             save; this note just explains what the gate flagged. */}
         {(blocked || needsOverride) && (
           <div className="p-3 bg-warning-50 border border-warning-200 rounded text-sm space-y-2">
-            <div className="text-warning-800">{gate?.reason} — {t("you can still confirm.")}</div>
-            <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder={t("Override reason (optional)")}
+            <div className="text-warning-800">{gate?.reason} — you can still confirm.</div>
+            <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder="Override reason (optional)"
               className="w-full px-3 py-2 border border-warning-300 rounded-md text-sm" />
           </div>
         )}
         <p className="text-xs text-slate-500">
-          {t("{n} on roster — all presumed present. Mark only the exceptions, then confirm.", { n: shift.roster.length })}
+          {shift.roster.length} on roster — all presumed <strong>present</strong>. Mark only the exceptions, then confirm.
         </p>
         {exceptionCounts.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-xs">
-            <span className="font-medium text-slate-600">{t("Marked exceptions:")}</span>
+            <span className="font-medium text-slate-600">Marked exceptions:</span>
             {exceptionCounts.map((x) => (
               <span key={x.label} className="inline-flex items-center rounded-full bg-white border border-slate-200 px-2 py-0.5 font-medium text-slate-700">
                 {x.label}: {x.n}
               </span>
             ))}
-            <span className="text-slate-400">· {t("{n} presumed present", { n: presumedPresent })}</span>
+            <span className="text-slate-400">· {presumedPresent} presumed present</span>
           </div>
         )}
         <input
           type="text"
           value={rosterSearch}
           onChange={(e) => setRosterSearch(e.target.value)}
-          placeholder={t("Search this roster by name or code (e.g. Riaz or HMC-042)…")}
+          placeholder="Search this roster by name or code (e.g. Riaz or HMC-042)…"
           className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
         />
         <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
@@ -1630,15 +1623,15 @@ function ShiftDrillModal({
                     {g.full_name}
                     {/* Shift is a display label only — shown for reference; marking
                         and confirmation ignore it (double duty aside). */}
-                    <span className="ml-1.5 capitalize inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] align-middle">{t(g.scheduled_shift)}</span>
+                    <span className="ml-1.5 capitalize inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] align-middle">{g.scheduled_shift}</span>
                     {g.is_reliever && (
-                      <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-info-50 text-info-700 dark:text-info-500 border border-info-200 text-[10px] align-middle">{t("cover")}</span>
+                      <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-info-50 text-info-700 dark:text-info-500 border border-info-200 text-[10px] align-middle">cover</span>
                     )}
                   </p>
                   <p className="text-xs text-slate-400 font-mono">{guardDisplayCode(g, shift.client_prefix)}</p>
                   {shift.reported.has(g.guard_id) && (
                     <p className="text-[11px] text-success-700 dark:text-success-500 truncate">
-                      ✓ {(() => { const uid = shift.reported.get(g.guard_id); const n = uid ? profilesById.get(uid) : null; return n ? t("reported by {names}", { names: n }) : t("reported"); })()}
+                      ✓ reported{(() => { const uid = shift.reported.get(g.guard_id); const n = uid ? profilesById.get(uid) : null; return n ? ` by ${n}` : ""; })()}
                     </p>
                   )}
                 </div>
@@ -1650,20 +1643,20 @@ function ShiftDrillModal({
                   }}
                   className="px-2 py-1.5 border border-slate-200 rounded-md text-sm"
                 >
-                  <option value="present">{t("Present")}</option>
-                  {EXCEPTION_STATUSES.map((s) => <option key={s} value={s}>{t(STATUS_LABEL[s])}</option>)}
+                  <option value="present">Present</option>
+                  {EXCEPTION_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </ThemedSelect>
                 {mk?.status === "absent" && (
                   <ThemedSelect value={mk.absent_reason ?? "awol"} onChange={(e) => setMark(g.guard_id, "absent", e.target.value as AbsentReason)}
                     className="px-2 py-1.5 border border-slate-200 rounded-md text-sm">
-                    <option value="awol">{t("AWOL")}</option><option value="sick">{t("Sick")}</option><option value="absconded">{t("Absconded")}</option>
+                    <option value="awol">AWOL</option><option value="sick">Sick</option><option value="absconded">Absconded</option>
                   </ThemedSelect>
                 )}
                 {/* Double duty's two shifts are chosen automatically (see
                     secondShiftFor) — shown for reference, not a choice. */}
                 {mk?.status === "double_duty" && (
                   <span className="text-xs text-slate-500 capitalize shrink-0">
-                    {getWorked(g, "double_duty").map((s) => t(s)).join(" + ")}
+                    {getWorked(g, "double_duty").join(" + ")}
                   </span>
                 )}
               </div>
@@ -1679,7 +1672,6 @@ function ShiftDrillModal({
 function VacancyQueue({ vacancies, clientNames, onChanged }: {
   vacancies: Vacancy[]; clientNames: Map<string, string>; onChanged: () => Promise<void>;
 }) {
-  const { t } = useLang();
   const close = async (id: string) => {
     await supabase.from("vacancies").update({ status: "cancelled" }).eq("id", id);
     await onChanged();
@@ -1687,10 +1679,10 @@ function VacancyQueue({ vacancies, clientNames, onChanged }: {
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-border flex items-center gap-2 text-sm text-muted-foreground">
-        <Briefcase className="w-4 h-4" /> {t("Open vacancies drive recruitment — the client is still contracted for that strength.")}
+        <Briefcase className="w-4 h-4" /> Open vacancies drive recruitment — the client is still contracted for that strength.
       </div>
       {vacancies.length === 0 ? (
-        <div className="px-4 py-8 text-center text-muted-foreground text-sm">{t("No open vacancies.")}</div>
+        <div className="px-4 py-8 text-center text-muted-foreground text-sm">No open vacancies.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -1701,7 +1693,7 @@ function VacancyQueue({ vacancies, clientNames, onChanged }: {
                   <td className="px-4 py-3 text-sm text-muted-foreground">{v.opened_reason}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(v.opened_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => close(v.id)} className="text-xs text-muted-foreground hover:text-danger-600">{t("Dismiss")}</button>
+                    <button onClick={() => close(v.id)} className="text-xs text-muted-foreground hover:text-danger-600">Dismiss</button>
                   </td>
                 </tr>
               ))}
@@ -1859,7 +1851,6 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
 function ExportMenu({ rows, date, branding, client }: {
   rows: ClientShift[]; date: string; branding: PdfBranding; client: ExportClient | null;
 }) {
-  const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rangeMode, setRangeMode] = useState(false);
@@ -1876,9 +1867,9 @@ function ExportMenu({ rows, date, branding, client }: {
     setBusy(true);
     try {
       const n = await exportClientMonth(client, date);
-      if (n === 0) alert(t("No employees found for {name}.", { name: client.name }));
+      if (n === 0) alert(`No employees found for ${client.name}.`);
     } catch (err: any) {
-      alert(t("Export failed: {msg}", { msg: err?.message ?? String(err) }));
+      alert(`Export failed: ${err?.message ?? String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -1886,15 +1877,15 @@ function ExportMenu({ rows, date, branding, client }: {
 
   const runRange = async () => {
     if (!client) return;
-    if (rangeEnd < rangeStart) { alert(t("End date must be on or after the start date.")); return; }
+    if (rangeEnd < rangeStart) { alert("End date must be on or after the start date."); return; }
     setOpen(false);
     setRangeMode(false);
     setBusy(true);
     try {
       const n = await exportClientRange(client, rangeStart, rangeEnd);
-      if (n === 0) alert(t("No employees found for {name}.", { name: client.name }));
+      if (n === 0) alert(`No employees found for ${client.name}.`);
     } catch (err: any) {
-      alert(t("Export failed: {msg}", { msg: err?.message ?? String(err) }));
+      alert(`Export failed: ${err?.message ?? String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -1926,7 +1917,7 @@ function ExportMenu({ rows, date, branding, client }: {
         {busy
           ? <Loader className="w-4 h-4 mr-1.5 animate-spin" />
           : <Download className="w-4 h-4 mr-1.5" />}
-        {busy ? t("Exporting…") : t("Export")}
+        {busy ? "Exporting…" : "Export"}
         <ChevronDown className={`w-3.5 h-3.5 ml-1.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </Button>
 
@@ -1935,40 +1926,40 @@ function ExportMenu({ rows, date, branding, client }: {
           <button className="fixed inset-0 z-40 cursor-default" aria-hidden onClick={() => setOpen(false)} />
           <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right overflow-hidden rounded-xl border border-border bg-card shadow-xl ring-1 ring-black/5">
             <div className="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {t("Selected day")} · {prettyDate}
+              Selected day · {prettyDate}
             </div>
             <Item
               icon={FileText} tint="bg-brand-50 text-brand-600"
-              title={t("Client attendance sheet")}
-              subtitle={t("Branded PDF for client submission")}
+              title="Client attendance sheet"
+              subtitle="Branded PDF for client submission"
               onClick={() => exportClientSheet(branding, date, rows)}
             />
             <Item
               icon={Users} tint="bg-violet-50 text-violet-600"
-              title={t("Per-guard payroll sheet")}
-              subtitle={t("One row per rostered guard · PDF")}
+              title="Per-guard payroll sheet"
+              subtitle="One row per rostered guard · PDF"
               onClick={() => exportGuardSheet(branding, date, rows)}
             />
             <div className="my-1 border-t border-border" />
             <div className="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {t("Full month")} · {monthLabel}
+              Full month · {monthLabel}
             </div>
             <Item
               icon={FileSpreadsheet} tint="bg-success-50 text-success-700"
-              title={t("Client month sheet")}
-              subtitle={client ? `${client.name} · Excel (.xlsx)` : t("Pick a client in the filter first")}
+              title="Client month sheet"
+              subtitle={client ? `${client.name} · Excel (.xlsx)` : "Pick a client in the filter first"}
               onClick={runMonthly}
               disabled={!client}
             />
             <div className="my-1 border-t border-border" />
             <div className="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {t("Custom date range")}
+              Custom date range
             </div>
             {!rangeMode ? (
               <Item
                 icon={CalendarRange} tint="bg-amber-50 text-amber-600"
-                title={t("Pick a date range")}
-                subtitle={client ? `${client.name} · Excel (.xlsx)` : t("Pick a client in the filter first")}
+                title="Pick a date range"
+                subtitle={client ? `${client.name} · Excel (.xlsx)` : "Pick a client in the filter first"}
                 onClick={() => setRangeMode(true)}
                 disabled={!client}
                 keepOpen
@@ -1976,7 +1967,7 @@ function ExportMenu({ rows, date, branding, client }: {
             ) : (
               <div className="px-3 py-2.5 space-y-2" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center gap-2">
-                  <label className="w-10 text-xs text-muted-foreground">{t("From")}</label>
+                  <label className="w-10 text-xs text-muted-foreground">From</label>
                   <input
                     type="date" value={rangeStart} max={rangeEnd}
                     onChange={(e) => { if (isIsoDate(e.target.value)) setRangeStart(e.target.value); }}
@@ -1984,7 +1975,7 @@ function ExportMenu({ rows, date, branding, client }: {
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="w-10 text-xs text-muted-foreground">{t("To")}</label>
+                  <label className="w-10 text-xs text-muted-foreground">To</label>
                   <input
                     type="date" value={rangeEnd} min={rangeStart}
                     onChange={(e) => { if (isIsoDate(e.target.value)) setRangeEnd(e.target.value); }}
@@ -1992,8 +1983,8 @@ function ExportMenu({ rows, date, branding, client }: {
                   />
                 </div>
                 <div className="flex justify-end gap-2 pt-0.5">
-                  <Button size="sm" variant="ghost" onClick={() => setRangeMode(false)}>{t("Cancel")}</Button>
-                  <Button size="sm" onClick={runRange} disabled={!client}>{t("Export")}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setRangeMode(false)}>Cancel</Button>
+                  <Button size="sm" onClick={runRange} disabled={!client}>Export</Button>
                 </div>
               </div>
             )}

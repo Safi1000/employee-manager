@@ -1,9 +1,10 @@
-// Urdu for the Attendance screens. Key = the exact English string passed to
-// t() (see lib/lang.tsx); a key missing here shows in English. {name}-style
-// placeholders must be kept as they are — t() fills them in.
+// Urdu for the phone's Attendance screens. Key = the exact English string passed
+// to tr() (see lib/lang.tsx); a key missing here shows in English. {name}-style
+// placeholders must be kept as they are — tr() fills them in.
 //
-// Shared with the mobile app: `node mobile/scripts/sync-web-lib.mjs` copies this
-// file to mobile/src/lib/web/lang.ur.ts. Edit it here, never the copy.
+// Phone only: the web app has no Urdu (asked 2026-10-20). Some entries carry
+// web wording because the strings were first written against both apps; they
+// are harmless and cost nothing.
 
 export const URDU: Record<string, string> = {
   // ── Statuses, shifts, categories (looked up at runtime) ──

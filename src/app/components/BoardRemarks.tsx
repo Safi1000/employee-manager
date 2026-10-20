@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CornerDownRight, Loader2, Send, X } from "lucide-react";
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
-import { t, useLang } from "../lib/lang";
 
 export type BoardRemark = {
   id: string;
@@ -51,7 +50,6 @@ export default function BoardRemarks({
   reloadKey?: number;
   onCount?: (n: number) => void;
 }) {
-  useLang();
   const [remarks, setRemarks] = useState<BoardRemark[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -106,8 +104,8 @@ export default function BoardRemarks({
 
   return (
     <div className="space-y-3">
-      {loading && <p className="text-xs text-muted-foreground"><Loader2 className="w-3.5 h-3.5 inline animate-spin mr-1" /> {t("Loading remarks…")}</p>}
-      {!loading && threads.length === 0 && <p className="text-xs text-muted-foreground">{t("No remarks on {half} yet.", { half: halfLabel })}</p>}
+      {loading && <p className="text-xs text-muted-foreground"><Loader2 className="w-3.5 h-3.5 inline animate-spin mr-1" /> Loading remarks…</p>}
+      {!loading && threads.length === 0 && <p className="text-xs text-muted-foreground">No remarks on {halfLabel} yet.</p>}
       {threads.map(({ remark, replies }) => (
         <div key={remark.id} className="space-y-1.5">
           <RemarkBubble r={remark} />
@@ -124,7 +122,7 @@ export default function BoardRemarks({
                 value={replyDraft}
                 onChange={(e) => setReplyDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void post(replyDraft, remark.id); }}
-                placeholder={t("Write a reply…")}
+                placeholder="Write a reply…"
                 className="flex-1 min-w-0 px-2.5 py-1 border border-border rounded-md text-sm bg-card"
               />
               <Button size="sm" variant="primary" onClick={() => post(replyDraft, remark.id)} disabled={posting || !replyDraft.trim()}>
@@ -136,7 +134,7 @@ export default function BoardRemarks({
             </div>
           ) : (
             <button type="button" onClick={() => { setReplyTo(remark.id); setReplyDraft(""); }} className="pl-4 text-[11px] text-brand-600 hover:text-brand-700">
-              {t("Reply")}
+              Reply
             </button>
           )}
         </div>
@@ -146,7 +144,7 @@ export default function BoardRemarks({
           rows={2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={t("Add a remark on {half}…", { half: halfLabel })}
+          placeholder={`Add a remark on ${halfLabel}…`}
           className="flex-1 min-w-0 px-2.5 py-1.5 border border-border rounded-md text-sm bg-card"
         />
         <Button size="sm" variant="primary" className="self-end" onClick={() => post(draft, null)} disabled={posting || !draft.trim()}>
@@ -163,8 +161,8 @@ function RemarkBubble({ r }: { r: BoardRemark }) {
     <div className={`rounded-md border px-2.5 py-1.5 ${r.kind === "returned" ? "border-warning-300 bg-warning-50 dark:bg-warning-900/20" : "border-border bg-card"}`}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium text-foreground">
-          {r.author_name ?? t("Unknown")}
-          {r.kind === "returned" && <span className="ml-1.5 text-[10px] font-normal text-warning-800 dark:text-warning-400">{t("sent back")}</span>}
+          {r.author_name ?? "Unknown"}
+          {r.kind === "returned" && <span className="ml-1.5 text-[10px] font-normal text-warning-800 dark:text-warning-400">sent back</span>}
         </span>
         <span className="text-[10px] text-muted-foreground shrink-0">{remarkWhen(r.created_at)}</span>
       </div>

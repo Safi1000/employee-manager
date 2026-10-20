@@ -31,7 +31,6 @@ import { attendanceWindowError, isSeparatedState, hiddenFromAttendance, buildCli
 import { formatDate } from "../../lib/date";
 import { clearConflictingDayRows } from "../../lib/attendanceDay";
 import { usePageState } from "../../lib/pageState";
-import { LanguageToggle, useLang } from "../../lib/lang";
 
 type EmployeeLite = {
   id: string;
@@ -92,7 +91,6 @@ const STATUSES: AttendanceStatus[] = ["present", "absent", "leave"];
 type AttendanceManagementProps = { relieversOnly?: boolean };
 
 export default function AttendanceManagement({ relieversOnly = false }: AttendanceManagementProps = {}) {
-  const { lang, t } = useLang();
   const [clients, setClients] = useState<Client[]>([]);
   // Sites for the reliever picker — a reliever names the SITE he worked (0449),
   // and worked_for_client_id is derived from it by the DB trigger.
@@ -569,19 +567,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const isReliever = employee?.category === "reliever";
     // Relievers marked Present must name the site they worked.
     if (isReliever && status === "present" && !relieverSiteId) {
-      setError(t("Pick which site this reliever worked before marking Present."));
+      setError("Pick which site this reliever worked before marking Present.");
       return;
     }
     // No future attendance (same rule as the board).
     if (date > today()) {
-      setError(t("Future dates can't be marked."));
+      setError("Future dates can't be marked.");
       return;
     }
     // Employment + contract window. The DB trigger (0152) rejects these anyway;
     // checking here turns a raw Postgres error into a readable reason.
     const windowErr = employee ? windowBlockFor(employee, date) : null;
     if (windowErr) {
-      setError(`${employee?.full_name ?? t("This employee")}: ${windowErr}`);
+      setError(`${employee?.full_name ?? "This employee"}: ${windowErr}`);
       return;
     }
     // Update the row the page is showing (if any); otherwise a fresh mark lands
@@ -743,7 +741,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     if (filteredEmployees.length === 0) return;
     // No future attendance (same rule as the board).
     if (date > today()) {
-      setError(t("Future dates can't be marked."));
+      setError("Future dates can't be marked.");
       return;
     }
     // Mark-all skips relievers without a picked client (each must be set
@@ -959,7 +957,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           key,
           clientId: e.client_id,
           category: e.category,
-          label: e.client_name ?? `${t(catLabel(e.category))} (${t("no client")})`,
+          label: e.client_name ?? `${catLabel(e.category)} (no client)`,
           employees: [],
         };
         groups.set(key, g);
@@ -967,7 +965,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       g.employees.push(e);
     }
     return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
-  }, [filteredEmployees, lang]);
+  }, [filteredEmployees]);
 
   // Confirm one client/site group for the selected date (supervisor sign-off).
   const confirmGroup = async (g: { key: string; clientId: string | null; category: string }) => {
@@ -1156,21 +1154,20 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   };
 
   return (
-    <div lang={lang} className="contents">
+    <>
       <Header
-        title={relieversOnly ? t("Reliever Attendance") : t("Attendance Timesheet (corrections)")}
+        title={relieversOnly ? "Reliever Attendance" : "Attendance Timesheet (corrections)"}
         subtitle={
           relieversOnly
-            ? t("Pick the site a reliever covered, then mark present")
-            : t("Daily attendance, bulk marking and historical timesheet")
+            ? "Pick the site a reliever covered, then mark present"
+            : "Daily attendance, bulk marking and historical timesheet"
         }
         actions={
           <>
-            <LanguageToggle />
             {canBulk && (
               <Button variant="secondary" size="md" onClick={openBulkMark}>
                 <CalendarRange className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                {t("Bulk Mark by Employee")}
+                Bulk Mark by Employee
               </Button>
             )}
             <ExportButton
@@ -1188,7 +1185,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             from a guard's History tab). Daily marking lives on the Attendance
             board. The Shift Override tab and Mark-All-Present are removed. */}
         <div className="mb-6 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-          {t("Correction tool — for backfilling or fixing past attendance. Daily marking is done on the Attendance board.")}
+          Correction tool — for backfilling or fixing past attendance. Daily marking is done on the Attendance board.
         </div>
 
         {error && (
@@ -1207,24 +1204,24 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
               <span className="w-2.5 h-2.5 rounded-full bg-success-500 shrink-0" />
-              <span className="text-xs text-muted-foreground">{t("Present")}</span>
+              <span className="text-xs text-muted-foreground">Present</span>
               <span className="text-base font-semibold tabular-nums text-success-700 dark:text-success-500">{stats.p}</span>
             </div>
             <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
               <span className="w-2.5 h-2.5 rounded-full bg-danger-500 shrink-0" />
-              <span className="text-xs text-muted-foreground">{t("Absent")}</span>
+              <span className="text-xs text-muted-foreground">Absent</span>
               <span className="text-base font-semibold tabular-nums text-danger-700 dark:text-danger-500">{stats.a}</span>
             </div>
             <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
               <span className="w-2.5 h-2.5 rounded-full bg-warning-500 shrink-0" />
-              <span className="text-xs text-muted-foreground">{t("Leave")}</span>
+              <span className="text-xs text-muted-foreground">Leave</span>
               <span className="text-base font-semibold tabular-nums text-warning-700 dark:text-warning-500">{stats.l}</span>
             </div>
             {/* §28.2: unmarked silently underpays — keep it dominant (red) and clickable. */}
             <button
               type="button"
               onClick={() => setUnmarkedOnly((v) => !v)}
-              title={t("Show only unmarked")}
+              title="Show only unmarked"
               className={`inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border transition-colors ${
                 stats.unm > 0
                   ? "bg-danger-50 border-danger-200 hover:bg-danger-100"
@@ -1232,9 +1229,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               } ${unmarkedOnly ? "ring-2 ring-danger-500" : ""}`}
             >
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${stats.unm > 0 ? "bg-danger-500" : "bg-success-500"}`} />
-              <span className="text-xs text-muted-foreground">{t("Unmarked")}</span>
+              <span className="text-xs text-muted-foreground">Unmarked</span>
               <span className={`text-base font-semibold tabular-nums ${stats.unm > 0 ? "text-danger-700 dark:text-danger-500" : "text-success-700 dark:text-success-500"}`}>{stats.unm}</span>
-              <span className="text-[10px] text-muted-foreground border-l border-border pl-2 ml-0.5 hidden sm:inline">{t("click to filter")}</span>
+              <span className="text-[10px] text-muted-foreground border-l border-border pl-2 ml-0.5 hidden sm:inline">click to filter</span>
             </button>
           </div>
         ) : (
@@ -1250,10 +1247,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   {viewEmployee.location_name && ` · ${viewEmployee.location_name}`}
                 </p>
                 <p className="text-xs text-slate-600 mt-2">
-                  <span className="text-success-700">{t("{n} present", { n: viewStats.p })}</span> ·{" "}
-                  <span className="text-danger-700">{t("{n} absent", { n: viewStats.a })}</span> ·{" "}
-                  <span className="text-warning-700">{t("{n} leave", { n: viewStats.l })}</span> ·{" "}
-                  <span className="text-slate-500">{t("view-only")}</span>
+                  <span className="text-success-700">{viewStats.p} present</span> ·{" "}
+                  <span className="text-danger-700">{viewStats.a} absent</span> ·{" "}
+                  <span className="text-warning-700">{viewStats.l} leave</span> ·{" "}
+                  <span className="text-slate-500">view-only</span>
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1261,7 +1258,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => shiftViewMonth(-1)}
                   className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
-                  title={t("Previous month")}
+                  title="Previous month"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -1275,7 +1272,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => shiftViewMonth(1)}
                   className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
-                  title={t("Next month")}
+                  title="Next month"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -1284,20 +1281,20 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   onClick={() => setViewEmployee(null)}
                   className="ml-2 text-xs text-slate-500 hover:text-slate-900 underline"
                 >
-                  {t("Close")}
+                  Close
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-7 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-1.5">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div key={d} className="text-center py-1">{t(d)}</div>
+                <div key={d} className="text-center py-1">{d}</div>
               ))}
             </div>
 
             {viewLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground py-6">
-                <Loader2 className="w-4 h-4 animate-spin" /> {t("Loading…")}
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
               </div>
             ) : (
               <div className="grid grid-cols-7 gap-1.5">
@@ -1318,7 +1315,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     <div
                       key={c.date}
                       className={`h-14 rounded-lg border p-1.5 flex flex-col justify-between transition-colors ${tone}`}
-                      title={status ? `${c.date}: ${t(STATUS_LABEL[status])}` : `${c.date}: ${t("Unmarked")}`}
+                      title={status ? `${c.date}: ${STATUS_LABEL[status]}` : `${c.date}: Unmarked`}
                     >
                       <div className="text-xs font-medium tabular-nums">{c.day}</div>
                       {status && (
@@ -1332,7 +1329,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
             )}
             <p className="text-[11px] text-muted-foreground mt-2.5">
-              {t("View-only. P = Present, A = Absent, L = Leave.")}
+              View-only. P = Present, A = Absent, L = Leave.
             </p>
           </div>
         )}
@@ -1360,7 +1357,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
               <input
                 type="text"
-                placeholder={t("Search employee by name or ID…")}
+                placeholder="Search employee by name or ID…"
                 value={empSearch}
                 onChange={(e) => setEmpSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
@@ -1370,14 +1367,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             <button
               type="button"
               onClick={() => setUnmarkedOnly((v) => !v)}
-              title={t("Show only employees with no attendance for {date}", { date })}
+              title={`Show only employees with no attendance for ${date}`}
               className={`px-3 py-2 text-sm rounded-md border transition-colors whitespace-nowrap ${
                 unmarkedOnly
                   ? "border-danger-500 bg-danger-50 text-danger-700 dark:text-danger-500 font-medium"
                   : "border-border text-muted-foreground hover:bg-accent"
               }`}
             >
-              {t("Unmarked only")}
+              Unmarked only
             </button>
             {/* Filters toggle */}
             <button
@@ -1386,7 +1383,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-border text-foreground hover:bg-accent transition-colors"
             >
               <SlidersHorizontal className="w-4 h-4" strokeWidth={1.5} />
-              {t("Filters")}
+              Filters
               {activeFilterCount > 0 && (
                 <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-[#241a06]">{activeFilterCount}</span>
               )}
@@ -1400,7 +1397,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 value={clientFilter}
                 onChange={setClientFilter}
                 allValue="all"
-                allLabel={t("All Clients")}
               />
               {!relieversOnly && (
                 <ThemedSelect
@@ -1408,10 +1404,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
                   className="px-3 py-2 border border-border rounded-md text-sm"
                 >
-                  <option value="all">{t("All Categories")}</option>
-                  <option value="client">{t("Client")}</option>
-                  <option value="office_staff">{t("Office Staff")}</option>
-                  <option value="reliever">{t("Reliever")}</option>
+                  <option value="all">All Categories</option>
+                  <option value="client">Client</option>
+                  <option value="office_staff">Office Staff</option>
+                  <option value="reliever">Reliever</option>
                 </ThemedSelect>
               )}
               <ThemedSelect
@@ -1419,9 +1415,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
                 className="px-3 py-2 border border-border rounded-md text-sm"
               >
-                <option value="all">{t("All Shifts")}</option>
-                <option value="day">{t("Day")}</option>
-                <option value="night">{t("Night")}</option>
+                <option value="all">All Shifts</option>
+                <option value="day">Day</option>
+                <option value="night">Night</option>
               </ThemedSelect>
             </div>
           )}
@@ -1430,13 +1426,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         <div className="bg-card rounded-xl border border-border mb-6">
           <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-base font-semibold text-foreground">{t("Mark Attendance")} — {date}</h3>
+              <h3 className="text-base font-semibold text-foreground">Mark Attendance — {date}</h3>
               <p className="text-xs text-muted-foreground mt-1">
-                {filteredEmployees.length === 1 ? t("1 employee") : t("{n} employees", { n: filteredEmployees.length })} •{" "}
-                <span className="text-success-600 dark:text-success-500">{t("{n} present", { n: stats.p })}</span> ·{" "}
-                <span className="text-danger-600 dark:text-danger-500">{t("{n} absent", { n: stats.a })}</span> ·{" "}
-                <span className="text-warning-600 dark:text-warning-500">{t("{n} leave", { n: stats.l })}</span> ·{" "}
-                <span className="text-muted-foreground">{t("{n} unmarked", { n: stats.unm })}</span>
+                {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} •{" "}
+                <span className="text-success-600 dark:text-success-500">{stats.p} present</span> ·{" "}
+                <span className="text-danger-600 dark:text-danger-500">{stats.a} absent</span> ·{" "}
+                <span className="text-warning-600 dark:text-warning-500">{stats.l} leave</span> ·{" "}
+                <span className="text-muted-foreground">{stats.unm} unmarked</span>
               </p>
             </div>
             {/* Phase 6: Mark-All-Present and its Undo are removed. Confirmation
@@ -1447,14 +1443,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-slate-50">
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("Employee ID")}</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("Name")}</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Employee ID</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    {relieversOnly ? t("Worked for") : t("Client")}
+                    {relieversOnly ? "Worked for" : "Client"}
                   </th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("Location")}</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("Shift")}</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("Status")}</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Location</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Shift</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1462,14 +1458,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                      {t("Loading…")}
+                      Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredEmployees.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
-                      {t("No employees match the current filters.")}
+                      No employees match the current filters.
                     </td>
                   </tr>
                 )}
@@ -1492,19 +1488,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                     : "bg-warning-50 text-warning-800 border-warning-200"
                                 }`}
                               >
-                                {allReported ? t("All reported") : t("{x}/{y} reported", { x: reported, y: total })}
+                                {allReported ? "All reported" : `${reported}/${total} reported`}
                               </span>
                               {conf ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 ml-auto">
                                   <Check className="w-3.5 h-3.5" strokeWidth={2} />
-                                  {t("Confirmed by {names}", { names: conf.by })}
+                                  Confirmed by {conf.by}
                                 </span>
                               ) : relieversOnly ? (
                                 // Relievers are confirmed under the SITE they worked,
                                 // on the daily Attendance Board, alongside that site's
                                 // guards (0449) — not company-wide from here.
                                 <span className="ml-auto text-[11px] text-muted-foreground italic">
-                                  {t("Confirmed per site on the Attendance Board")}
+                                  Confirmed per site on the Attendance Board
                                 </span>
                               ) : (
                                 canBulk && (
@@ -1514,8 +1510,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                     onClick={() => confirmGroup(g)}
                                     title={
                                       allReported
-                                        ? t("Supervisor: confirm this group's attendance for the day")
-                                        : t("All employees must be reported before this can be confirmed")
+                                        ? "Supervisor: confirm this group's attendance for the day"
+                                        : "All employees must be reported before this can be confirmed"
                                     }
                                     className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-brand-500 text-brand-700 hover:bg-brand-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
@@ -1524,7 +1520,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                     ) : (
                                       <Check className="w-3.5 h-3.5" strokeWidth={2} />
                                     )}
-                                    {t("Confirm")}
+                                    Confirm
                                   </button>
                                 )
                               )}
@@ -1547,7 +1543,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                             type="button"
                             onClick={() => setViewEmployee(employee)}
                             className="text-brand-700 hover:text-brand-900 hover:underline"
-                            title={t("View attendance calendar")}
+                            title="View attendance calendar"
                           >
                             {employee.display_code}
                           </button>
@@ -1558,13 +1554,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                             type="button"
                             onClick={() => setViewEmployee(employee)}
                             className="text-slate-900 hover:text-brand-700 hover:underline text-left"
-                            title={t("View attendance calendar")}
+                            title="View attendance calendar"
                           >
                             {employee.full_name}
                           </button>
                           {current && todayMarkedBy[employee.id] && (
                             <span className="block text-[11px] text-muted-foreground mt-0.5">
-                              {t("reported by {names}", { names: profilesById[todayMarkedBy[employee.id]!] ?? "—" })}
+                              reported by {profilesById[todayMarkedBy[employee.id]!] ?? "—"}
                             </span>
                           )}
                         </td>
@@ -1591,7 +1587,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                   }}
                                   className="px-2 py-1 border border-slate-200 rounded text-sm max-w-[12rem]"
                                 >
-                                  <option value="">{t("Pick site…")}</option>
+                                  <option value="">Pick site…</option>
                                   {clients.map((c) => {
                                     const cs = sites.filter((s) => s.client_id === c.id);
                                     if (cs.length === 0) return null;
@@ -1615,11 +1611,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                       }
                                     }}
                                     className="px-2 py-1 border border-slate-200 rounded text-xs max-w-[12rem] text-slate-500"
-                                    title={t("Covering for (optional)")}
+                                    title="Covering for (optional)"
                                   >
-                                    <option value="">{t("Covering for… (none)")}</option>
+                                    <option value="">Covering for… (none)</option>
                                     {cands.map((g) => (
-                                      <option key={g.id} value={g.id}>{t("covering {name}", { name: g.name })}</option>
+                                      <option key={g.id} value={g.id}>covering {g.name}</option>
                                     ))}
                                   </ThemedSelect>
                                 )}
@@ -1640,7 +1636,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 title={
                                   onDate === employee.shift
                                     ? undefined
-                                    : t("Shift on {date} — currently {shift}", { date, shift: t(employee.shift) })
+                                    : `Shift on ${date} — currently ${employee.shift}`
                                 }
                                 className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
                                   onDate === "day"
@@ -1648,7 +1644,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                     : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
                                 }`}
                               >
-                                {t(onDate)}
+                                {onDate}
                               </span>
                             );
                           })()}
@@ -1695,12 +1691,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                   }
                                   title={
                                     beforeEffective
-                                      ? t("Assignment starts {date}. Attendance can't be marked before this date.", { date: employee.assignment_effective_from ?? "" })
-                                      : t("Mark {status}", { status: t(STATUS_LABEL[status]) })
+                                      ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
+                                      : `Mark ${STATUS_LABEL[status]}`
                                   }
                                   className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition-all disabled:opacity-50 ${cls} ${dim ? "opacity-55" : ""}`}
                                 >
-                                  {t(STATUS_LABEL[status])}
+                                  {STATUS_LABEL[status]}
                                 </button>
                               );
                             })}
@@ -1710,7 +1706,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 onClick={() => unmarkStatus(employee.id)}
                                 disabled={isSaving}
                                 className="p-1.5 rounded-md text-muted-foreground hover:bg-danger-50 hover:text-danger-600 dark:hover:text-danger-500 transition-colors disabled:opacity-50"
-                                title={t("Unmark — clear this attendance")}
+                                title="Unmark — clear this attendance"
                               >
                                 <X className="w-4 h-4" strokeWidth={2} />
                               </button>
@@ -1720,7 +1716,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 type="button"
                                 onClick={() => openDetailsEditor(employee)}
                                 className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                                title={t("Half-day / Late / Overtime")}
+                                title="Half-day / Late / Overtime"
                               >
                                 <MoreHorizontal className="w-4 h-4" />
                               </button>
@@ -1730,7 +1726,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 type="button"
                                 onClick={() => openMonthlyBoard(employee.id)}
                                 className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                                title={t("Monthly Board — mark this employee's whole month")}
+                                title="Monthly Board — mark this employee's whole month"
                               >
                                 <CalendarRange className="w-4 h-4" />
                               </button>
@@ -1751,7 +1747,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <h3 className="text-base text-slate-900">{t("Attendance History")}</h3>
+            <h3 className="text-base text-slate-900">Attendance History</h3>
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <div className="relative flex-1 md:flex-none min-w-[140px]">
                 <CalendarIcon
@@ -1767,7 +1763,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   className="w-full pl-9 pr-2 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
-              <span className="text-sm text-slate-400">{t("to")}</span>
+              <span className="text-sm text-slate-400">to</span>
               <div className="relative flex-1 md:flex-none min-w-[140px]">
                 <CalendarIcon
                   className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 cursor-pointer"
@@ -1789,20 +1785,20 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Date")}</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Location")}</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Client")}</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Present")}</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Absent")}</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Leave")}</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">{t("Actions")}</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Date</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Present</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Absent</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Leave</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {history.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
-                      {t("No attendance records in this range.")}
+                      No attendance records in this range.
                     </td>
                   </tr>
                 )}
@@ -1819,7 +1815,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     <td className="px-6 py-4 text-sm text-warning-600">{record.leave}</td>
                     <td className="px-6 py-4">
                       <Button variant="ghost" size="sm" onClick={() => setDetailRecord(record)}>
-                        {t("View Details")}
+                        View Details
                       </Button>
                     </td>
                   </tr>
@@ -1836,44 +1832,43 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         error={error}
         onDismissError={() => setError(null)}
         onClose={() => setDetailRecord(null)}
-        title={t("Attendance Details")}
+        title="Attendance Details"
         size="lg"
-        headerActions={<LanguageToggle />}
       >
         {detailRecord && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pb-4 border-b border-slate-200 text-sm">
               <div>
-                <p className="text-slate-500 mb-1">{t("Date")}</p>
+                <p className="text-slate-500 mb-1">Date</p>
                 <p className="text-slate-900">{detailRecord.date}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">{t("Location")}</p>
+                <p className="text-slate-500 mb-1">Location</p>
                 <p className="text-slate-900">{detailRecord.location_name ?? "—"}</p>
               </div>
               <div>
-                <p className="text-slate-500 mb-1">{t("Client")}</p>
+                <p className="text-slate-500 mb-1">Client</p>
                 <p className="text-slate-900">{detailRecord.client_name ?? "—"}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-                <p className="text-sm text-success-700 mb-1">{t("Present")}</p>
+                <p className="text-sm text-success-700 mb-1">Present</p>
                 <p className="text-2xl text-success-900">{detailRecord.present}</p>
               </div>
               <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-sm text-danger-700 mb-1">{t("Absent")}</p>
+                <p className="text-sm text-danger-700 mb-1">Absent</p>
                 <p className="text-2xl text-danger-900">{detailRecord.absent}</p>
               </div>
               <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-                <p className="text-sm text-warning-700 mb-1">{t("Leave")}</p>
+                <p className="text-sm text-warning-700 mb-1">Leave</p>
                 <p className="text-2xl text-warning-900">{detailRecord.leave}</p>
               </div>
             </div>
 
             <div className="pt-4">
-              <h4 className="text-sm text-slate-900 mb-3">{t("Employees")}</h4>
+              <h4 className="text-sm text-slate-900 mb-3">Employees</h4>
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 {detailRecord.employees.map((e) => (
                   <div
@@ -1893,7 +1888,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           : "bg-warning-50 text-warning-700"
                       }`}
                     >
-                      {t(STATUS_LABEL[e.status as AttendanceStatus] ?? e.status)}
+                      {STATUS_LABEL[e.status as AttendanceStatus] ?? e.status}
                     </span>
                   </div>
                 ))}
@@ -1907,7 +1902,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 className="w-full"
                 onClick={() => setDetailRecord(null)}
               >
-                {t("Close")}
+                Close
               </Button>
             </div>
           </div>
@@ -1918,9 +1913,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       <Modal
         isOpen={exportOpen}
         onClose={() => setExportOpen(false)}
-        title={t("Export attendance to Excel")}
+        title="Export attendance to Excel"
         size="sm"
-        headerActions={<LanguageToggle />}
         footer={
           <div className="flex items-center gap-2">
             <Button
@@ -1939,17 +1933,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               }}
             >
               {exporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {exporting ? t("Preparing…") : t("Export")}
+              {exporting ? "Preparing…" : "Export"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setExportOpen(false)}>
-              {t("Cancel")}
+              Cancel
             </Button>
           </div>
         }
       >
         <div className="space-y-3">
           <div>
-            <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1.5">{t("Month")}</label>
+            <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1.5">Month</label>
             <input
               type="month"
               value={exportMonth}
@@ -1959,7 +1953,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             />
           </div>
           <p className="text-xs text-slate-500">
-            {t("Exports the {n} employee(s) currently in view (the filters above still apply). Days a guard was no longer employed are marked {mark}, and separations are listed with their date at the bottom of the sheet.", { n: filteredEmployees.length, mark: SEPARATION_MARK })}
+            Exports the {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} currently
+            in view (the filters above still apply). Days a guard was no longer employed are marked{" "}
+            <strong>{SEPARATION_MARK}</strong>, and separations are listed with their date at the bottom of the sheet.
           </p>
         </div>
       </Modal>
@@ -1980,14 +1976,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         error={error}
         onDismissError={() => setError(null)}
         onClose={() => setDetailsEmp(null)}
-        title={detailsEmp ? `${t("Attendance details")} — ${detailsEmp.full_name}` : ""}
+        title={detailsEmp ? `Attendance details — ${detailsEmp.full_name}` : ""}
         size="sm"
-        headerActions={<LanguageToggle />}
       >
         {detailsEmp && (
           <div className="space-y-3">
             <div className="text-xs text-slate-500">
-              {t("Date")}: <strong className="text-slate-700">{date}</strong> ·
+              Date: <strong className="text-slate-700">{date}</strong> ·
               <span className="ml-1 font-mono">{detailsEmp.display_code}</span>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -1996,11 +1991,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 checked={detailsForm.half_day}
                 onChange={(e) => setDetailsForm({ ...detailsForm, half_day: e.target.checked })}
               />
-              <span>{t("Half-day")}</span>
+              <span>Half-day</span>
             </label>
             {detailsForm.half_day && (
               <div>
-                <label className="block text-xs text-slate-700 mb-1">{t("Hours worked")}</label>
+                <label className="block text-xs text-slate-700 mb-1">Hours worked</label>
                 <input
                   type="number"
                   step="0.25"
@@ -2009,7 +2004,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   value={detailsForm.hours_worked}
                   onChange={(e) => setDetailsForm({ ...detailsForm, hours_worked: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  placeholder={t("e.g., 4")}
+                  placeholder="e.g., 4"
                 />
               </div>
             )}
@@ -2019,12 +2014,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 checked={detailsForm.late_arrival}
                 onChange={(e) => setDetailsForm({ ...detailsForm, late_arrival: e.target.checked })}
               />
-              <span>{t("Late arrival")}</span>
-              <span className="text-xs text-slate-500">{t("(does not affect Present status)")}</span>
+              <span>Late arrival</span>
+              <span className="text-xs text-slate-500">(does not affect Present status)</span>
             </label>
             <div>
               <label className="block text-xs text-slate-700 mb-1 inline-flex items-center gap-1">
-                <Clock className="w-3 h-3" /> {t("Overtime hours")}
+                <Clock className="w-3 h-3" /> Overtime hours
               </label>
               <input
                 type="number"
@@ -2039,15 +2034,15 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
               <Button variant="primary" size="md" disabled={detailsSaving} onClick={saveDetails} className="flex-1">
                 {detailsSaving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
-                {t("Save details")}
+                Save details
               </Button>
               <Button variant="secondary" size="md" onClick={() => setDetailsEmp(null)}>
-                {t("Cancel")}
+                Cancel
               </Button>
             </div>
           </div>
         )}
       </Modal>
-    </div>
+    </>
   );
 }

@@ -13,7 +13,6 @@ import { AlertTriangle, CheckCircle2, Clock, Loader2, Lock, MessageSquare, Shiel
 import Button from "./Button";
 import BoardRemarks from "./BoardRemarks";
 import { supabase } from "../lib/supabase";
-import { t, useLang } from "../lib/lang";
 
 export type HalfVerification = {
   id: string;
@@ -36,12 +35,12 @@ const when = (iso: string) =>
 
 /** Where one half stands, as one phrase and a tone. */
 export function halfState(info: HalfInfo, legacyAt: string | null) {
-  if (legacyAt) return { tone: "success" as const, text: t("Verified (old monthly process, {when})", { when: when(legacyAt) }) };
+  if (legacyAt) return { tone: "success" as const, text: `Verified (old monthly process, ${when(legacyAt)})` };
   const v = info.ver;
-  if (v?.ops_verified_at) return { tone: "success" as const, text: `${v.ops_verified_by_name ? t("Ops verified by {names}", { names: v.ops_verified_by_name }) : t("Ops verified")} · ${when(v.ops_verified_at)}` };
-  if (v?.hr_verified_at) return { tone: "info" as const, text: `${t("In Review")} — ${v.hr_verified_by_name ? t("HR verified by {names}", { names: v.hr_verified_by_name }) : t("HR verified")} · ${when(v.hr_verified_at)}` };
-  if (info.ended) return { tone: "warning" as const, text: t("Waiting on HR") };
-  return { tone: "muted" as const, text: t("In progress — not ended yet") };
+  if (v?.ops_verified_at) return { tone: "success" as const, text: `Ops verified${v.ops_verified_by_name ? ` by ${v.ops_verified_by_name}` : ""} · ${when(v.ops_verified_at)}` };
+  if (v?.hr_verified_at) return { tone: "info" as const, text: `In Review — HR verified${v.hr_verified_by_name ? ` by ${v.hr_verified_by_name}` : ""} · ${when(v.hr_verified_at)}` };
+  if (info.ended) return { tone: "warning" as const, text: "Waiting on HR" };
+  return { tone: "muted" as const, text: "In progress — not ended yet" };
 }
 
 const TONE = {
@@ -67,7 +66,6 @@ export default function BoardVerificationBar({
   canHr: boolean;
   onChanged: () => void;
 }) {
-  useLang();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [remarksOpen, setRemarksOpen] = useState(false);
@@ -76,7 +74,7 @@ export default function BoardVerificationBar({
 
   const frozen = payrollPhase !== null;
   const targets: (1 | 2)[] = view === "month" ? [1, 2] : [view];
-  const scopeName = view === "month" ? t("the whole month") : view === 1 ? t("the 1st half") : t("the 2nd half");
+  const scopeName = view === "month" ? "the whole month" : view === 1 ? "the 1st half" : "the 2nd half";
 
   // Halves HR can verify now: not legacy, not yet HR-verified.
   const toVerify = legacyVerifiedAt ? [] : targets.filter((h) => !halves[h].ver?.hr_verified_at);
@@ -105,23 +103,21 @@ export default function BoardVerificationBar({
   const hrVerify = () => {
     if (notEnded.length > 0) {
       const h = notEnded[0];
-      setMsg({ kind: "err", text: t(view === "month"
-        ? "{half} ({range}) hasn't ended yet. It can be verified from the day after it ends — or verify the 1st half on its own now."
-        : "{half} ({range}) hasn't ended yet. It can be verified from the day after it ends.", { half: h === 1 ? t("The 1st half") : t("The 2nd half"), range: halves[h].label }) });
+      setMsg({ kind: "err", text: `The ${h === 1 ? "1st" : "2nd"} half (${halves[h].label}) hasn't ended yet. It can be verified from the day after it ends${view === "month" ? " — or verify the 1st half on its own now" : ""}.` });
       return;
     }
     const outstanding = toVerify.flatMap((h) => halves[h].outstanding);
     if (outstanding.length > 0) {
       const preview = outstanding.slice(0, 6).map((o) => `${o.empName} (${o.date})`).join(", ");
-      setMsg({ kind: "err", text: t("{n} unconfirmed day(s) in {scope}: {list}. Confirm or override them first.", { n: outstanding.length, scope: scopeName, list: `${preview}${outstanding.length > 6 ? "…" : ""}` }) });
+      setMsg({ kind: "err", text: `${outstanding.length} unconfirmed day(s) in ${scopeName}: ${preview}${outstanding.length > 6 ? "…" : ""}. Confirm or override them first.` });
       return;
     }
-    const label = toVerify.length === 2 ? t("Both halves") : toVerify[0] === 1 ? t("The 1st half") : t("The 2nd half");
-    void run(toVerify, "hr_verify", t("{what} HR-verified and locked. Now in Review on the Attendance Run for Ops.", { what: label }));
+    const label = toVerify.length === 2 ? "Both halves" : toVerify[0] === 1 ? "The 1st half" : "The 2nd half";
+    void run(toVerify, "hr_verify", `${label} HR-verified and locked. ${toVerify.length === 2 ? "They are" : "It is"} now in Review on the Attendance Run for Ops.`);
   };
 
-  const verifyLabel = toVerify.length === 2 ? t("HR verify whole month") : toVerify[0] === 1 ? t("HR verify 1st half") : t("HR verify 2nd half");
-  const withdrawLabel = toWithdraw.length === 2 ? t("Withdraw HR (both halves)") : t("Withdraw HR verification");
+  const verifyLabel = toVerify.length === 2 ? "HR verify whole month" : toVerify[0] === 1 ? "HR verify 1st half" : "HR verify 2nd half";
+  const withdrawLabel = toWithdraw.length === 2 ? "Withdraw HR (both halves)" : "Withdraw HR verification";
 
   return (
     <div className="mt-2 space-y-2">
@@ -132,7 +128,7 @@ export default function BoardVerificationBar({
           return (
             <span key={h} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${TONE[st.tone]} ${dim ? "opacity-50" : ""}`}>
               {st.tone === "success" ? <CheckCircle2 className="w-3 h-3" /> : st.tone === "info" ? <Lock className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-              <span className="font-medium">{h === 1 ? t("1st half") : t("2nd half")} {halves[h].label}</span>
+              <span className="font-medium">{h === 1 ? "1st" : "2nd"} half {halves[h].label}</span>
               <span className="hidden md:inline">· {st.text}</span>
             </span>
           );
@@ -146,19 +142,19 @@ export default function BoardVerificationBar({
           )}
           {canHr && !frozen && toWithdraw.length > 0 && (
             <Button size="sm" variant="secondary" disabled={busy}
-              onClick={() => { if (window.confirm(t("Withdraw HR verification for {what}? The days unlock and leave Ops' Review.", { what: toWithdraw.length === 2 ? t("both halves") : toWithdraw[0] === 1 ? t("the 1st half") : t("the 2nd half") }))) void run(toWithdraw, "undo_hr", t("HR verification withdrawn. The days are unlocked.")); }}>
+              onClick={() => { if (window.confirm(`Withdraw HR verification for ${toWithdraw.length === 2 ? "both halves" : `the ${toWithdraw[0] === 1 ? "1st" : "2nd"} half`}? The days unlock and leave Ops' Review.`)) void run(toWithdraw, "undo_hr", "HR verification withdrawn. The days are unlocked."); }}>
               <Undo2 className="w-4 h-4 mr-1.5" /> {withdrawLabel}
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={() => { setRemarksHalf(view === 2 ? 2 : 1); setRemarksOpen((o) => !o); }}>
-            <MessageSquare className="w-4 h-4 mr-1.5" /> {t("Remarks")}
+            <MessageSquare className="w-4 h-4 mr-1.5" /> Remarks
           </Button>
         </div>
       </div>
 
       {frozen && !legacyVerifiedAt && (
         <p className="text-[11px] text-warning-700 dark:text-warning-500 flex items-center gap-1">
-          <Lock className="w-3 h-3" /> {t("Payroll for this month has moved past Draft, so verification is frozen.")}
+          <Lock className="w-3 h-3" /> Payroll for this month has moved past Draft, so verification is frozen.
         </p>
       )}
 
@@ -176,7 +172,7 @@ export default function BoardVerificationBar({
             {([1, 2] as const).map((h) => (
               <button key={h} type="button" onClick={() => setRemarksHalf(h)}
                 className={`px-2.5 py-1 rounded text-xs ${remarksHalf === h ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                {h === 1 ? t("1st half") : t("2nd half")}{remarkCounts[h] ? ` (${remarkCounts[h]})` : ""}
+                {h === 1 ? "1st" : "2nd"} half{remarkCounts[h] ? ` (${remarkCounts[h]})` : ""}
               </button>
             ))}
           </div>

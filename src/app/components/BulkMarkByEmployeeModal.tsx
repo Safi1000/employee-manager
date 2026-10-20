@@ -8,7 +8,6 @@ import { guardDisplayCode } from "../lib/guardCode";
 import { attendanceWindowError, isSeparatedState, lifecycleStatusLabel, buildClientCoverage, effectiveWindowContract } from "../lib/employmentWindow";
 import { loadShiftResolver, type ShiftResolver } from "../lib/shiftOnDate";
 import { clearConflictingDayRows } from "../lib/attendanceDay";
-import { LanguageToggle, useLang } from "../lib/lang";
 
 // ── Shared "Bulk Mark by Employee" calendar ──────────────────────────────────
 // Single source of truth used by BOTH the Attendance board and the Attendance
@@ -96,7 +95,6 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   initialMonth?: string;
 }) {
   const { profile } = useAuth();
-  const { lang, t } = useLang();
   const [employees, setEmployees] = useState<BulkEmp[]>([]);
   const [contracts, setContracts] = useState<BulkContract[]>([]);
   const [loadingEmps, setLoadingEmps] = useState(true);
@@ -204,12 +202,12 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     const m = new Map<string, string>();
     for (const e of employees) {
       if (e.client_id) m.set(e.client_id, e.client_name ?? "—");
-      else m.set(`cat:${e.category}`, `${t(catLabel(e.category))} (${t("no client")})`);
+      else m.set(`cat:${e.category}`, `${catLabel(e.category)} (no client)`);
     }
     return [...m.entries()]
       .sort((a, b) => a[1].localeCompare(b[1]))
       .map(([id, name]) => ({ id, name }));
-  }, [employees, lang]);
+  }, [employees]);
 
   const options = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -295,8 +293,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   // and mirrored by the DB trigger (migration 0152), so a day greyed out here is
   // a day the database will refuse regardless of how it's submitted.
   const windowBlock = (d: string): string | null => {
-    if (!emp) return t("No employee selected.");
-    if (d > today()) return t("Future dates can't be marked.");
+    if (!emp) return "No employee selected.";
+    if (d > today()) return "Future dates can't be marked.";
     return attendanceWindowError(emp, empContract, d);
   };
 
@@ -397,7 +395,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     // & month ended → override on the Monthly Board) instead of a generic catch-all.
     const blockedReasons = [...new Set(blocked.map((x) => x.reason).filter(Boolean) as string[])];
     if (overrideDays.length > 0 && !overrideReason.trim()) {
-      setBulkError(t("{n} of {total} selected day(s) are backdated beyond the limit. Enter a supervisor override reason below to include them, or deselect those days.", { n: overrideDays.length, total: days.length }));
+      setBulkError(`${overrideDays.length} of ${days.length} selected day(s) are backdated beyond the limit. Enter a supervisor override reason below to include them, or deselect those days.`);
       return null;
     }
     const useOverride = !!overrideReason.trim();
@@ -421,8 +419,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       setSubmitting(false);
       setBulkError(
         gate.blockedReasons.length
-          ? `${t("Nothing written")} — ${gate.blockedReasons.join("; ")}`
-          : t("Nothing written — all selected day(s) are blocked (closed payroll period, archived, or out of employment window)."),
+          ? `Nothing written — ${gate.blockedReasons.join("; ")}`
+          : `Nothing written — all selected day(s) are blocked (closed payroll period, archived, or out of employment window).`,
       );
       return;
     }
@@ -477,10 +475,10 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     setSubmitting(false);
     if (error) { setBulkError(error.message); return; }
     setNotice(
-      t("Marked {n} day(s) {status}", { n: gate.days.length, status: t(STATUS_LABEL[status]).toLowerCase() }) +
-      (isDouble ? ` · ${t("double duty")}` : "") +
-      (gate.overrodeCount ? ` (${t("{n} backdated via override", { n: gate.overrodeCount })})` : "") +
-      (gate.blockedCount ? ` · ${t("skipped {n} blocked / out-of-window", { n: gate.blockedCount })}` : "") + ".",
+      `Marked ${gate.days.length} day(s) ${STATUS_LABEL[status].toLowerCase()}` +
+      (isDouble ? " · double duty" : "") +
+      (gate.overrodeCount ? ` (${gate.overrodeCount} backdated via override)` : "") +
+      (gate.blockedCount ? ` · skipped ${gate.blockedCount} blocked / out-of-window` : "") + ".",
     );
     setOverrideReason("");
     await loadMonth(emp.id, month);
@@ -497,8 +495,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       setSubmitting(false);
       setBulkError(
         gate.blockedReasons.length
-          ? `${t("Nothing cleared")} — ${gate.blockedReasons.join("; ")}`
-          : t("Nothing cleared — selected day(s) are blocked (closed payroll period or out of employment window)."),
+          ? `Nothing cleared — ${gate.blockedReasons.join("; ")}`
+          : `Nothing cleared — selected day(s) are blocked (closed payroll period or out of employment window).`,
       );
       return;
     }
@@ -510,8 +508,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     setSubmitting(false);
     if (error) { setBulkError(error.message); return; }
     setNotice(
-      t("Cleared {n} day(s) — reverted to unmarked", { n: gate.days.length }) +
-      (gate.blockedCount ? ` · ${t("skipped {n} blocked / out-of-window", { n: gate.blockedCount })}` : "") + ".",
+      `Cleared ${gate.days.length} day(s) — reverted to unmarked` +
+      (gate.blockedCount ? ` · skipped ${gate.blockedCount} blocked / out-of-window` : "") + ".",
     );
     setOverrideReason("");
     await loadMonth(emp.id, month);
@@ -520,8 +518,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   };
 
   return (
-    <Modal isOpen onClose={onClose} size="lg" title={t("Bulk Mark by Employee")} headerActions={<LanguageToggle />}>
-      <div className="space-y-4" lang={lang}>
+    <Modal isOpen onClose={onClose} size="lg" title="Bulk Mark by Employee">
+      <div className="space-y-4">
         {bulkError && (
           <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{bulkError}</div>
         )}
@@ -531,24 +529,24 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
         {/* Employee picker */}
         <div>
-          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">{t("Employee")}</label>
+          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">Employee</label>
           {emp ? (
             <div className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-md bg-slate-50">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-slate-900 truncate">{emp.full_name}</span>
                   {isSeparatedState(emp.lifecycle_state) && (
-                    <span className="shrink-0 inline-flex items-center rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-800 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-400" title={emp.termination_date ? t("Separated {date} — later dates can't be marked", { date: emp.termination_date }) : t("Separated")}>
+                    <span className="shrink-0 inline-flex items-center rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-800 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-400" title={emp.termination_date ? `Separated ${emp.termination_date} — later dates can't be marked` : "Separated"}>
                       {lifecycleStatusLabel({ lifecycle_state: emp.lifecycle_state ?? "", status: emp.status, eligible_for_rehire: emp.eligible_for_rehire })}
                     </span>
                   )}
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border capitalize ${emp.shift === "day" ? "bg-warning-50 text-warning-700 border-warning-200" : "bg-info-50 text-info-700 border-info-200"}`} title={t("Guard's default shift")}>{t("{shift} shift", { shift: t(emp.shift) })}</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border capitalize ${emp.shift === "day" ? "bg-warning-50 text-warning-700 border-warning-200" : "bg-info-50 text-info-700 border-info-200"}`} title="Guard's default shift">{emp.shift} shift</span>
                 </div>
                 <div className="text-xs text-slate-500 font-mono">
                   {guardDisplayCode(emp, emp.client_prefix)}{emp.client_name && ` · ${emp.client_name}`}
                 </div>
               </div>
-              <button type="button" onClick={() => { setEmpId(""); setSelected(new Set()); }} className="text-xs text-slate-500 hover:text-slate-900 underline">{t("Change")}</button>
+              <button type="button" onClick={() => { setEmpId(""); setSelected(new Set()); }} className="text-xs text-slate-500 hover:text-slate-900 underline">Change</button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -558,21 +556,21 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                   value={clientFilter}
                   onChange={setClientFilter}
                   allValue="all"
-                  allLabel={t("All groups")}
+                  allLabel="All groups"
                   className="sm:w-56 flex-shrink-0"
                   buttonClassName=""
                 />
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                  <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={clientFilter === "all" ? t("Search name, code or client…") : t("Search within this group…")}
+                  <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={clientFilter === "all" ? "Search name, code or client…" : "Search within this group…"}
                     className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm" />
                 </div>
               </div>
               <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md">
                 {loadingEmps ? (
-                  <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> {t("Loading…")}</div>
+                  <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</div>
                 ) : options.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-slate-500">{t("No matches.")}</div>
+                  <div className="px-3 py-2 text-xs text-slate-500">No matches.</div>
                 ) : (
                   options.map((e) => (
                     <button type="button" key={e.id} onClick={() => setEmpId(e.id)}
@@ -607,19 +605,19 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
             {/* Selection helpers */}
             <div className="flex flex-wrap gap-2 text-xs">
-              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) if (c.date && inWindow(c.date)) s.add(c.date); setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">{t("Select month")}</button>
-              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) { if (!c.date || !inWindow(c.date)) continue; const dow = new Date(`${c.date}T00:00:00`).getDay(); if (dow !== 0 && dow !== 6) s.add(c.date); } setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">{t("Weekdays only")}</button>
-              <button type="button" onClick={() => { setSelected(new Set()); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">{t("Clear selection")}</button>
-              <span className="ml-auto text-slate-500 self-center">{selected.size === 1 ? t("1 day selected") : t("{n} days selected", { n: selected.size })}</span>
+              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) if (c.date && inWindow(c.date)) s.add(c.date); setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Select month</button>
+              <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) { if (!c.date || !inWindow(c.date)) continue; const dow = new Date(`${c.date}T00:00:00`).getDay(); if (dow !== 0 && dow !== 6) s.add(c.date); } setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Weekdays only</button>
+              <button type="button" onClick={() => { setSelected(new Set()); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Clear selection</button>
+              <span className="ml-auto text-slate-500 self-center">{selected.size} day{selected.size === 1 ? "" : "s"} selected</span>
             </div>
 
             {/* Calendar grid */}
             <div className="select-none" onMouseUp={endDrag} onMouseLeave={endDrag}>
               <div className="grid grid-cols-7 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-1.5">
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="text-center py-1">{t(d)}</div>)}
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="text-center py-1">{d}</div>)}
               </div>
               {loadingMonth ? (
-                <div className="flex items-center gap-2 text-muted-foreground py-6"><Loader2 className="w-4 h-4 animate-spin" /> {t("Loading…")}</div>
+                <div className="flex items-center gap-2 text-muted-foreground py-6"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
               ) : (
                 <div className="grid grid-cols-7 gap-1.5">
                   {cells.map((c, i) => {
@@ -638,7 +636,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                         onMouseDown={(e) => { if (!win) return; e.preventDefault(); startDrag(c.date!); }}
                         onMouseEnter={() => win && extendDrag(c.date!)}
                         className={`h-16 rounded-lg border p-1.5 flex flex-col justify-between transition-all ${win ? "cursor-pointer" : ""} ${cellClass} ${ring}`}
-                        title={block ?? (status ? t("Currently: {status}", { status: t(STATUS_LABEL[status]) }) : t("Unmarked"))}>
+                        title={block ?? (status ? `Currently: ${STATUS_LABEL[status]}` : "Unmarked")}>
                         <div className="flex items-start justify-between">
                           <span className="text-xs font-medium tabular-nums">{c.day}</span>
                           {win && status && <span className="text-[9px] font-bold uppercase tracking-wider">{STATUS_SHORT[status]}</span>}
@@ -651,7 +649,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                         {win && (
                           <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/70">
                             {pendingStatus === "rotation_leave" || pendingStatus === "rest_day"
-                              ? t("All day")
+                              ? "All day"
                               : shiftsFor(c.date).map(shiftAbbr).join(" + ")}
                           </div>
                                                 )}
@@ -661,7 +659,9 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                 </div>
               )}
               <p className="text-[11px] text-muted-foreground mt-2.5">
-                {t("Tap a date to toggle, or press and drag to select a range. Greyed days can't be marked — they're in the future, before joining, on/after the separation date, or outside the contract's dates. Hover a greyed day for the reason.")}
+                Tap a date to toggle, or press and drag to select a range. Greyed days can't be marked —
+                they're in the future, before joining, on/after the separation date, or outside the
+                contract's dates. Hover a greyed day for the reason.
               </p>
             </div>
 
@@ -670,19 +670,20 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
               <div className="space-y-3 pt-2 border-t border-slate-200">
                 {pendingStatus === "double_duty" && (
                   <p className="text-[11px] text-info-700 dark:text-info-500 bg-info-50 border border-info-200 rounded px-2.5 py-1.5">
-                    {t("Double duty — the rostered shift (grey) is already selected on each day. Tap a second shift in the date cell to record the extra duty.")}
+                    Double duty — the rostered shift (grey) is already selected on each day.
+                    Tap a second shift in the date cell to record the extra duty.
                   </p>
                 )}
 
                 <div>
-                  <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">{t("Status")}</label>
+                  <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">Status</label>
                   <div className="flex flex-wrap gap-2">
                     {BULK_STATUS_OPTIONS.map((o) => {
                       const active = pendingStatus === o.status;
                       return (
                         <button key={o.status} type="button" onClick={() => changeStatus(o.status)}
                           className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${active ? o.activeBtn : "bg-card text-foreground border-slate-200 hover:border-slate-300"}`}>
-                          {t(o.label)}
+                          {o.label}
                         </button>
                       );
                     })}
@@ -691,13 +692,13 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">
-                    {t("Supervisor override reason")} <span className="text-slate-400">{t("(only needed for days older than 3 days)")}</span>
+                    Supervisor override reason <span className="text-slate-400">(only needed for days older than 3 days)</span>
                   </label>
                   <input
                     type="text"
                     value={overrideReason}
                     onChange={(e) => setOverrideReason(e.target.value)}
-                    placeholder={t("e.g. Late WhatsApp report — approved by supervisor")}
+                    placeholder="e.g. Late WhatsApp report — approved by supervisor"
                     className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                   />
                 </div>
@@ -705,14 +706,14 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button type="button" onClick={applyMark} disabled={submitting}
                     className="flex-1 min-w-[150px] px-3 py-2 rounded-md text-sm text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    {submitting ? t("Saving…") : t("Mark {status}", { status: t(BULK_STATUS_OPTIONS.find((o) => o.status === pendingStatus)?.label ?? "") })}
+                    {submitting ? "Saving…" : `Mark ${BULK_STATUS_OPTIONS.find((o) => o.status === pendingStatus)?.label}`}
                   </button>
                   <button type="button" onClick={clearMarks} disabled={submitting}
                     className="px-3 py-2 rounded-md text-sm border border-danger-200 text-danger-700 hover:bg-danger-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                    {t("Clear (unmark)")}
+                    Clear (unmark)
                   </button>
                   {submitting && (
-                    <span className="self-center text-xs text-slate-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {t("Saving…")}</span>
+                    <span className="self-center text-xs text-slate-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Saving…</span>
                   )}
                 </div>
               </div>

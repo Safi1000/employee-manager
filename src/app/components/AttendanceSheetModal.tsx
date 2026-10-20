@@ -11,7 +11,6 @@ import { guardDisplayCode } from "../lib/guardCode";
 import BoardVerificationBar, { type HalfInfo, type HalfVerification } from "./BoardVerificationBar";
 import ThemedSelect from "./ThemedSelect";
 import { useRegion } from "../lib/region";
-import { LanguageToggle, useLang } from "../lib/lang";
 import { buildAttendanceRows, buildRelieverRows, loadSheetEmployees, loadSiteByGuard, loadConfirmationGate } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
 
@@ -91,7 +90,6 @@ export default function AttendanceSheetModal({
   /** Staff-group boards: the region to open on (the Attendance Run passes its row's). */
   initialBranchId?: string | null;
 }) {
-  const { lang, t } = useLang();
   // Opens on the PREVIOUS month — the one being closed and verified (asked 2026-10-05).
   const [month, setMonth] = useState(initialMonth ?? previousMonth());
   useEffect(() => { onMonthChange?.(month); }, [month]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -440,7 +438,6 @@ export default function AttendanceSheetModal({
 
   return (
     <div
-      lang={lang}
       className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4"}
       onClick={inline ? undefined : onClose}
     >
@@ -462,10 +459,10 @@ export default function AttendanceSheetModal({
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-foreground truncate flex items-center gap-2">
-                {t("Monthly Board")} — {label}
+                Monthly Board — {label}
                 {dayLocked(0) && dayLocked(daysInMonth - 1) && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-900/20 px-1.5 py-0.5 rounded" title={t("Both halves verified — the month's attendance is locked")}>
-                    <ShieldCheck className="w-3 h-3" /> {t("Verified")} <Lock className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-900/20 px-1.5 py-0.5 rounded" title="Both halves verified — the month's attendance is locked">
+                    <ShieldCheck className="w-3 h-3" /> Verified <Lock className="w-3 h-3" />
                   </span>
                 )}
               </h2>
@@ -479,18 +476,17 @@ export default function AttendanceSheetModal({
                 value={branch ?? ""}
                 onChange={(e) => setBranch(e.target.value || null)}
                 className="px-2 py-1 border border-border rounded-md text-sm bg-card shrink-0"
-                title={t("Staff groups are verified per region")}
+                title="Staff groups are verified per region"
               >
                 {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </ThemedSelect>
             )}
-            <LanguageToggle />
             <div className="hidden sm:flex items-center gap-1 shrink-0">
-              <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title={t("Previous month")}><ChevronLeft className="w-4 h-4" /></button>
+              <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
-              <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title={t("Next month")}><ChevronRight className="w-4 h-4" /></button>
+              <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
             </div>
-            <div className="hidden sm:block">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label={t("What the board shows")}>
+            <div className="hidden sm:block">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="What the board shows">
               {([["month", "Whole month"], [1, "1st half"], [2, "2nd half"]] as const).map(([v, text]) => {
                 const range = v === "month" ? "" : v === 1 ? `1–${halfCut}` : `${halfCut + 1}–${daysInMonth}`;
                 return (
@@ -502,27 +498,27 @@ export default function AttendanceSheetModal({
                     onClick={() => setView(v)}
                     className={`px-2.5 py-1 rounded text-xs transition-colors ${view === v ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    {t(text)}{range && <span className="text-muted-foreground tabular-nums"> {range}</span>}
+                    {text}{range && <span className="text-muted-foreground tabular-nums"> {range}</span>}
                   </button>
                 );
               })}
             </div></div>
             <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={download} disabled={loading || rows.length === 0}>
-              <Download className="w-4 h-4 mr-1.5" /> {t("Download Excel")}
+              <Download className="w-4 h-4 mr-1.5" /> Download Excel
             </Button>
             {!inline && onClose && (
-              <button onClick={onClose} className="p-1.5 rounded hover:bg-accent shrink-0" title={t("Close")}><X className="w-4 h-4" /></button>
+              <button onClick={onClose} className="p-1.5 rounded hover:bg-accent shrink-0" title="Close"><X className="w-4 h-4" /></button>
             )}
           </div>
           <div className="mt-2 flex items-center gap-1 sm:hidden">
-            <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent shrink-0" title={t("Previous month")}><ChevronLeft className="w-4 h-4" /></button>
+            <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent shrink-0" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="flex-1 min-w-0 px-2 py-1 border border-border rounded-md text-sm bg-card" />
-            <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent shrink-0" title={t("Next month")}><ChevronRight className="w-4 h-4" /></button>
-            <Button size="sm" variant="secondary" className="shrink-0" onClick={download} disabled={loading || rows.length === 0} title={t("Download Excel")}>
+            <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent shrink-0" title="Next month"><ChevronRight className="w-4 h-4" /></button>
+            <Button size="sm" variant="secondary" className="shrink-0" onClick={download} disabled={loading || rows.length === 0} title="Download Excel">
               <Download className="w-4 h-4" />
             </Button>
           </div>
-          <div className="mt-2 sm:hidden">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label={t("What the board shows")}>
+          <div className="mt-2 sm:hidden">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="What the board shows">
               {([["month", "Whole month"], [1, "1st half"], [2, "2nd half"]] as const).map(([v, text]) => {
                 const range = v === "month" ? "" : v === 1 ? `1–${halfCut}` : `${halfCut + 1}–${daysInMonth}`;
                 return (
@@ -534,7 +530,7 @@ export default function AttendanceSheetModal({
                     onClick={() => setView(v)}
                     className={`px-2.5 py-1 rounded text-xs transition-colors ${view === v ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    {t(text)}{range && <span className="text-muted-foreground tabular-nums"> {range}</span>}
+                    {text}{range && <span className="text-muted-foreground tabular-nums"> {range}</span>}
                   </button>
                 );
               })}
@@ -558,11 +554,11 @@ export default function AttendanceSheetModal({
                 type="text"
                 value={empSearch}
                 onChange={(e) => setEmpSearch(e.target.value)}
-                placeholder={t("Search employee by name or Emp #…")}
+                placeholder="Search employee by name or Emp #…"
                 className="w-full pl-8 pr-8 py-1.5 border border-border bg-card rounded-md text-sm text-foreground"
               />
               {empSearch && (
-                <button type="button" onClick={() => setEmpSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-accent" title={t("Clear search")}>
+                <button type="button" onClick={() => setEmpSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-accent" title="Clear search">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -571,8 +567,8 @@ export default function AttendanceSheetModal({
           {!viewLocked && canHrVerify && !loading && rows.length > 0 && (
             <p className="mt-1.5 text-[11px] text-muted-foreground">
               {viewOutstanding.length === 0
-                ? viewEnded ? t("Every day shown is confirmed. Ready for HR to verify.") : t("Every day so far is confirmed — HR can verify a half once it has ended.")
-                : t("{n} unconfirmed day(s) are highlighted below. Confirm those shifts on the Daily board first.", { n: viewOutstanding.length })}
+                ? viewEnded ? "Every day shown is confirmed. Ready for HR to verify." : "Every day so far is confirmed — HR can verify a half once it has ended."
+                : `${viewOutstanding.length} unconfirmed day(s) are highlighted below. Confirm those shifts on the Daily board first.`}
             </p>
           )}
         </div>
@@ -580,12 +576,12 @@ export default function AttendanceSheetModal({
         <div className="flex-1 overflow-auto p-2 md:p-4">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t("Loading…")}
+              <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…
             </div>
           ) : err ? (
             <p className="text-sm text-danger-600 py-8 text-center">{err}</p>
           ) : rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">{t(siteId ? "No employees on this site for {month}." : "No employees on this client for {month}.", { month: monthLabel })}</p>
+            <p className="text-sm text-muted-foreground py-8 text-center">No employees on this {siteId ? "site" : "client"} for {monthLabel}.</p>
           ) : (
             <table className="text-xs border-collapse">
               <thead>
@@ -600,20 +596,20 @@ export default function AttendanceSheetModal({
                       style={{ ...leadCell(ci), ...stickyHead(0) }}
                       className={`sticky z-40 border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary${ci === LEAD.length - 1 ? " border-r-2" : ""}`}
                     >
-                      {t(h)}
+                      {h}
                     </th>
                   ))}
                   {days.map((d) => (
                     <th key={d} colSpan={S} style={stickyHead(0)} className="sticky z-30 border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
                   ))}
                   {["Presents", "Absents", "Allowed Leaves", "Leaves Taken", "Double Duty", view === "month" ? "Pay Days" : "Month Pay Days"].map((h) => (
-                    <th key={h} rowSpan={2} style={stickyHead(0)} className="sticky z-30 border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{t(h)}</th>
+                    <th key={h} rowSpan={2} style={stickyHead(0)} className="sticky z-30 border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
                   ))}
                 </tr>
                 <tr className="bg-secondary">
                   {days.map((d) =>
                     shifts.map((c) => (
-                      <th key={`${d}-${c}`} style={stickyHead(dayRowH)} className="sticky z-30 border border-border px-1 py-0.5 text-center text-[10px] text-muted-foreground bg-secondary" title={t("{shift} shift", { shift: t(c) })}>{shiftAbbr(c)}</th>
+                      <th key={`${d}-${c}`} style={stickyHead(dayRowH)} className="sticky z-30 border border-border px-1 py-0.5 text-center text-[10px] text-muted-foreground bg-secondary" title={`${c} shift`}>{shiftAbbr(c)}</th>
                     )),
                   )}
                 </tr>
@@ -622,7 +618,7 @@ export default function AttendanceSheetModal({
                 {visibleRows.length === 0 && (
                   <tr>
                     <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-card border border-border border-r-2 px-2 py-3 text-muted-foreground">
-                      {t('No employee matches "{q}".', { q: empSearch.trim() })}
+                      No employee matches "{empSearch.trim()}".
                     </td>
                   </tr>
                 )}
@@ -633,7 +629,7 @@ export default function AttendanceSheetModal({
                       {row.name}
                       {row.isReliever && (
                         <span className="ml-1.5 inline-flex items-center rounded-sm border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-900/20 dark:text-brand-400">
-                          {t("Reliever")}
+                          Reliever
                         </span>
                       )}
                       {row.separationNote && <span className="text-muted-foreground"> ({row.separationNote})</span>}
@@ -698,17 +694,17 @@ export default function AttendanceSheetModal({
                           <td
                             key={`${i}-${s}`}
                             onClick={clickable ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: cellStatus, shift: cShift, presentOnly: !isPrimary }) : undefined}
-                            title={isPrimary && isRelieverDay ? t("Reliever day — covered as a reliever (gaps allowed)")
-                              : isPrimary && flagged ? t("Not confirmed — confirm this shift on the Attendance board to show it here")
-                              : isCleared ? (clickable ? t("Cleared — click to re-mark via override") : t("Cleared (this day was reset to unmarked)"))
+                            title={isPrimary && isRelieverDay ? "Reliever day — covered as a reliever (gaps allowed)"
+                              : isPrimary && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
+                              : isCleared ? (clickable ? "Cleared — click to re-mark via override" : "Cleared (this day was reset to unmarked)")
                               : !clickable ? undefined
-                              : isPrimary ? (hasMark ? t("Confirmed & month ended — click to override") : t("Cleared / unmarked — click to mark via override"))
-                              : cellStatus ? t("Double duty — click to edit") : t("Click to add a {shift} shift (double duty)", { shift: t(cShift) })}
+                              : isPrimary ? (hasMark ? "Confirmed & month ended — click to override" : "Cleared / unmarked — click to mark via override")
+                              : cellStatus ? "Double duty — click to edit" : `Click to add a ${cShift} shift (double duty)`}
                             className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(cellStatus)}`}
                           >
                             {cellStatus}
                             {isPrimary && isRelieverDay && cellStatus && (
-                              <sup className="ml-0.5 text-[8px] font-semibold text-brand-600 dark:text-brand-400" title={t("Reliever day")}>R</sup>
+                              <sup className="ml-0.5 text-[8px] font-semibold text-brand-600 dark:text-brand-400" title="Reliever day">R</sup>
                             )}
                           </td>
                         );
@@ -723,19 +719,19 @@ export default function AttendanceSheetModal({
                   </tr>
                 ))}
                 <tr className="bg-secondary/60 font-medium">
-                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">{t("Total Presents")}</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Presents</td>
                   {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumAL), String(totals.sumL), String(totals.sumDD), String(totals.sumPD)])}
                 </tr>
                 <tr className="bg-secondary/40">
-                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">{t("Total Leaves")}</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Leaves</td>
                   {totalRowCells(totals.L)}
                 </tr>
                 <tr className="bg-secondary/40">
-                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">{t("Total Absents")}</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Absents</td>
                   {totalRowCells(totals.A)}
                 </tr>
                 <tr className="bg-secondary/60 font-medium">
-                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">{t("Grand Total")}</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Grand Total</td>
                   {totalRowCells(totals.grand)}
                 </tr>
               </tbody>
@@ -744,20 +740,20 @@ export default function AttendanceSheetModal({
 
           {!loading && !err && rows.length > 0 && (
             <div className="mt-3 text-[11px] text-muted-foreground space-y-0.5">
-              {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {t("{shift} shift", { shift: t(c) })}</span>)}
-              <div>{t("P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · allowed leaves = this employee's own allowance for the month (as payroll uses it) · pay days = presents + double duties + leaves taken, counted only up to allowed leaves")}</div>
+              {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
+              <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · allowed leaves = this employee's own allowance for the month (as payroll uses it) · pay days = presents + double duties + leaves taken, counted only up to allowed leaves</div>
               <div>
                 <span className="inline-block align-middle rounded-sm bg-brand-50 dark:bg-brand-900/20 px-1 mr-1">P<sup className="text-[8px] font-semibold text-brand-600 dark:text-brand-400">R</sup></span>
-                = {t("reliever day (the guard covered as a reliever that day) — gaps in a reliever segment are expected and never block verification.")}
+                = reliever day (the guard covered as a reliever that day) — gaps in a reliever segment are expected and never block verification.
               </div>
               <div className="text-muted-foreground">
-                {t("Shows only attendance the supervisor has confirmed on the Attendance board; unconfirmed days stay blank.")}{" "}
+                Shows only attendance the supervisor has confirmed on the Attendance board; unconfirmed days stay blank.
                 {monthEnded
-                  ? t("The month has ended — a confirmed day is now locked everywhere else and can be changed only by clicking it here to override.")
-                  : t("Until the month ends, this view is read-only — edit on the Attendance board.")}
+                  ? " The month has ended — a confirmed day is now locked everywhere else and can be changed only by clicking it here to override."
+                  : " Until the month ends, this view is read-only — edit on the Attendance board."}
               </div>
-              <div>{t("Whole month / 1st half / 2nd half changes what the grid shows; HR's verify button acts on it. In a half view the counts are that half's, and pay days stay the month's. A half HR has verified is locked and waits in Review on the Attendance Run for Ops.")}</div>
-              {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> {t("not yet confirmed (blocks HR Verify of its half)")}</div>}
+              <div>Whole month / 1st half / 2nd half changes what the grid shows; HR's verify button acts on it. In a half view the counts are that half's, and pay days stay the month's. A half HR has verified is locked and waits in Review on the Attendance Run for Ops.</div>
+              {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> not yet confirmed (blocks HR Verify of its half)</div>}
             </div>
           )}
         </div>
@@ -809,7 +805,6 @@ function OverrideModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { lang, t } = useLang();
   const wasUnmarked = target.current === "";
   const statusOptions = presentOnly ? OV_STATUSES.filter((s) => s.key === "present") : OV_STATUSES;
   const [status, setStatus] = useState<"present" | "absent" | "leave" | null>(presentOnly ? "present" : letterToStatus(target.current));
@@ -818,9 +813,9 @@ function OverrideModal({
   const [err, setErr] = useState<string | null>(null);
 
   const save = async () => {
-    if (locked) { setErr(t("This month is OPS-verified and locked. Un-verify it to change attendance.")); return; }
-    if (!status) { setErr(t("Choose Present, Absent, or Leave.")); return; }
-    if (!reason.trim()) { setErr(t("A reason is required to override.")); return; }
+    if (locked) { setErr("This month is OPS-verified and locked. Un-verify it to change attendance."); return; }
+    if (!status) { setErr("Choose Present, Absent, or Leave."); return; }
+    if (!reason.trim()) { setErr("A reason is required to override."); return; }
     setBusy(true); setErr(null);
     // 0. An override to Leave replaces the whole day. This is the path that made
     // the worst of the found cases — a night cell overridden to Leave while the
@@ -919,8 +914,8 @@ function OverrideModal({
   // the confirmed-month-end lock (Override's authority) but NOT the OPS-verified
   // lock, and writes an audit row. A reason is required, same as an override.
   const clearDay = async () => {
-    if (locked) { setErr(t("This month is OPS-verified and locked. Un-verify it to change attendance.")); return; }
-    if (!reason.trim()) { setErr(t("A reason is required to clear this day.")); return; }
+    if (locked) { setErr("This month is OPS-verified and locked. Un-verify it to change attendance."); return; }
+    if (!reason.trim()) { setErr("A reason is required to clear this day."); return; }
     setBusy(true); setErr(null);
     const { error } = await supabase.rpc("clear_attendance_day", {
       p_employee: target.empId, p_date: target.date, p_reason: reason.trim(),
@@ -930,9 +925,9 @@ function OverrideModal({
     onSaved();
   };
   const clearMonth = async () => {
-    if (locked) { setErr(t("This month is OPS-verified and locked. Un-verify it to change attendance.")); return; }
-    if (!reason.trim()) { setErr(t("A reason is required to clear the month.")); return; }
-    if (!window.confirm(t("Clear ALL of {name}'s marks for {month}? Every day goes back to unmarked. This cannot be undone.", { name: target.empName, month: target.date.slice(0, 7) }))) return;
+    if (locked) { setErr("This month is OPS-verified and locked. Un-verify it to change attendance."); return; }
+    if (!reason.trim()) { setErr("A reason is required to clear the month."); return; }
+    if (!window.confirm(`Clear ALL of ${target.empName}'s marks for ${target.date.slice(0, 7)}? Every day goes back to unmarked. This cannot be undone.`)) return;
     setBusy(true); setErr(null);
     const { error } = await supabase.rpc("clear_attendance_month", {
       p_employee: target.empId, p_month: target.date.slice(0, 7), p_reason: reason.trim(),
@@ -943,24 +938,23 @@ function OverrideModal({
   };
 
   return (
-    <div lang={lang} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
       <div className="bg-card rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[85dvh]" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-border px-4 py-3 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-warning-600" />
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-sm text-foreground truncate">{t("Override")} — {target.empName}</h3>
-            <p className="text-xs text-muted-foreground">{target.date} · {t("{shift} shift", { shift: t(target.shift) })} · {t("currently {value}", { value: wasUnmarked ? t("unmarked") : target.current })}</p>
+            <h3 className="font-semibold text-sm text-foreground truncate">Override — {target.empName}</h3>
+            <p className="text-xs text-muted-foreground">{target.date} · {target.shift} shift · currently {wasUnmarked ? "unmarked" : target.current}</p>
           </div>
-          <LanguageToggle />
           <button onClick={onClose} className="p-1 rounded hover:bg-accent"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-4 space-y-3 overflow-auto">
           {locked && (
-            <p className="text-xs text-danger-600 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> {t("Month is OPS-verified and locked. Un-verify to edit.")}</p>
+            <p className="text-xs text-danger-600 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Month is OPS-verified and locked. Un-verify to edit.</p>
           )}
           <div>
             <label className="block text-xs text-muted-foreground mb-1">
-              {presentOnly ? t("Double duty — add this shift as") : t("Mark this day as")}
+              {presentOnly ? "Double duty — add this shift as" : "Mark this day as"}
             </label>
             <div className="flex gap-2">
               {statusOptions.map((s) => (
@@ -969,47 +963,47 @@ function OverrideModal({
                   onClick={() => setStatus(s.key)}
                   className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors disabled:opacity-50 ${status === s.key ? s.activeBtn : "border-border text-foreground hover:bg-accent"}`}
                 >
-                  {presentOnly ? t("Double Duty (DD)") : t(s.label)}
+                  {presentOnly ? "Double Duty (DD)" : s.label}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="block text-xs text-muted-foreground mb-1">{t("Reason (required)")}</label>
+            <label className="block text-xs text-muted-foreground mb-1">Reason (required)</label>
             <textarea
               value={reason} onChange={(e) => setReason(e.target.value)} rows={3} disabled={locked}
-              placeholder={t("Why is this day being set manually? e.g. guard confirmed present via WhatsApp, records lost, etc.")}
+              placeholder="Why is this day being set manually? e.g. guard confirmed present via WhatsApp, records lost, etc."
               className="w-full px-3 py-2 border border-border rounded-md text-sm bg-card focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
             />
           </div>
           {err && <p className="text-xs text-danger-600">{err}</p>}
           <div className="flex gap-2">
             <Button size="sm" variant="primary" className="flex-1" onClick={save} disabled={busy || locked || !status || !reason.trim()}>
-              {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t("Confirm Override")}
+              {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Confirm Override"}
             </Button>
-            <Button size="sm" variant="secondary" className="flex-1" onClick={onClose}>{t("Cancel")}</Button>
+            <Button size="sm" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
           </div>
 
           {/* Clear Marks — revert to unmarked (blank), as if never recorded.
               Offered on the guard's own (primary) cell; needs the same reason. */}
           {!presentOnly && (
             <div className="pt-2 border-t border-border space-y-1.5">
-              <p className="text-xs text-muted-foreground">{t("Or revert to unmarked (blank), as if nothing was recorded:")}</p>
+              <p className="text-xs text-muted-foreground">Or revert to <span className="font-medium">unmarked</span> (blank), as if nothing was recorded:</p>
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" className="flex-1" onClick={clearDay} disabled={busy || locked || !reason.trim()} title={!reason.trim() ? t("Enter a reason first") : t("Clear this day back to unmarked")}>
-                  {t("Clear this day")}
+                <Button size="sm" variant="secondary" className="flex-1" onClick={clearDay} disabled={busy || locked || !reason.trim()} title={!reason.trim() ? "Enter a reason first" : "Clear this day back to unmarked"}>
+                  Clear this day
                 </Button>
-                <Button size="sm" variant="secondary" className="flex-1" onClick={clearMonth} disabled={busy || locked || !reason.trim()} title={!reason.trim() ? t("Enter a reason first") : t("Clear the whole month for this employee")}>
-                  {t("Clear whole month")}
+                <Button size="sm" variant="secondary" className="flex-1" onClick={clearMonth} disabled={busy || locked || !reason.trim()} title={!reason.trim() ? "Enter a reason first" : "Clear the whole month for this employee"}>
+                  Clear whole month
                 </Button>
               </div>
             </div>
           )}
 
           <div className="pt-2 border-t border-border">
-            <p className="text-xs font-medium text-foreground mb-1.5">{t("Override History")}</p>
+            <p className="text-xs font-medium text-foreground mb-1.5">Override History</p>
             {history.length === 0 ? (
-              <p className="text-xs text-muted-foreground">{t("No prior overrides for this day.")}</p>
+              <p className="text-xs text-muted-foreground">No prior overrides for this day.</p>
             ) : (
               <ul className="space-y-2">
                 {history.map((o) => (
