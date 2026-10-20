@@ -56,63 +56,72 @@ export default function Alerts() {
     await run(supabase.rpc("acknowledge_alert", { p_alert_id: id, p_override_reason: reason }));
   };
 
+  const blocking = alerts.filter((a) => a.tier === "blocking").length;
+  const tile = (label: string, v: number, sub: string, tone: string) => (
+    <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+      <span className="lbl">{label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${tone}`}>{v}</span><span className="text-xs text-muted-foreground">{sub}</span>
+    </div>
+  );
+  const Section = ({ kicker, title, children, empty, n }: { kicker: string; title: string; children: React.ReactNode; empty: string; n: number }) => (
+    <section className="bg-card border border-border rounded-[18px] overflow-hidden">
+      <div className="px-5 pt-4 pb-3"><p className="lbl">{kicker}</p><h2 className="font-display text-lg md:text-xl font-bold tracking-tight mt-0.5">{title}</h2></div>
+      <div className="border-t border-border divide-y divide-border/70">{n === 0 ? <p className="px-5 py-5 text-sm text-muted-foreground">{empty}</p> : children}</div>
+    </section>
+  );
+
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-      <Header title="Alerts" subtitle="Blocking, warning and dashboard-tier signals" />
-      {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
+      <Header title="Alerts" subtitle="Blocking, warning and dashboard-tier signals" live>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {tile("Blocking", blocking, "stop an action until overridden", blocking ? "text-[#f0a99a]" : "text-[#9ad1a3]")}
+          {tile("Open warnings", alerts.length - blocking, "waiting to be acknowledged", alerts.length - blocking ? "text-[#f6d79b]" : "text-[#9ad1a3]")}
+          {tile("Live warnings", warnings.length, "computed from today's data", warnings.length ? "text-[#f6d79b]" : "text-[#9ad1a3]")}
+          {tile("Dashboard signals", dashboard.length, "worth knowing, no action", "text-foreground")}
+        </div>
+      </Header>
+      {err && <p role="alert" className="text-sm text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 rounded-xl px-4 py-2.5 mb-4">{err}</p>}
 
-      <div className="space-y-6">
-        <section>
-          <h3 className="text-sm text-slate-900 mb-2">Open alerts (blocking / warning)</h3>
-          <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
-            {alerts.map((a) => {
-              const text = describeAlert(a);
-              return (
-              <div key={a.id} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
-                <div className="flex items-start gap-2 min-w-0">
-                  <span className={`px-2 py-0.5 rounded-md text-xs border shrink-0 ${TIER[a.tier] ?? ""}`}>{alertTierLabel(a.tier)}</span>
-                  <div className="min-w-0">
-                    <p className="text-slate-700">{text.title}</p>
-                    {text.figures && <p className="text-xs text-slate-700 mt-0.5">{text.figures}</p>}
-                    {text.detail && <p className="text-xs text-slate-500 mt-0.5">{text.detail}</p>}
-                    <p className="text-[11px] text-slate-400 mt-0.5">{alertCategoryLabel(a.category)}</p>
+      <div className="space-y-5">
+        <Section kicker="Needs a decision" title="Open alerts" empty="No open alerts — nothing is waiting on anyone." n={alerts.length}>
+          {alerts.map((a) => {
+            const text = describeAlert(a);
+            const isBlocking = a.tier === "blocking";
+            return (
+              <div key={a.id} className={`flex items-start justify-between gap-4 px-5 py-3.5 ${isBlocking ? "shadow-[inset_4px_0_0_var(--color-danger-500)]" : "shadow-[inset_4px_0_0_var(--color-warning-500)]"}`}>
+                <div className="min-w-0 flex flex-col gap-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${TIER[a.tier] ?? ""}`}>{alertTierLabel(a.tier)}</span>
+                    <span className="text-[11px] text-muted-foreground">{alertCategoryLabel(a.category)}</span>
                   </div>
+                  <p className="text-sm font-semibold text-foreground">{text.title}</p>
+                  {text.figures && <p className="font-ledger text-xs text-foreground">{text.figures}</p>}
+                  {text.detail && <p className="text-xs text-muted-foreground leading-relaxed">{text.detail}</p>}
                 </div>
-                <Button variant="secondary" size="sm" disabled={busy} onClick={() => ack(a.id, a.tier === "blocking")}>
-                  {a.tier === "blocking" ? "Override" : "Acknowledge"}
+                <Button variant={isBlocking ? "ink" : "secondary"} size="sm" disabled={busy} onClick={() => ack(a.id, isBlocking)}>
+                  {isBlocking ? "Override with a reason" : "Acknowledge"}
                 </Button>
               </div>
-              );
-            })}
-            {alerts.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No open alerts.</p>}
-          </div>
-        </section>
+            );
+          })}
+        </Section>
 
-        <section>
-          <h3 className="text-sm text-slate-900 mb-2">Live warnings</h3>
-          <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
-            {warnings.map((w, i) => (
-              <div key={i} className="px-3 py-2 text-sm text-slate-700 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.warning}`}>{alertCategoryLabel(w.category)}</span>
-                {describeAlert(w).title}
-              </div>
-            ))}
-            {warnings.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No live warnings.</p>}
-          </div>
-        </section>
+        <Section kicker="Computed from data" title="Live warnings" empty="No live warnings." n={warnings.length}>
+          {warnings.map((w, i) => (
+            <div key={i} className="px-5 py-3 text-sm flex items-center gap-3">
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${TIER.warning}`}>{alertCategoryLabel(w.category)}</span>
+              <span>{describeAlert(w).title}</span>
+            </div>
+          ))}
+        </Section>
 
-        <section>
-          <h3 className="text-sm text-slate-900 mb-2">Dashboard summary</h3>
-          <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
-            {dashboard.map((d, i) => (
-              <div key={i} className="px-3 py-2 text-sm text-slate-600 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.dashboard}`}>{alertCategoryLabel(d.category)}</span>
-                {describeAlert(d).title}
-              </div>
-            ))}
-            {dashboard.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">Nothing to surface.</p>}
-          </div>
-        </section>
+        <Section kicker="Worth knowing" title="Dashboard summary" empty="Nothing to surface." n={dashboard.length}>
+          {dashboard.map((d, i) => (
+            <div key={i} className="px-5 py-3 text-sm text-muted-foreground flex items-center gap-3">
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${TIER.dashboard}`}>{alertCategoryLabel(d.category)}</span>
+              <span className="text-foreground">{describeAlert(d).title}</span>
+            </div>
+          ))}
+        </Section>
       </div>
     </div>
   );
