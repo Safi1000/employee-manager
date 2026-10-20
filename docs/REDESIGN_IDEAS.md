@@ -66,3 +66,123 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   recorded — the `posts` table exists and is empty.
 - **Idea** — Partner pot tile (share earned so far this month per partner) once
   the partnership base is settled.
+
+## Region selector
+
+- **Built** — The region bar matches the theme: a one-tap segmented switch when
+  there are up to four regions, a themed dropdown beyond that.
+- **Built** — Assignments & Pay: the strength band (contracted, enrolled, gaps,
+  mismatches) now follows the region. The reconciliation view is company-wide
+  and was being read whole.
+- **In progress** — A page-by-page check that every figure follows the region.
+  About 35 pages never read the region at all; each is being sorted into
+  "should follow the region" (fixed) or "company-level by nature" (labelled
+  on the band, so it does not look broken).
+- **Idea** — When a page is company-level, the band says so ("Company-wide —
+  the region does not apply here") instead of silently ignoring the switch.
+
+## Financial Reports
+
+- **Built** — Profit & loss on revenue basis (the GL) and cash basis (the client
+  statement), against previous month, same month last year or year to date.
+- **Built** — Change and % columns, "where every 100 rupees went", biggest
+  movers, a GL drill on every line, export.
+- **Built** — Client profit follows the band's basis; Head office is its own tab
+  (the pool and each region's Yes/No).
+- **Built** — The working tools (checks, accrual-to-cash bridge, ledgers,
+  scenarios, contracted vs deployed) moved to the Accountant page.
+- **Idea** — A budget column once a monthly plan exists (see Accountant
+  planning).
+- **Idea** — Region columns side by side on the P&L (ISB/RWP · Kashmir · Lahore
+  · HO · Total) instead of one region at a time.
+
+## Accountant
+
+- **Built** — New page, granted person by person (`accountant.view` in Access &
+  Governance). Migration 0526 adds the key to the catalogue — **not applied**,
+  waiting on your go-ahead.
+- **Built** — Accounts: the income & withdrawal state from the ledger, every
+  bank and cash holder as a column, with a check row per account.
+- **Built** — Controls red and month open/closed on the band; one search for
+  any client, guard, invoice or expense.
+- **Idea** — Planning: expected receipts and payments with dates, then plan
+  against actual each month. Needs new tables.
+- **Idea** — A Checks tab that ties the grid to the trial balance, payroll to
+  disbursements, and receipts to bank statements, each with a tick-off.
+
+## Clients, Contracts, Invoices
+
+- **Built** — Clients: band with clients, guards, owed and largest client's
+  share; card grid by default (table still one tap away).
+- **Built** — Contracts: live book value, posted vs committed, ending in 60
+  days, a renewal runway and a "needs renewal" filter.
+- **Built** — Invoices: tabs and a Collected % tile on the band.
+- **Idea** — Client health score per card (paying on time, staffed to
+  contract, complaints, margin) with the reason for the score.
+- **Idea** — One-tap renewal draft from a contract nearing its end, carrying
+  the lines and the agreed increase.
+- **Idea** — Invoice run for the month: every client due, one review screen,
+  generate all.
+
+## Workforce
+
+- **Built** — Employees: six filter tiles (incomplete, expired cards, duplicate
+  CNIC, joined this month…), a workforce category bar, a completeness meter and
+  rebuilt rows.
+- **Built** — Assignments & Pay: strength ratio, understaffed/over, mismatched
+  filter, monthly pay with missing data, a gaps chart, quick filters, sort, a
+  staffing meter per client and two-line rows. Gaps were fixed: the
+  reconciliation view undercounts contracted heads; committed heads now come
+  from the contract lines.
+- **Built** — Attendance: confirmation ring on the band, register tiles, client
+  progress bars.
+- **Built** — Payroll: paid-out meter and progress per client. A PKR 0 payslip
+  (e.g. a guard who left) now counts as settled — this was the "1 unpaid" at HMC.
+- **Built** — Payroll Run and Attendance Run: the pipeline stages on the band.
+- **Needs data** — Lahore attendance and payroll are not in Bastion yet, so
+  Lahore clients read as understaffed (5 enrolled against 44 contracted).
+- **Idea** — Reliever suggestions: when a site is short today, list the nearest
+  free relievers.
+- **Idea** — Guard timeline on the employee record: joined, postings, warnings,
+  pay changes, leave, in one line.
+
+## Operations
+
+- **Built** — Daily Reports: notes progress (written / nothing to report /
+  blank).
+- **Built** — Incidents: 12-week trend and category mix on the band.
+- **Built** — Store, Issuance, Clearance: the figures on the band.
+- **Idea** — Kit due back: guards who left with kit still out, by value.
+- **Idea** — Incident heat by site, to show which sites need a supervisor visit.
+
+## Finance (other)
+
+- **Built** — Banks & Ledgers: net position and ledger tabs on the band.
+- **Built** — Expenses: tabs with counts, spent / entries / office share /
+  biggest category, and a "where it went" bar that filters the list.
+- **Built** — Trial Balance (balanced / off by), Journal (entries, moved,
+  manual, reversals, sources), Period Close (months locked, oldest open, close
+  runway), Partnership Report (equity pool bar and partner cards).
+- **Needs data** — August has no GL (cutover was September), so comparisons
+  against August read empty.
+- **Idea** — Recurring expense detector: flag a payee paid every month that is
+  not set up as a fixed expense.
+
+## Compliance and Admin
+
+- **Built** — Compliance: priority tiles and guard-data coverage meters.
+  Licences: a 6-month expiry runway.
+- **Built** — Tasks board band, Alerts rebuilt with a severity rail, Audit Log
+  (action mix, most-changed tables, busiest people), Access & Governance (roles,
+  scoped users, who has Accountant access), Billing (guard-limit meter),
+  Settings (section navigator), Reversals (figures on the band).
+- **Idea** — Access review once a quarter: a list of who can see what, to
+  confirm or revoke in one pass.
+- **Idea** — Audit log "undo" link straight to Reversals for actions that can
+  be reversed.
+
+## Sidebar
+
+- **Waiting on your pick** — Options given: a section rail with a flyout, a ⌘K
+  command palette, pinned and recent pages. My recommendation is all three
+  together.
