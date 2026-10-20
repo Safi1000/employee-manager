@@ -3,7 +3,6 @@ import { Building2, Loader2, Users } from "lucide-react";
 import Tabs from "../../../components/Tabs";
 import Badge from "../../../components/Badge";
 import ExportButton from "../../../components/ExportButton";
-import HeadOfficeApportionmentPanel from "../../../components/HeadOfficeApportionmentPanel";
 import { Panel } from "../_assetsKit";
 import { supabase } from "../../../lib/supabase";
 import { exportTable } from "../../../lib/excel";
@@ -35,13 +34,14 @@ const HEAD: Record<(typeof COLS)[number], string> = {
   regional_overhead: "Regional overhead", ho_share: "Head office", net: "Net",
 };
 
-export default function ClientProfitTab({ period }: { period: string }) {
+export default function ClientProfitTab({ period, basis: basisProp }: { period: string; basis?: "revenue" | "cash" }) {
   const companyId = useCompanyId();
   const { profile } = useAuth();
-  const canEdit = hasPermission(profile, "accounting.edit");
   const { regionId } = useRegion();
   const drill = useDrill();
-  const [basis, setBasis] = usePageState<"revenue" | "cash">("Reports.clientBasis", "revenue");
+  const [ownBasis, setBasis] = usePageState<"revenue" | "cash">("Reports.clientBasis", "revenue");
+  // The page band's basis switch drives this tab when it is given one.
+  const basis = basisProp ?? ownBasis;
   const [rows, setRows] = useState<Row[] | null>(null);
   const [modes, setModes] = useState<Mode[]>([]);
   const [hoBranchId, setHoBranchId] = useState<string | null>(null);
@@ -145,20 +145,16 @@ export default function ClientProfitTab({ period }: { period: string }) {
 
   return (
     <div className="space-y-5">
-      {companyId && (
-        <Panel icon={Building2} title="Charge head-office cost to a region?"
-          description="Yes or No for each region. Every partner's share before and after is shown before anything saves.">
-          <HeadOfficeApportionmentPanel bare companyId={companyId} period={period} canEdit={canEdit} onSaved={() => setReload((n) => n + 1)} />
-        </Panel>
-      )}
 
       <Panel icon={Users} title={`Client profit — ${monthLabel(period)}`}
         description={basis === "revenue"
           ? "Accrual: revenue at the service month, payroll accrued, expense as the GL recognised it."
           : "Cash: received, paid and disbursed in the month."}
         actions={<>
-          <Tabs<"revenue" | "cash"> size="sm" value={basis} onChange={setBasis}
-            items={[{ value: "revenue", label: "Accrual" }, { value: "cash", label: "Cash" }]} />
+          {!basisProp && (
+            <Tabs<"revenue" | "cash"> size="sm" value={basis} onChange={setBasis}
+              items={[{ value: "revenue", label: "Accrual" }, { value: "cash", label: "Cash" }]} />
+          )}
           <ExportButton onExport={doExport} />
         </>}
         flush>
