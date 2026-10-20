@@ -2467,24 +2467,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             {/* The whole of which Disbursed + Not Disbursed are the parts — full
                 payroll cost for the month regardless of payment status. Built from
                 the same two figures so it can never disagree with them. */}
-            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-brand-500">
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Salaries</p>
-              <p className="text-2xl font-semibold tabular-nums text-brand-700 dark:text-brand-500" style={{ fontFamily: "var(--font-display)" }}>PKR {(shellCardTotals.disbursed + shellCardTotals.notDisbursed).toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+              <p className="lbl mb-1.5">Total Salaries</p>
+              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-brand-700 dark:text-brand-500"><span className="cur">PKR</span>{(shellCardTotals.disbursed + shellCardTotals.notDisbursed).toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.disbursedCount + shellCardTotals.notDisbursedCount} payslip{shellCardTotals.disbursedCount + shellCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
             </div>
-            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
-              <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.disbursed.toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+              <p className="lbl mb-1.5">Total Disbursed</p>
+              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-success-700 dark:text-success-500"><span className="cur">PKR</span>{shellCardTotals.disbursed.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.disbursedCount} payslip{shellCardTotals.disbursedCount === 1 ? "" : "s"}</p>
             </div>
-            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-warning-500">
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Not Disbursed</p>
-              <p className="text-2xl font-semibold tabular-nums text-warning-700 dark:text-warning-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.notDisbursed.toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+              <p className="lbl mb-1.5">Total Not Disbursed</p>
+              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{shellCardTotals.notDisbursed.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.notDisbursedCount} payslip{shellCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
             </div>
-            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
-              <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.advance.toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+              <p className="lbl mb-1.5">Total Advance</p>
+              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-danger-700 dark:text-danger-500"><span className="cur">PKR</span>{shellCardTotals.advance.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">for {formatPeriod(selectedPeriod)}{fvExpanded ? "" : " · all Finance-Verified clients"}</p>
             </div>
           </div>
@@ -2734,9 +2734,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
         {!embedded && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
-            <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
+          <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+            <p className="lbl mb-1.5">Total Disbursed</p>
+            <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-success-700 dark:text-success-500">
               PKR {payrollTotals.disbursed.toLocaleString()}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -2744,9 +2744,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               {filtered.filter((r) => r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-warning-500">
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Not Disbursed</p>
-            <p className="text-2xl font-semibold tabular-nums text-warning-700 dark:text-warning-500" style={{ fontFamily: "var(--font-display)" }}>
+          <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+            <p className="lbl mb-1.5">Total Not Disbursed</p>
+            <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-warning-700 dark:text-warning-500">
               PKR {payrollTotals.notDisbursed.toLocaleString()}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -2754,9 +2754,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               {filtered.filter((r) => !r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
-            <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>
+          <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+            <p className="lbl mb-1.5">Total Advance</p>
+            <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-danger-700 dark:text-danger-500">
               PKR {payrollTotals.advance.toLocaleString()}
             </p>
             <p className="text-xs text-muted-foreground mt-1">

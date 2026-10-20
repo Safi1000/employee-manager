@@ -1322,12 +1322,16 @@ export default function EmployeeAssignments() {
               0,
             );
             return (
-              <div key={g.key} className="bg-card border border-border rounded-xl overflow-hidden">
-                <div className="flex items-center gap-3 px-4 py-3">
+              <div key={g.key} className="bg-card border border-border rounded-2xl overflow-hidden">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                  {/* The name and its warnings WRAP rather than squeeze: with
+                      three warning chips and the reconciliation figures on one
+                      line, the client name was truncated to a few letters and
+                      the chips ran into each other. */}
                   <button
                     type="button"
                     onClick={() => toggleGroup(g.key)}
-                    className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-[16rem] flex-1 text-left"
                     aria-expanded={open}
                   >
                     <ChevronRight
@@ -1339,7 +1343,7 @@ export default function EmployeeAssignments() {
                     ) : (
                       <Users className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
                     )}
-                    <span className="font-medium text-foreground truncate">{g.label}</span>
+                    <span className="font-semibold text-foreground truncate max-w-full">{g.label}</span>
                     <span className="text-xs text-muted-foreground shrink-0">
                       {g.rows.length} employee{g.rows.length === 1 ? "" : "s"}
                     </span>

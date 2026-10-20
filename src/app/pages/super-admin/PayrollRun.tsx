@@ -690,16 +690,16 @@ export default function PayrollRun() {
                     clients. Review doesn't disburse, so we show what's payable:
                     Total Salaries (net) and Total Advance. */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Salaries</p>
-                    <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
+                  <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+                    <p className="lbl mb-1.5">Total Salaries</p>
+                    <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-success-700 dark:text-success-500">
                       PKR {(reviewCardTotals.disbursed + reviewCardTotals.notDisbursed).toLocaleString()}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount} payslip{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
                   </div>
-                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
-                    <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>
+                  <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
+                    <p className="lbl mb-1.5">Total Advance</p>
+                    <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-danger-700 dark:text-danger-500">
                       PKR {reviewCardTotals.advance.toLocaleString()}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">for {fmtMonth(month)}{expanded ? "" : " · all Review clients"}</p>

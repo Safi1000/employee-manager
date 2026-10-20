@@ -133,11 +133,11 @@ function Card({
   }[tone];
   return (
     <div className={`bg-card p-4 rounded-xl border border-border border-l-4 ${bar}`}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5 flex items-center gap-1.5">
+      <p className="lbl mb-1.5 flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
         {label}
       </p>
-      <p className="text-xl font-semibold tabular-nums text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+      <p className="font-ledger whitespace-nowrap text-xl font-semibold tracking-tight text-foreground">
         {value}
       </p>
       {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
