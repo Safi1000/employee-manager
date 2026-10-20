@@ -123,7 +123,7 @@ export default function ClientProfitTab({ period }: { period: string }) {
       const all = d.reduce((s, x) => s + Number(x.weight), 0);
       const mode = modes.find((m) => m.branch_id === r.branch_id);
       drill({ type: "composition", title: `Head-office share — ${r.client_name}, ${monthLabel(period)}`,
-        explanation: `ho_apportionment (0514/0515): the pool times this client's revenue over every region's revenue — paid only when the client's region is switched on. ${r.region_name} is ${mode?.apportioned ? "apportioned" : "held"} this month. The figures below are read from ho_pool and ho_driver; the share itself is the database's.`,
+        explanation: `ho_apportionment (0514/0515/0525): the pool times this client's revenue over the revenue of the regions charged head office — paid only when the client's region is charged. A region not charged passes its share to the regions that are. ${r.region_name} is ${mode?.apportioned ? "charged" : "not charged"} this month. The figures below are read from ho_pool and ho_driver; the share itself is the database's.`,
         rows: [
           { label: `Head-office pool (${basisPool})`, value: Number(pool.data ?? 0), drill: hoBranchId ? t("Head-office pool lines", { accountTypes: ["expense"], branchId: hoBranchId, note: "Every expense line on the head-office region. The pool excludes income tax, the bonus provision, the allocation's own accounts and a partner's share (ho_pool's named list)." }) : undefined },
           { label: "This client's revenue (driver)", value: mine, drill: t("Revenue", { clientId: r.client_id, accountTypes: ["revenue"] }) },
@@ -195,7 +195,7 @@ export default function ClientProfitTab({ period }: { period: string }) {
                             </button>
                           ) : (
                             <div><div className="text-foreground">Head office — unallocated</div>
-                              <div className="text-[11px] text-muted-foreground">Held, not apportioned</div></div>
+                              <div className="text-[11px] text-muted-foreground">No region is charged head office</div></div>
                           )}
                         </td>
                         {COLS.map((c) => (

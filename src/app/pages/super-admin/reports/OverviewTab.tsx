@@ -273,11 +273,11 @@ export default function OverviewTab({ period, onOpenTab }: { period: string; onO
           description="Both are decided states, so they are figures to watch rather than controls to clear.">
           <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between gap-3">
-              <span>Head office cost held, not apportioned, in {monthLabel(period)}</span>
+              <span>Head office cost left at head office in {monthLabel(period)}</span>
               <Amount v={hoLine} strong />
             </div>
             <p className="text-xs text-muted-foreground">
-              Each region is set Yes (charged its share) or No (kept at head office) on the Client profit tab. Head office kept there is never dropped: every statement carries it as the
+              Each region is set Yes or No on the Client profit tab; a No region's share passes to the Yes regions, so this is zero unless every region is No. It is never dropped: every statement carries it as the
               Head office — unallocated line.
             </p>
             <div className="flex flex-wrap gap-3 pt-1">

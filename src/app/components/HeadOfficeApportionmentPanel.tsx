@@ -4,11 +4,12 @@ import Button from "./Button";
 import { supabase } from "../lib/supabase";
 
 /**
- * 0514/0515. Is head-office cost apportioned to a region, from which month.
+ * 0514/0515/0525. Is head-office cost charged to a region, from which month.
  *
- * Per region (0515, option (a)): a region switched on takes its revenue share of
- * head office; a held region's share stays at head office as the named
- * unallocated line. The setting is effective-dated in ho_apportionment_settings
+ * Per region (0525, superseding 0515's option (a)): the pool is divided among
+ * the regions switched on, by their revenue. A region switched off passes its
+ * share to them; head office keeps the pool, as the named unallocated line,
+ * only when no region with revenue is switched on. The setting is effective-dated in ho_apportionment_settings
  * and written only by set_ho_apportionment(). Nothing here derives it: each
  * region's mode comes from ho_region_modes(), the month's pool from ho_pool(),
  * and the price of a change — every partner as set and as proposed — from
@@ -47,7 +48,7 @@ function YesNo({ value, disabled, onPick }: { value: boolean | null; disabled: b
     <div className="inline-flex rounded-md border border-slate-200 overflow-hidden">
       <button type="button" disabled={disabled} onClick={() => onPick(false)}
         className={`${base} ${value === false ? "bg-slate-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
-        No — keep at head office
+        No — not charged
       </button>
       <button type="button" disabled={disabled} onClick={() => onPick(true)}
         className={`${base} border-l border-slate-200 ${value === true ? "bg-brand-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
@@ -199,13 +200,18 @@ export default function HeadOfficeApportionmentPanel({
     });
     setBusy(false);
     if (e) { setError(e.message); return; }
-    setSaved(`Saved: from ${monthName(effMonth)}, ${regionName(pending.scope)} — ${pending.apportion ? "charged its share of head office" : "head office kept at head office"}.`);
+    setSaved(`Saved: from ${monthName(effMonth)}, ${regionName(pending.scope)} — ${pending.apportion ? "charged its share of head office" : "not charged head office"}.`);
     setPending(null);
     setReviewing(false);
     setReason("");
     await load();
     onSaved?.();
   };
+
+  // The regions that would take a switched-off region's share: the others set to Yes.
+  const othersOn = pending && pending.scope !== "all" && !pending.apportion
+    ? (() => { const on = modes.filter((m) => m.branch_id !== pending.scope && m.apportioned); return on.length ? on : null; })()
+    : null;
 
   const shownValue = (m: Mode) => (pending && (pending.scope === m.branch_id || pending.scope === "all") ? pending.apportion : m.apportioned);
 
@@ -225,12 +231,16 @@ export default function HeadOfficeApportionmentPanel({
             its regional partner&apos;s share) goes down by that amount.
           </li>
           <li>
-            <strong>No — keep at head office:</strong> the region carries none of it. Its share stays at head office as
-            the line <em>Head office — unallocated</em>, which still reduces company profit. Nothing is dropped.
+            <strong>No — not charged:</strong> the region carries none of it. Its share is <strong>passed to the
+            regions set to Yes</strong>, so they carry more. Head office does not keep it.
           </li>
           <li>
-            A region&apos;s share is <strong>its revenue ÷ the revenue of every region</strong>, whatever the other
-            regions are set to. Saying No for one region does not push its share onto the others.
+            Each Yes region&apos;s share is <strong>its revenue ÷ the revenue of all the Yes regions</strong>, so the whole
+            head-office cost is always spread across them.
+          </li>
+          <li>
+            Only if <strong>every</strong> region is set to No does the cost stay at head office, as the line{" "}
+            <em>Head office — unallocated</em> — there is nowhere else for it to go. It still reduces company profit.
           </li>
         </ul>
         {pool != null && (
@@ -291,9 +301,9 @@ export default function HeadOfficeApportionmentPanel({
                   <div className="min-w-0">
                     <div className="text-sm text-slate-900">{m.region_name}</div>
                     <div className="text-[11px] text-slate-500">
-                      Now: {m.apportioned ? "charged its share" : "kept at head office"}
+                      Now: {m.apportioned ? "charged its share" : "not charged"}
                       {m.own_setting && m.decided_from ? `, since ${monthName(m.decided_from)}` : " (company default)"}
-                      {staged && <span className="text-warning-700 font-medium"> → changing to {(pending!.apportion) ? "charged" : "kept at head office"}</span>}
+                      {staged && <span className="text-warning-700 font-medium"> → changing to {(pending!.apportion) ? "charged" : "not charged"}</span>}
                     </div>
                   </div>
                   <YesNo value={shownValue(m)} disabled={!canEdit || busy} onPick={(v) => pick(m.branch_id, v)} />
@@ -325,7 +335,9 @@ export default function HeadOfficeApportionmentPanel({
                 From <strong>{monthName(effMonth)}</strong> onward, <strong>{regionName(pending.scope)}</strong>{" "}
                 {pending.apportion
                   ? <>will be <strong>charged its share</strong> of head-office cost.</>
-                  : <>will <strong>not</strong> be charged head-office cost; its share stays at head office as unallocated.</>}
+                  : <>will <strong>not</strong> be charged head-office cost; {pending.scope !== "all" && othersOn
+                      ? <>its share passes to {othersOn.map((m) => m.region_name).join(", ")}.</>
+                      : <>no region is left set to Yes, so the cost stays at head office as unallocated.</>}</>}
               </div>
               <div className="text-xs text-slate-600 mb-2">
                 What this does to each partner&apos;s share for {monthName(effMonth)}
@@ -369,7 +381,7 @@ export default function HeadOfficeApportionmentPanel({
                         <ul className="list-disc ml-5 mb-1">
                           {overridden.map((m) => (
                             <li key={m.branch_id}>
-                              {m.region_name} — currently <strong>{m.apportioned ? "charged" : "kept at head office"}</strong> by its own setting from {monthName(m.decided_from!)}
+                              {m.region_name} — currently <strong>{m.apportioned ? "charged" : "not charged"}</strong> by its own setting from {monthName(m.decided_from!)}
                             </li>
                           ))}
                         </ul>
@@ -378,13 +390,13 @@ export default function HeadOfficeApportionmentPanel({
                     {keepsOwnSameMonth.length > 0 && (
                       <div>
                         Not changed (its own setting is dated {monthName(effMonth)} and wins):{" "}
-                        {keepsOwnSameMonth.map((m) => `${m.region_name} (${m.apportioned ? "charged" : "kept at head office"})`).join(", ")}
+                        {keepsOwnSameMonth.map((m) => `${m.region_name} (${m.apportioned ? "charged" : "not charged"})`).join(", ")}
                       </div>
                     )}
                     {laterRegionRows.length > 0 && (
                       <div>
                         Still takes effect later, from its own month:{" "}
-                        {laterRegionRows.map((h) => `${regionName(h.branch_id)} ${h.apportion ? "charged" : "kept at head office"} from ${monthName(h.effective_month)}`).join(", ")}
+                        {laterRegionRows.map((h) => `${regionName(h.branch_id)} ${h.apportion ? "charged" : "not charged"} from ${monthName(h.effective_month)}`).join(", ")}
                       </div>
                     )}
                   </div>
@@ -435,7 +447,7 @@ export default function HeadOfficeApportionmentPanel({
                   {history.map((h) => (
                     <li key={h.id}>
                       From {monthName(h.effective_month)}, {regionName(h.branch_id)}:{" "}
-                      <span className="text-slate-700">{h.apportion ? "charged its share" : "kept at head office"}</span> — {h.reason}
+                      <span className="text-slate-700">{h.apportion ? "charged its share" : "not charged"}</span> — {h.reason}
                     </li>
                   ))}
                 </ul>
