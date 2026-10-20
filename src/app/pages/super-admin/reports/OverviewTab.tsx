@@ -277,11 +277,11 @@ export default function OverviewTab({ period, onOpenTab }: { period: string; onO
               <Amount v={hoLine} strong />
             </div>
             <p className="text-xs text-muted-foreground">
-              Set per region on the Client profit tab (0515). It is never dropped: every statement carries it as the
+              Each region is set Yes (charged its share) or No (kept at head office) on the Client profit tab. Head office kept there is never dropped: every statement carries it as the
               Head office — unallocated line.
             </p>
             <div className="flex flex-wrap gap-3 pt-1">
-              <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline text-sm" onClick={() => onOpenTab("clients")}>Client profit and the head-office switch →</button>
+              <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline text-sm" onClick={() => onOpenTab("clients")}>Charge head office to a region →</button>
               <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline text-sm" onClick={() => onOpenTab("statements")}>Contracted vs deployed →</button>
             </div>
             {cover.missing && <ProposedNotice fn="client_cover" what="The unbilled-cover tile" />}

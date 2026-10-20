@@ -145,6 +145,13 @@ export default function ClientProfitTab({ period }: { period: string }) {
 
   return (
     <div className="space-y-5">
+      {companyId && (
+        <Panel icon={Building2} title="Charge head-office cost to a region?"
+          description="Yes or No for each region. Every partner's share before and after is shown before anything saves.">
+          <HeadOfficeApportionmentPanel bare companyId={companyId} period={period} canEdit={canEdit} onSaved={() => setReload((n) => n + 1)} />
+        </Panel>
+      )}
+
       <Panel icon={Users} title={`Client profit — ${monthLabel(period)}`}
         description={basis === "revenue"
           ? "Accrual: revenue at the service month, payroll accrued, expense as the GL recognised it."
@@ -217,12 +224,6 @@ export default function ClientProfitTab({ period }: { period: string }) {
           )}
       </Panel>
 
-      {companyId && (
-        <Panel icon={Building2} title="Head-office treatment"
-          description="Switch head office per region (0515). The price — every partner as set and after the change — is shown before anything saves.">
-          <HeadOfficeApportionmentPanel companyId={companyId} period={period} canEdit={canEdit} onSaved={() => setReload((n) => n + 1)} />
-        </Panel>
-      )}
     </div>
   );
 }
