@@ -1195,85 +1195,50 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   <div className="py-12 text-center text-slate-500 text-sm">
                     No partners yet. Add the first one above.
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Partner</th>
-                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Profit Share</th>
-                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {partners.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3 text-sm text-slate-900">
-                              {p.name}
-                              {p.opening_balance_locked && (
-                                <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
-                              )}
-                              {/* Which tier the share belongs to — without this the
-                                  Profit Share column reads as one pool when it is
-                                  really two. */}
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                {p.scope === "BRANCH"
-                                  ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
-                                  : "Equity"}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right">
-                              <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
-                              {p.scope === "BRANCH" && companyBasis && (
-                                <div className="text-[10px] text-slate-500">
-                                  of {companyBasis === "cash" ? "Net Cash" : "Total Income"}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex gap-1 justify-end">
-                                {/* The pencil opens the partner's drawer: what each
-                                    client contributes, and their running ledger. */}
-                                <button
-                                  onClick={() => setDetailPartner(p)}
-                                  className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                                  title="Client breakdown (view) & ledger (record payments)"
-                                >
-                                  <BookOpen className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => { setFormPartner(p); setIsPartnerFormOpen(true); }}
-                                  className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                                  title="Edit client shares (partner details locked)"
-                                >
-                                  <Settings2 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeletePartner(p)}
-                                  className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded">
-                  <p className="text-slate-500 text-xs mb-1">Equity share allocated</p>
-                  <p className={`text-lg ${equityShareTotal > 100 ? "text-danger-600" : "text-slate-900"}`}>{equityShareTotal}%</p>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded">
-                  <p className="text-slate-500 text-xs mb-1">Partners</p>
-                  <p className="text-lg text-slate-900">{partners.length}</p>
-                </div>
+                ) : (() => {
+                  // Partner cards (2026-10-20): the equity pool as one bar — how
+                  // the company residual is divided — then one card per partner.
+                  // Regional partners divide their own region, so they sit in
+                  // their own group and are never added to the equity pool.
+                  const COL = ["#e9a73c", "#7a4f0e", "#2f5d8a", "#3d4a2b", "#a3392a", "#7fa3c4", "#c9a46a"];
+                  const equity = partners.filter((pp) => pp.scope !== "BRANCH");
+                  const regional = partners.filter((pp) => pp.scope === "BRANCH");
+                  const card = (pp: (typeof partners)[number], color: string) => (
+                    <div key={pp.id} className="bg-card border border-border rounded-[18px] p-4 flex flex-col gap-3 hover:border-brand-500/60 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: color }} /><span className="font-display text-[17px] font-bold tracking-tight truncate">{pp.name}</span>{pp.opening_balance_locked && <Lock className="w-3.5 h-3.5 text-muted-foreground" />}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{pp.scope === "BRANCH" ? `Regional · ${branches.find((b) => b.id === pp.branch_id)?.name ?? "no region"}` : "Equity · company residual"}</div>
+                        </div>
+                        <span className="font-ledger text-2xl font-semibold leading-none">{Number(pp.profit_share_percent)}%</span>
+                      </div>
+                      {pp.scope === "BRANCH" && companyBasis && <div className="text-xs text-muted-foreground -mt-1">of the region's {companyBasis === "cash" ? "net cash" : "total income"}</div>}
+                      <div className="flex gap-1.5 border-t border-border pt-2.5">
+                        <button onClick={() => setDetailPartner(pp)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-foreground text-background hover:opacity-90" title="Client breakdown (view) & ledger (record payments)"><BookOpen className="w-3.5 h-3.5" /> Ledger & breakdown</button>
+                        <button onClick={() => { setFormPartner(pp); setIsPartnerFormOpen(true); }} className="p-1.5 rounded-lg hover:bg-accent" title="Edit client shares (partner details locked)" aria-label={`Edit ${pp.name}`}><Settings2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeletePartner(pp)} className="p-1.5 rounded-lg text-danger-600 hover:bg-danger-50 ml-auto" title="Delete" aria-label={`Delete ${pp.name}`}><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  );
+                  return (
+                    <div className="flex flex-col gap-5">
+                      <div className="bg-card border border-border rounded-[18px] p-4 md:p-5 flex flex-col gap-2.5">
+                        <div className="flex flex-wrap justify-between gap-2 items-baseline">
+                          <span className="lbl">Equity pool · {formatPeriod(partnershipPeriod)}</span>
+                          <span className={`font-ledger text-sm font-semibold ${equityShareTotal > 100 ? "text-danger-700 dark:text-danger-500" : equityShareTotal < 100 ? "text-warning-700 dark:text-warning-500" : "text-success-700 dark:text-success-500"}`}>{equityShareTotal}% allocated{equityShareTotal < 100 ? ` · ${100 - equityShareTotal}% unallocated` : equityShareTotal > 100 ? " · over-allocated" : ""}</span>
+                        </div>
+                        <div className="flex h-4 rounded-full overflow-hidden bg-muted">
+                          {equity.map((pp, k) => <span key={pp.id} title={`${pp.name}: ${Number(pp.profit_share_percent)}%`} className="h-full" style={{ width: `${Math.min(100, Number(pp.profit_share_percent))}%`, background: COL[k % COL.length] }} />)}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          {equity.map((pp, k) => <span key={pp.id} className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COL[k % COL.length] }} />{pp.name} <span className="font-ledger text-foreground">{Number(pp.profit_share_percent)}%</span></span>)}
+                        </div>
+                      </div>
+                      {equity.length > 0 && (<div className="flex flex-col gap-2"><span className="lbl">Equity partners · {equity.length}</span><div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">{equity.map((pp, k) => card(pp, COL[k % COL.length]))}</div></div>)}
+                      {regional.length > 0 && (<div className="flex flex-col gap-2"><span className="lbl">Regional partners · {regional.length}</span><div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">{regional.map((pp) => card(pp, "#bdb6a0"))}</div></div>)}
+                    </div>
+                  );
+                })()}
               </div>
 
               <p className="mt-4 text-xs text-slate-500">
