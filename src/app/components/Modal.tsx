@@ -17,9 +17,11 @@ interface ModalProps {
   // adds a close (×) affordance when supplied.
   error?: string | null;
   onDismissError?: () => void;
+  // Small controls beside the close button (e.g. the English/Urdu switch).
+  headerActions?: ReactNode;
 }
 
-export default function Modal({ isOpen, onClose, title, children, size = "md", footer, error, onDismissError }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, size = "md", footer, error, onDismissError, headerActions }: ModalProps) {
   // Escape closes the modal.
   //
   // Declared before the isOpen early-return would be a hook-order violation, so
@@ -59,12 +61,15 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
       >
         <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 flex-shrink-0">
           <h3 className="text-base md:text-lg text-slate-900 truncate pr-2">{title}</h3>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-          >
-            <X className="w-5 h-5" strokeWidth={1.5} />
-          </button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {headerActions}
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            >
+              <X className="w-5 h-5" strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
         <div className="p-4 md:p-6 overflow-y-auto flex-1 min-h-0">
           {error && (

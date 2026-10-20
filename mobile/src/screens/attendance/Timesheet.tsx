@@ -14,6 +14,7 @@ import { exportEmployeeTimesheet } from "../../data/api/exports";
 import { useAuth } from "../../lib/auth";
 import { fmtDay } from "../../lib/format";
 import { useTheme } from "../../theme/ThemeProvider";
+import { LanguageToggle, tr, useLang } from "../../lib/lang";
 
 const LABEL: Record<string, { code: string; label: string; tone: "success" | "danger" | "warning" | "info" | "neutral" }> = {
   present: { code: "P", label: "Present", tone: "success" }, absent: { code: "A", label: "Absent", tone: "danger" },
@@ -29,6 +30,7 @@ const LABEL: Record<string, { code: string; label: string; tone: "success" | "da
  */
 export default function Timesheet({ relieversOnly }: { relieversOnly?: boolean }) {
   const t = useTheme();
+  useLang();
   const params = useLocalSearchParams<{ employee?: string }>();
   const { db, act } = useDB();
   const { can, profile } = useAuth();
@@ -58,14 +60,14 @@ export default function Timesheet({ relieversOnly }: { relieversOnly?: boolean }
   if (!e) {
     const list = pool.filter((x) => !q || (x.name + x.code).toLowerCase().includes(q.toLowerCase()));
     return (
-      <Screen eyebrow="Workforce" title={relieversOnly ? "Relievers" : "Attendance timesheet"} subtitle="Pick an employee to open their month.">
-        <SearchBar value={q} onChange={setQ} placeholder="Name or code" />
+      <Screen eyebrow={tr("Workforce")} title={relieversOnly ? tr("Relievers") : tr("Attendance timesheet")} subtitle={tr("Pick an employee to open their month.")} actions={<LanguageToggle />}>
+        <SearchBar value={q} onChange={setQ} placeholder={tr("Name or code")} />
         <ListCard style={{ marginTop: 12 }}>
           {list.slice(0, 80).map((x, i) => (
             <Row key={x.id} last={i === Math.min(list.length, 80) - 1} title={x.name} meta={`${x.code} · ${clientName(db, x.client_id)}`} onPress={() => setEmp(x.id)} />
           ))}
         </ListCard>
-        {list.length === 0 && <Empty title="No one to show" />}
+        {list.length === 0 && <Empty title={tr("No one to show")} />}
       </Screen>
     );
   }
@@ -80,9 +82,9 @@ export default function Timesheet({ relieversOnly }: { relieversOnly?: boolean }
     let notice = "";
     const ok = await act(async () => {
       if (relieversOnly && kind === "mark") {
-        if (status === "double_duty") throw new Error("Relievers are marked Present, Absent or Leave.");
+        if (status === "double_duty") throw new Error(tr("Relievers are marked Present, Absent or Leave."));
         await markReliever(e, ctx, day, status, site || null, covering || null);
-        notice = `${fmtDay(day)} → ${LABEL[status]!.label}`;
+        notice = `${fmtDay(day)} → ${tr(LABEL[status]!.label)}`;
       } else {
         notice = kind === "mark" ? await bulkMark(e, ctx, [day], status, override, profile) : await bulkClear(e, ctx, [day], override);
       }
@@ -93,23 +95,24 @@ export default function Timesheet({ relieversOnly }: { relieversOnly?: boolean }
 
   return (
     <Screen
-      eyebrow={relieversOnly ? "Relievers" : "Timesheet"}
+      eyebrow={relieversOnly ? tr("Relievers") : tr("Timesheet")}
       title={e.name}
       subtitle={`${e.code} · ${e.department} · ${clientName(db, e.client_id)}`}
       actions={<>
-        {relieversOnly && can("payroll.view") && <IconBtn icon={Wallet} label="Reliever payroll" onPress={() => router.push("/relievers/payroll")} />}
-        <IconBtn icon={Download} label="Export to Excel" onPress={() => exportEmployeeTimesheet(e, month).catch((err) => toast(err instanceof Error ? err.message : String(err), "danger"))} />
+        <LanguageToggle />
+        {relieversOnly && can("payroll.view") && <IconBtn icon={Wallet} label={tr("Reliever payroll")} onPress={() => router.push("/relievers/payroll")} />}
+        <IconBtn icon={Download} label={tr("Export to Excel")} onPress={() => exportEmployeeTimesheet(e, month).catch((err) => toast(err instanceof Error ? err.message : String(err), "danger"))} />
       </>}
     >
-      <Select label="Employee" searchable value={emp} onChange={(v) => { setEmp(v); setDay(null); }} options={pool.map((x) => ({ value: x.id, label: x.name, sub: x.code }))} />
+      <Select label={tr("Employee")} searchable value={emp} onChange={(v) => { setEmp(v); setDay(null); }} options={pool.map((x) => ({ value: x.id, label: x.name, sub: x.code }))} />
       <MonthStepper month={month} onChange={setMonth} />
       {!ctx ? <ActivityIndicator color={t.brand[500]} style={{ marginVertical: 24 }} /> : (
         <>
           <View style={{ marginTop: 12 }}>
             <StatGrid cols={3} items={[
-              { label: "Present", value: String(count(["present", "double_duty", "relief_cover"])), tone: "success" },
-              { label: "Absent", value: String(count(["absent"])), tone: "danger" },
-              { label: "Leave", value: String(count(["leave", "rest_day"])), tone: "warning" },
+              { label: tr("Present"), value: String(count(["present", "double_duty", "relief_cover"])), tone: "success" },
+              { label: tr("Absent"), value: String(count(["absent"])), tone: "danger" },
+              { label: tr("Leave"), value: String(count(["leave", "rest_day"])), tone: "warning" },
             ]} />
           </View>
           <Card style={{ marginTop: 12 }} pad={10}>
@@ -120,37 +123,37 @@ export default function Timesheet({ relieversOnly }: { relieversOnly?: boolean }
                 return <T v="mono" style={{ fontSize: 10 }} color={m ? t.tone(m.tone).text : t.mutedFg}>{m?.code ?? ""}</T>;
               }} />
           </Card>
-          <T v="small" muted style={{ marginTop: 8 }}>Tap a day to correct it.</T>
-          <Section title="Marked days" count={monthDays.length}>
+          <T v="small" muted style={{ marginTop: 8 }}>{tr("Tap a day to correct it.")}</T>
+          <Section title={tr("Marked days")} count={monthDays.length}>
             <ListCard>
               {monthDays.slice().reverse().slice(0, 31).map((d, i, a) => {
                 const m = LABEL[ctx.existing.get(d)!];
-                return <Row key={d} last={i === a.length - 1} title={fmtDay(d)} right={m ? <Badge label={m.label} tone={m.tone} small /> : null} onPress={() => setDay(d)} />;
+                return <Row key={d} last={i === a.length - 1} title={fmtDay(d)} right={m ? <Badge label={tr(m.label)} tone={m.tone} small /> : null} onPress={() => setDay(d)} />;
               })}
             </ListCard>
           </Section>
         </>
       )}
 
-      <Sheet open={!!day && !!ctx} onClose={() => setDay(null)} title={day ? fmtDay(day) : ""} subtitle={`Attendance — ${e.name}`}
+      <Sheet open={!!day && !!ctx} onClose={() => setDay(null)} title={day ? fmtDay(day) : ""} subtitle={`${tr("Attendance")} — ${e.name}`}
         footer={canEdit ? <>
-          {!relieversOnly && <Button label="Clear" variant="secondary" full loading={busy} onPress={() => save("clear")} />}
-          <Button label="Save" full loading={busy} onPress={() => save("mark")} />
-        </> : <Button label="Close" full onPress={() => setDay(null)} />}>
+          {!relieversOnly && <Button label={tr("Clear")} variant="secondary" full loading={busy} onPress={() => save("clear")} />}
+          <Button label={tr("Save")} full loading={busy} onPress={() => save("mark")} />
+        </> : <Button label={tr("Close")} full onPress={() => setDay(null)} />}>
         {day && ctx && (
           <>
             {ctx.windowBlock(day) ? <T v="small" color={t.tone("danger").text} style={{ marginBottom: 10 }}>{ctx.windowBlock(day)}</T> : null}
-            <T v="small" muted style={{ marginBottom: 10 }}>Currently: {ctx.existing.get(day) ? LABEL[ctx.existing.get(day)!]!.label : "unmarked"} · {ctx.resolveShift(e.id, day)} shift</T>
-            <Chips value={status} onChange={setStatus} items={(relieversOnly ? ["present", "absent", "leave"] : ["present", "absent", "leave", "double_duty"]).map((k) => ({ key: k as BulkStatus, label: LABEL[k]!.label }))} />
+            <T v="small" muted style={{ marginBottom: 10 }}>{tr("Currently: {status}", { status: ctx.existing.get(day) ? tr(LABEL[ctx.existing.get(day)!]!.label) : tr("unmarked") })} · {tr("{shift} shift", { shift: tr(ctx.resolveShift(e.id, day)) })}</T>
+            <Chips value={status} onChange={setStatus} items={(relieversOnly ? ["present", "absent", "leave"] : ["present", "absent", "leave", "double_duty"]).map((k) => ({ key: k as BulkStatus, label: tr(LABEL[k]!.label) }))} />
             {relieversOnly && status === "present" && (
               <View style={{ marginTop: 14 }}>
-                <Select label="Site worked" required searchable value={site} onChange={setSite} options={db.sites.map((s) => ({ value: s.id, label: s.name, sub: clientName(db, s.client_id) }))} />
-                <Select label="Covering for" clearable searchable value={covering} onChange={setCovering} placeholder="Nobody in particular"
+                <Select label={tr("Site worked")} required searchable value={site} onChange={setSite} options={db.sites.map((s) => ({ value: s.id, label: s.name, sub: clientName(db, s.client_id) }))} />
+                <Select label={tr("Covering for")} clearable searchable value={covering} onChange={setCovering} placeholder={tr("Nobody in particular")}
                   options={db.employees.filter((x) => x.lifecycle === "active" && x.category !== "reliever" && (!site || x.site_id === site)).map((x) => ({ value: x.id, label: x.name, sub: x.code }))} />
               </View>
             )}
-            {!relieversOnly && <View style={{ marginTop: 14 }}><Input label="Override reason" value={override} onChangeText={setOverride} multiline placeholder="Only needed past the backdate limit" /></View>}
-            {!canEdit && <T v="small" muted style={{ marginTop: 10 }}>You can view but not change attendance.</T>}
+            {!relieversOnly && <View style={{ marginTop: 14 }}><Input label={tr("Override reason")} value={override} onChangeText={setOverride} multiline placeholder={tr("Only needed past the backdate limit")} /></View>}
+            {!canEdit && <T v="small" muted style={{ marginTop: 10 }}>{tr("You can view but not change attendance.")}</T>}
           </>
         )}
       </Sheet>

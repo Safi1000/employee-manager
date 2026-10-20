@@ -14,6 +14,7 @@ import { fmtDay } from "../../lib/format";
 import { useTheme } from "../../theme/ThemeProvider";
 import { SHIFT_LABEL } from "./Attendance";
 import { MARK, StatusPick } from "./marks";
+import { LanguageToggle, tr, useLang } from "../../lib/lang";
 
 /** ShiftDrillModal as a full screen: presume present, record exceptions, supervisor confirms. */
 export default function SiteDrill() {
@@ -21,10 +22,10 @@ export default function SiteDrill() {
 }
 
 // The web board's absence reasons — attendance_records.absent_reason holds these tokens.
-const LIVE_ABSENT_REASONS = [
-  { value: "awol", label: "AWOL" },
-  { value: "sick", label: "Sick" },
-  { value: "absconded", label: "Absconded" },
+const LIVE_ABSENT_REASONS = () => [
+  { value: "awol", label: tr("AWOL") },
+  { value: "sick", label: tr("Sick") },
+  { value: "absconded", label: tr("Absconded") },
 ];
 
 type LiveMark = { status: AttStatus; absent_reason: string | null; extraShift?: Shift | null };
@@ -39,6 +40,7 @@ type Loaded = Awaited<ReturnType<typeof loadShiftRoster>>;
  */
 function LiveSiteDrill() {
   const t = useTheme();
+  useLang();
   const router = useRouter();
   // id is the board row's group key: a site id, or the client id for a client with no sites.
   const { id, shift = "day", date = TODAY, client, site: isSiteParam, n } = useLocalSearchParams<{ id: string; shift?: Shift; date?: string; client?: string; site?: string; n?: string }>();
@@ -49,7 +51,7 @@ function LiveSiteDrill() {
   const isSite = isSiteParam !== "0" && !!realSite;
   const site = realSite
     ? { id: realSite.id, name: realSite.name, client_id: realSite.client_id }
-    : client ? { id: id!, name: "All sites", client_id: client } : undefined;
+    : client ? { id: id!, name: tr("All sites"), client_id: client } : undefined;
   const [data, setData] = useState<Loaded | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [marks, setMarks] = useState<Record<string, LiveMark>>({});
@@ -71,9 +73,9 @@ function LiveSiteDrill() {
     return () => { cancelled = true; };
   }, [id, shift, date, isSite]);
 
-  if (!site) return <Screen title="Site"><Empty title="Site not found" /></Screen>;
-  const header = { eyebrow: `${clientName(db, site.client_id)} · ${SHIFT_LABEL[shift]} shift`, title: site.name, subtitle: fmtDay(date) };
-  if (loadErr) return <Screen {...header}><Banner tone="danger" title="Couldn't load this shift" sub={loadErr} /></Screen>;
+  if (!site) return <Screen title={tr("Site")}><Empty title={tr("Site not found")} /></Screen>;
+  const header = { eyebrow: `${clientName(db, site.client_id)} · ${tr("{shift} shift", { shift: tr(SHIFT_LABEL[shift]) })}`, title: site.name, subtitle: fmtDay(date), actions: <LanguageToggle /> };
+  if (loadErr) return <Screen {...header}><Banner tone="danger" title={tr("Couldn't load this shift")} sub={loadErr} /></Screen>;
   if (!data) return <Screen {...header}><ActivityIndicator color={t.brand[500]} style={{ marginTop: 40 }} /></Screen>;
 
   const guards: DrillGuard[] = data.roster;
@@ -96,10 +98,10 @@ function LiveSiteDrill() {
     }));
 
   const save = async () => {
-    if (!supervisor.trim()) return toast("Supervisor name is required to confirm", "danger");
-    if (needsOverride && !override.trim()) return toast("Give a reason for marking a past date", "danger");
-    if (guards.some((g) => statusOf(g.guard_id) === "absent" && !marks[g.guard_id]?.absent_reason)) return toast("Pick a reason for every absence", "danger");
-    if (guards.some((g) => statusOf(g.guard_id) === "double_duty" && !marks[g.guard_id]?.extraShift)) return toast("Double duty needs a second shift", "danger");
+    if (!supervisor.trim()) return toast(tr("Supervisor name is required to confirm."), "danger");
+    if (needsOverride && !override.trim()) return toast(tr("Give a reason for marking a past date"), "danger");
+    if (guards.some((g) => statusOf(g.guard_id) === "absent" && !marks[g.guard_id]?.absent_reason)) return toast(tr("Pick a reason for every absence"), "danger");
+    if (guards.some((g) => statusOf(g.guard_id) === "double_duty" && !marks[g.guard_id]?.extraShift)) return toast(tr("Double duty needs a second shift"), "danger");
     if (!profile) return;
     setSaving(true);
     try {
@@ -108,7 +110,7 @@ function LiveSiteDrill() {
         supervisor, override, userId: profile.id, role: profile.role,
       });
       await reload();
-      toast(`${site.name} confirmed`);
+      toast(tr("{name} confirmed", { name: site.name }));
       router.back();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "danger");
@@ -120,20 +122,20 @@ function LiveSiteDrill() {
   return (
     <Screen
       {...header}
-      footer={editable && guards.length > 0 ? <Button label={data.confirmation ? "Re-confirm shift" : "Confirm shift"} icon={CheckCircle2} full loading={saving} onPress={save} /> : undefined}
+      footer={editable && guards.length > 0 ? <Button label={data.confirmation ? tr("Re-confirm shift") : tr("Confirm shift")} icon={CheckCircle2} full loading={saving} onPress={save} /> : undefined}
     >
-      {blocked && <Banner tone="danger" title="Marking closed for this date" sub={data.gate?.reason ?? "Someone with backdate permission has to make this change."} />}
-      {data.confirmation && <Banner tone="success" title={`Confirmed by ${data.confirmation.supervisor_name}`} sub="Confirming again replaces the marks for this shift." />}
+      {blocked && <Banner tone="danger" title={tr("Marking closed for this date")} sub={data.gate?.reason ?? tr("Someone with backdate permission has to make this change.")} />}
+      {data.confirmation && <Banner tone="success" title={tr("Confirmed by {names}", { names: data.confirmation.supervisor_name })} sub={tr("Confirming again replaces the marks for this shift.")} />}
 
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View>
-            <T v="eyebrow" muted>Strength</T>
+            <T v="eyebrow" muted>{tr("Strength")}</T>
             <T v="figure" style={{ marginTop: 4 }}>{guards.length - exceptions}<T v="h3" muted> / {contracted}</T></T>
           </View>
           <View style={{ alignItems: "flex-end", gap: 6 }}>
-            <T v="small" muted>{exceptions} exception{exceptions === 1 ? "" : "s"}</T>
-            {guards.length < contracted && <T v="smallStrong" color={t.tone("danger").text}>{contracted - guards.length} slot unfilled</T>}
+            <T v="small" muted>{tr(exceptions === 1 ? "{n} exception" : "{n} exceptions", { n: exceptions })}</T>
+            {guards.length < contracted && <T v="smallStrong" color={t.tone("danger").text}>{tr("{n} unfilled", { n: contracted - guards.length })}</T>}
           </View>
         </View>
         <View style={{ marginTop: 12 }}>
@@ -141,7 +143,7 @@ function LiveSiteDrill() {
         </View>
       </Card>
 
-      <Section title="Roster" count={guards.length} hint="Everyone is presumed present. Tap only the exceptions.">
+      <Section title={tr("Roster")} count={guards.length} hint={tr("Everyone is presumed present. Tap only the exceptions.")}>
         {guards.map((g) => {
           const s = statusOf(g.guard_id);
           return (
@@ -157,38 +159,38 @@ function LiveSiteDrill() {
               {s === "absent" && (
                 <View style={{ marginTop: 12 }}>
                   <Select
-                    label="Absent reason"
+                    label={tr("Absent reason")}
                     required
                     value={marks[g.guard_id]?.absent_reason ?? ""}
                     onChange={(v) => setMarks((m) => ({ ...m, [g.guard_id]: { ...m[g.guard_id]!, absent_reason: v } }))}
-                    options={LIVE_ABSENT_REASONS}
+                    options={LIVE_ABSENT_REASONS()}
                   />
                 </View>
               )}
               {s === "double_duty" && (
                 <View style={{ marginTop: 12, gap: 6 }}>
-                  <T v="small" muted>Second shift worked</T>
+                  <T v="small" muted>{tr("Second shift worked")}</T>
                   {otherShifts.length ? (
                     <Chips
-                      items={otherShifts.map((x) => ({ key: x, label: SHIFT_LABEL[x] }))}
+                      items={otherShifts.map((x) => ({ key: x, label: tr(SHIFT_LABEL[x]) }))}
                       value={marks[g.guard_id]?.extraShift ?? otherShifts[0]!}
                       onChange={(x) => setMarks((m) => ({ ...m, [g.guard_id]: { ...m[g.guard_id]!, extraShift: x } }))}
                     />
                   ) : (
-                    <T v="small" color={t.tone("danger").text}>{"This site runs no other shift, so double duty can't be recorded here."}</T>
+                    <T v="small" color={t.tone("danger").text}>{tr("This site runs no other shift, so double duty can't be recorded here.")}</T>
                   )}
                 </View>
               )}
             </Card>
           );
         })}
-        {guards.length === 0 && <Empty title="Nobody posted on this shift" sub="Post guards from Assignments & Pay on the web app." />}
+        {guards.length === 0 && <Empty title={tr("Nobody posted on this shift")} sub={tr("Post guards from Assignments & Pay on the web app.")} />}
       </Section>
 
       {editable && guards.length > 0 && (
-        <Section title="Sign-off">
-          <Input label="Supervisor" required value={supervisor} onChangeText={setSupervisor} />
-          {needsOverride && <Input label="Reason for marking a past date" required value={override} onChangeText={setOverride} multiline />}
+        <Section title={tr("Sign-off")}>
+          <Input label={tr("Supervisor")} required value={supervisor} onChangeText={setSupervisor} />
+          {needsOverride && <Input label={tr("Reason for marking a past date")} required value={override} onChangeText={setOverride} multiline />}
         </Section>
       )}
     </Screen>

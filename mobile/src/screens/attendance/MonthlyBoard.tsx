@@ -17,6 +17,7 @@ import { useAuth } from "../../lib/auth";
 import { fmtMonth } from "../../lib/format";
 import { useTheme } from "../../theme/ThemeProvider";
 import { radius } from "../../theme/tokens";
+import { LanguageToggle, tr, useLang } from "../../lib/lang";
 
 const TONE: Record<string, "success" | "danger" | "warning" | "info" | "neutral"> = { P: "success", A: "danger", L: "warning", DD: "info", X: "neutral" };
 type Target = { empId: string; empName: string; date: string; current: string; shift: string; presentOnly: boolean; otherShifts: string[] };
@@ -32,6 +33,7 @@ type Target = { empId: string; empName: string; date: string; current: string; s
  */
 export default function MonthlyBoard() {
   const t = useTheme();
+  useLang();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const { db, act } = useDB();
   const { can, profile } = useAuth();
@@ -73,7 +75,7 @@ export default function MonthlyBoard() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-change, as the web screen does
   useEffect(() => { void load(); }, [load]);
 
-  if (!client) return <Screen title="Monthly board"><Empty title="Client not found" /></Screen>;
+  if (!client) return <Screen title={tr("Monthly board")}><Empty title={tr("Client not found")} /></Screen>;
   const sites = db.sites.filter((s) => s.client_id === client.id);
   const locked = !!board?.locked;
   const guards = board?.rows.filter((r) => !r.isReliever) ?? [];
@@ -99,16 +101,16 @@ export default function MonthlyBoard() {
   const actions: { key: string; label: string; icon: typeof BadgeCheck; variant: "primary" | "secondary"; run: () => void }[] = [];
   const doAction = (a: HalfAction, ok: string, note?: string) => board && client && runOp(() => halfAction(client.id, month, board, a, note), ok);
   if (board && !legacy && !frozen) {
-    if (current === "hr" && canHr) actions.push({ key: "hr", label: "HR verify", icon: BadgeCheck, variant: "primary", run: async () => {
-      if (await confirm({ title: `HR verify ${board.halfLabel}?`, message: "Locks this half's attendance and passes it to Ops.", confirmLabel: "Verify" })) doAction("hr_verify", "HR verified — locked and with Ops");
+    if (current === "hr" && canHr) actions.push({ key: "hr", label: tr("HR verify"), icon: BadgeCheck, variant: "primary", run: async () => {
+      if (await confirm({ title: tr("HR verify {half}?", { half: board.halfLabel }), message: tr("Locks this half's attendance and passes it to Ops."), confirmLabel: tr("Verify") })) doAction("hr_verify", tr("HR verified — locked and with Ops"));
     } });
     if (current === "ops" && canOps) {
-      actions.push({ key: "ops", label: "Ops verify", icon: BadgeCheck, variant: "primary", run: () => doAction("ops_verify", "Ops verified — this half is complete") });
-      actions.push({ key: "ret_hr", label: "Send back to HR", icon: RotateCcw, variant: "secondary", run: () => { setReturnNote(""); setReturning("return_to_hr"); } });
+      actions.push({ key: "ops", label: tr("Ops verify"), icon: BadgeCheck, variant: "primary", run: () => doAction("ops_verify", tr("Ops verified — this half is complete")) });
+      actions.push({ key: "ret_hr", label: tr("Send back to HR"), icon: RotateCcw, variant: "secondary", run: () => { setReturnNote(""); setReturning("return_to_hr"); } });
     }
-    if (current === "ops" && canHr && !canOps) actions.push({ key: "undo_hr", label: "Withdraw HR", icon: Undo2, variant: "secondary", run: () => doAction("undo_hr", "HR verification withdrawn") });
+    if (current === "ops" && canHr && !canOps) actions.push({ key: "undo_hr", label: tr("Withdraw HR"), icon: Undo2, variant: "secondary", run: () => doAction("undo_hr", tr("HR verification withdrawn")) });
     // 0494: the chain is HR -> Ops; Finance acts only in the payroll run.
-    if (current === "done" && canOps) actions.push({ key: "undo_ops", label: "Back to Review", icon: Undo2, variant: "secondary", run: () => doAction("undo_ops", "Moved back to Review") });
+    if (current === "done" && canOps) actions.push({ key: "undo_ops", label: tr("Back to Review"), icon: Undo2, variant: "secondary", run: () => doAction("undo_ops", tr("Moved back to Review")) });
   }
   const threads = remarks.filter((r) => !r.parent_id).map((r) => ({ remark: r, replies: remarks.filter((x) => x.parent_id === r.id) }));
   const fmtWhen = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
@@ -123,12 +125,13 @@ export default function MonthlyBoard() {
 
   return (
     <Screen
-      eyebrow="Monthly board"
+      eyebrow={tr("Monthly board")}
       title={client.name}
-      subtitle={board ? `${guards.length} guards · ${fmtMonth(month)}` : fmtMonth(month)}
+      subtitle={board ? `${tr("{n} guards", { n: guards.length })} · ${fmtMonth(month)}` : fmtMonth(month)}
+      actions={<LanguageToggle />}
       footer={board ? (
         <>
-          <Button label="Download" icon={Download} variant="secondary" full disabled={!board.rows.length}
+          <Button label={tr("Download")} icon={Download} variant="secondary" full disabled={!board.rows.length}
             onPress={() => downloadMonthlyBoard(board, client.name).catch((e) => toast(e instanceof Error ? e.message : String(e), "danger"))} />
           {actions.slice(0, 2).map((a) => (
             <Button key={a.key} label={a.label} icon={a.icon} variant={a.variant} full loading={busy && a.variant === "primary"} disabled={busy} onPress={a.run} />
@@ -139,62 +142,62 @@ export default function MonthlyBoard() {
       <MonthStepper month={month} onChange={setMonth} />
       <View style={{ marginTop: 12 }}>
         <Chips value={half} onChange={setHalf} items={[
-          { key: "1", label: `Verifying 1st half · ${ranges["1"].first + 1}–${ranges["1"].last + 1}` },
-          { key: "2", label: `Verifying 2nd half · ${ranges["2"].first + 1}–${ranges["2"].last + 1}` },
+          { key: "1", label: `${tr("Verifying 1st half")} · ${ranges["1"].first + 1}–${ranges["1"].last + 1}` },
+          { key: "2", label: `${tr("Verifying 2nd half")} · ${ranges["2"].first + 1}–${ranges["2"].last + 1}` },
         ]} />
       </View>
       {sites.length > 1 && (
         <View style={{ marginTop: 12 }}>
-          <Chips value={siteF} onChange={setSiteF} items={[{ key: "all", label: "All sites" }, ...sites.map((s) => ({ key: s.id, label: s.name }))]} />
+          <Chips value={siteF} onChange={setSiteF} items={[{ key: "all", label: tr("All sites") }, ...sites.map((s) => ({ key: s.id, label: s.name }))]} />
         </View>
       )}
-      {err ? <Banner tone="danger" title="Couldn't load the board" sub={err} /> : !board ? <ActivityIndicator color={t.brand[500]} style={{ marginTop: 30 }} /> : (
+      {err ? <Banner tone="danger" title={tr("Couldn't load the board")} sub={err} /> : !board ? <ActivityIndicator color={t.brand[500]} style={{ marginTop: 30 }} /> : (
         <>
           <Card style={{ marginTop: 12 }}>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
               {stages.map((st) => (
                 <Badge key={st.key} small
-                  label={`${st.at ? "✓ " : ""}${st.label}${st.by ? ` · ${st.by}` : ""}`}
+                  label={`${st.at ? "✓ " : ""}${tr(st.label)}${st.by ? ` · ${st.by}` : ""}`}
                   tone={st.at ? "success" : current === st.key ? "warning" : "neutral"} />
               ))}
             </View>
             <T v="small" muted style={{ marginTop: 8 }}>
               {legacy
-                ? `Verified under the old monthly process · ${fmtWhen(legacy)}`
+                ? `${tr("Verified under the old monthly process")} · ${fmtWhen(legacy)}`
                 : current === "done"
-                  ? `${board.halfLabel} · fully verified`
-                  : `${board.halfLabel} · waiting on ${stages.find((st) => st.key === current)!.label}${locked ? " · locked" : ""}`}
+                  ? `${board.halfLabel} · ${tr("fully verified")}`
+                  : `${board.halfLabel} · ${tr("waiting on {who}", { who: tr(stages.find((st) => st.key === current)!.label) })}${locked ? ` · ${tr("locked")}` : ""}`}
             </T>
-            {frozen && !legacy && <T v="small" style={{ marginTop: 6 }} color={t.tone("warning").text}>Payroll has moved past Draft, so verification is frozen. Move payroll back to Draft to change it.</T>}
+            {frozen && !legacy && <T v="small" style={{ marginTop: 6 }} color={t.tone("warning").text}>{tr("Payroll has moved past Draft, so verification is frozen. Move payroll back to Draft to change it.")}</T>}
             {actions.length > 2 && (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
                 {actions.slice(2).map((a) => <Button key={a.key} size="sm" variant="secondary" icon={a.icon} label={a.label} disabled={busy} onPress={a.run} />)}
               </View>
             )}
             <View style={{ marginTop: 10 }}>
-              <Button size="sm" variant="ghost" icon={MessageSquare} label={`Remarks${remarks.length ? ` (${remarks.length})` : ""}`} onPress={() => setRemarksOpen(true)} />
+              <Button size="sm" variant="ghost" icon={MessageSquare} label={`${tr("Remarks")}${remarks.length ? ` (${remarks.length})` : ""}`} onPress={() => setRemarksOpen(true)} />
             </View>
           </Card>
           {!locked && board.outstanding.length > 0 && (
             <View style={{ marginTop: 10 }}>
-              <Banner tone="warning" title={`${board.outstanding.length} day(s) not confirmed in this half`} sub="Red days are unconfirmed and block HR Verify. Confirm them on the daily board." />
+              <Banner tone="warning" title={tr("{n} day(s) not confirmed in this half", { n: board.outstanding.length })} sub={tr("Red days are unconfirmed and block HR Verify. Confirm them on the daily board.")} />
             </View>
           )}
           <StatGrid cols={2} items={[
-            { label: "Present", value: String(totals.p), tone: "success" },
-            { label: "Absent", value: String(totals.a), tone: "danger" },
-            { label: "Leave", value: String(totals.l), tone: "warning" },
-            { label: "Double duty", value: String(totals.dd), tone: "info" },
+            { label: tr("Present"), value: String(totals.p), tone: "success" },
+            { label: tr("Absent"), value: String(totals.a), tone: "danger" },
+            { label: tr("Leave"), value: String(totals.l), tone: "warning" },
+            { label: tr("Double duty"), value: String(totals.dd), tone: "info" },
           ]} />
-          {board.monthEnded && anyUnlocked && canOverride && <T v="small" muted style={{ marginTop: 10 }}>Tap a day to override it. Every override needs a reason and is kept in the audit log.</T>}
+          {board.monthEnded && anyUnlocked && canOverride && <T v="small" muted style={{ marginTop: 10 }}>{tr("Tap a day to override it. Every override needs a reason and is kept in the audit log.")}</T>}
 
-          <Section title="Guards" count={board.rows.length}>
+          <Section title={tr("Guards")} count={board.rows.length}>
             {board.rows.map((row) => (
               <Card key={`${row.empId}-${row.serial}`} style={{ marginBottom: 10 }}>
                 <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                   <T v="mono" muted style={{ width: 22 }}>{String(row.serial).padStart(2, "0")}</T>
                   <View style={{ flex: 1 }}>
-                    <T v="smallStrong" style={{ fontSize: 15 }}>{row.name}{row.isReliever ? "  · Reliever" : ""}</T>
+                    <T v="smallStrong" style={{ fontSize: 15 }}>{row.name}{row.isReliever ? `  · ${tr("Reliever")}` : ""}</T>
                     <T v="mono" muted style={{ fontSize: 11 }}>{row.empCode}{row.separationNote ? ` · ${row.separationNote}` : ""}</T>
                   </View>
                 </View>
@@ -226,40 +229,40 @@ export default function MonthlyBoard() {
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                   <Badge small label={`P ${row.presents}`} tone="success" />
                   <Badge small label={`A ${row.absents}`} tone="danger" />
-                  {row.allowedLeaves != null && <Badge small label={`Allowed L ${row.allowedLeaves}`} tone="neutral" />}
-                  <Badge small label={`L taken ${row.leaves}`} tone="warning" />
+                  {row.allowedLeaves != null && <Badge small label={`${tr("Allowed Leaves")} ${row.allowedLeaves}`} tone="neutral" />}
+                  <Badge small label={`${tr("Leaves Taken")} ${row.leaves}`} tone="warning" />
                   <Badge small label={`DD ${row.doubleDuties}`} tone="info" />
-                  <Badge small label={`Pay days ${row.payDays}`} tone="neutral" />
+                  <Badge small label={`${tr("Pay Days")} ${row.payDays}`} tone="neutral" />
                 </View>
               </Card>
             ))}
-            {board.rows.length === 0 && <Empty title="No guards on this board" />}
+            {board.rows.length === 0 && <Empty title={tr("No guards on this board")} />}
           </Section>
         </>
       )}
 
-      <Sheet open={!!target} onClose={() => setTarget(null)} title={`Override — ${target?.empName ?? ""}`} subtitle={target ? `${target.date} · currently ${target.current || "unmarked"}` : undefined}
+      <Sheet open={!!target} onClose={() => setTarget(null)} title={`${tr("Override")} — ${target?.empName ?? ""}`} subtitle={target ? `${target.date} · ${tr("currently {value}", { value: target.current || tr("unmarked") })}` : undefined}
         footer={<>
-          <Button label="Cancel" variant="secondary" full onPress={() => setTarget(null)} />
-          <Button label={target?.presentOnly ? "Add as double duty" : "Save override"} full loading={busy} disabled={!reason.trim()} onPress={() => target && profile && runOp(() => overrideCell({
+          <Button label={tr("Cancel")} variant="secondary" full onPress={() => setTarget(null)} />
+          <Button label={target?.presentOnly ? tr("Add as double duty") : tr("Save override")} full loading={busy} disabled={!reason.trim()} onPress={() => target && profile && runOp(() => overrideCell({
             clientId: client.id, empId: target.empId, date: target.date, shift: target.shift, current: target.current, status, presentOnly: target.presentOnly, reason, locked: dateLocked(target.date), profile,
-          }), "Override saved")} />
+          }), tr("Override saved"))} />
         </>}>
         {target && (
           <>
-            {!target.presentOnly && <Chips value={status} onChange={setStatus} items={[{ key: "present", label: "Present" }, { key: "absent", label: "Absent" }, { key: "leave", label: "Leave" }]} />}
+            {!target.presentOnly && <Chips value={status} onChange={setStatus} items={[{ key: "present", label: tr("Present") }, { key: "absent", label: tr("Absent") }, { key: "leave", label: tr("Leave") }]} />}
             {target.current === "P" && target.otherShifts.length > 0 && (
               <View style={{ marginTop: 12 }}>
-                <T v="small" muted style={{ marginBottom: 6 }}>Or add a second shift worked that day (double duty):</T>
-                <Chips value={target.presentOnly ? target.shift : ""} onChange={(s) => setTarget({ ...target, presentOnly: true, shift: s })} items={target.otherShifts.map((s) => ({ key: s, label: s[0]!.toUpperCase() + s.slice(1) }))} />
+                <T v="small" muted style={{ marginBottom: 6 }}>{tr("Or add a second shift worked that day (double duty):")}</T>
+                <Chips value={target.presentOnly ? target.shift : ""} onChange={(s) => setTarget({ ...target, presentOnly: true, shift: s })} items={target.otherShifts.map((s) => ({ key: s, label: tr(s[0]!.toUpperCase() + s.slice(1)) }))} />
               </View>
             )}
-            <View style={{ marginTop: 14 }}><Input label="Reason" required value={reason} onChangeText={setReason} multiline /></View>
+            <View style={{ marginTop: 14 }}><Input label={tr("Reason")} required value={reason} onChangeText={setReason} multiline /></View>
             <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-              <Button size="sm" variant="ghost" label="Clear this day" disabled={!reason.trim()} onPress={() => runOp(() => clearAttendanceDay(target.empId, target.date, reason, dateLocked(target.date)), "Day cleared")} />
-              <Button size="sm" variant="ghost" label="Clear whole month" disabled={!reason.trim()} onPress={async () => {
-                if (await confirm({ title: `Clear all of ${target.empName}'s marks?`, message: "Every day of the month goes back to unmarked. This cannot be undone.", confirmLabel: "Clear month", tone: "danger" })) {
-                  await runOp(() => clearAttendanceMonth(target.empId, month, reason, !!board?.lockedHalves[1] || !!board?.lockedHalves[2]), "Month cleared");
+              <Button size="sm" variant="ghost" label={tr("Clear this day")} disabled={!reason.trim()} onPress={() => runOp(() => clearAttendanceDay(target.empId, target.date, reason, dateLocked(target.date)), tr("Day cleared"))} />
+              <Button size="sm" variant="ghost" label={tr("Clear whole month")} disabled={!reason.trim()} onPress={async () => {
+                if (await confirm({ title: tr("Clear all of {name}'s marks?", { name: target.empName }), message: tr("Every day of the month goes back to unmarked. This cannot be undone."), confirmLabel: tr("Clear month"), tone: "danger" })) {
+                  await runOp(() => clearAttendanceMonth(target.empId, month, reason, !!board?.lockedHalves[1] || !!board?.lockedHalves[2]), tr("Month cleared"));
                 }
               }} />
             </View>
@@ -269,24 +272,24 @@ export default function MonthlyBoard() {
       </Sheet>
 
       <Sheet open={!!returning} onClose={() => setReturning(null)}
-        title={returning === "return_to_hr" ? "Send back to HR" : "Send back to Ops"}
-        subtitle={returning === "return_to_hr" ? "HR's verification is cleared and the half unlocks for corrections." : "Ops' verification is cleared."}
+        title={returning === "return_to_hr" ? tr("Send back to HR") : tr("Send back to Ops")}
+        subtitle={returning === "return_to_hr" ? tr("HR's verification is cleared and the half unlocks for corrections.") : tr("Ops' verification is cleared.")}
         footer={<>
-          <Button label="Cancel" variant="secondary" full onPress={() => setReturning(null)} />
-          <Button label="Send back" icon={RotateCcw} full loading={busy} disabled={!returnNote.trim()} onPress={() => returning && doAction(returning, returning === "return_to_hr" ? "Sent back to HR" : "Sent back to Ops", returnNote)} />
+          <Button label={tr("Cancel")} variant="secondary" full onPress={() => setReturning(null)} />
+          <Button label={tr("Send back")} icon={RotateCcw} full loading={busy} disabled={!returnNote.trim()} onPress={() => returning && doAction(returning, returning === "return_to_hr" ? tr("Sent back to HR") : tr("Sent back to Ops"), returnNote)} />
         </>}>
-        <Input label="What needs fixing?" required value={returnNote} onChangeText={setReturnNote} multiline helper="Posted to this half's remarks." />
+        <Input label={tr("What needs fixing?")} required value={returnNote} onChangeText={setReturnNote} multiline helper={tr("Posted to this half's remarks.")} />
       </Sheet>
 
-      <Sheet open={remarksOpen} onClose={() => { setRemarksOpen(false); setReplyTo(null); }} title={`Remarks · ${board?.halfLabel ?? ""}`}
+      <Sheet open={remarksOpen} onClose={() => { setRemarksOpen(false); setReplyTo(null); }} title={`${tr("Remarks")} · ${board?.halfLabel ?? ""}`}
         footer={<>
           <View style={{ flex: 1 }}>
-            {replyTo && <T v="small" muted style={{ marginBottom: 4 }}>Replying to {replyTo.author_name ?? "Unknown"} · <T v="small" color={t.brand[600]} onPress={() => setReplyTo(null)}>cancel</T></T>}
-            <Input value={draft} onChangeText={setDraft} placeholder={replyTo ? "Write a reply…" : "Add a remark…"} multiline />
-            <Button label={replyTo ? "Reply" : "Post remark"} full loading={busy} disabled={!draft.trim()} onPress={() => client && runOp(() => postBoardRemark(client.id, month, h, draft, replyTo?.id ?? null), replyTo ? "Reply posted" : "Remark posted")} />
+            {replyTo && <T v="small" muted style={{ marginBottom: 4 }}>{tr("Replying to {name}", { name: replyTo.author_name ?? tr("Unknown") })} · <T v="small" color={t.brand[600]} onPress={() => setReplyTo(null)}>{tr("cancel")}</T></T>}
+            <Input value={draft} onChangeText={setDraft} placeholder={replyTo ? tr("Write a reply…") : tr("Add a remark…")} multiline />
+            <Button label={replyTo ? tr("Reply") : tr("Post remark")} full loading={busy} disabled={!draft.trim()} onPress={() => client && runOp(() => postBoardRemark(client.id, month, h, draft, replyTo?.id ?? null), replyTo ? tr("Reply posted") : tr("Remark posted"))} />
           </View>
         </>}>
-        {threads.length === 0 && <T v="small" muted>No remarks on this half yet.</T>}
+        {threads.length === 0 && <T v="small" muted>{tr("No remarks on this half yet.")}</T>}
         {threads.map(({ remark, replies }) => (
           <View key={remark.id} style={{ marginBottom: 14 }}>
             <RemarkCard r={remark} when={fmtWhen(remark.created_at)} />
@@ -296,7 +299,7 @@ export default function MonthlyBoard() {
                 <View style={{ flex: 1 }}><RemarkCard r={rep} when={fmtWhen(rep.created_at)} /></View>
               </View>
             ))}
-            <T v="small" color={t.brand[600]} style={{ marginTop: 6, paddingLeft: 12 }} onPress={() => setReplyTo(remark)}>Reply</T>
+            <T v="small" color={t.brand[600]} style={{ marginTop: 6, paddingLeft: 12 }} onPress={() => setReplyTo(remark)}>{tr("Reply")}</T>
           </View>
         ))}
       </Sheet>
@@ -310,7 +313,7 @@ function RemarkCard({ r, when }: { r: BoardRemark; when: string }) {
   return (
     <View style={{ borderWidth: 1, borderRadius: radius.sm, padding: 10, borderColor: tn ? tn.line : t.border, backgroundColor: tn ? tn.tint : "transparent" }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-        <T v="smallStrong">{r.author_name ?? "Unknown"}{r.kind === "returned" ? "  · sent back" : ""}</T>
+        <T v="smallStrong">{r.author_name ?? tr("Unknown")}{r.kind === "returned" ? `  · ${tr("sent back")}` : ""}</T>
         <T v="small" muted>{when}</T>
       </View>
       <T v="small" style={{ marginTop: 4 }}>{r.body}</T>

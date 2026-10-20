@@ -9,6 +9,7 @@ import { clientName, useDB } from "../../data/store";
 import { bulkClear, bulkMark, BulkStatus, CalendarContext, loadCalendar } from "../../data/api/attendance";
 import { useAuth } from "../../lib/auth";
 import { useTheme } from "../../theme/ThemeProvider";
+import { LanguageToggle, tr, useLang } from "../../lib/lang";
 
 const LETTER: Record<string, string> = { present: "P", absent: "A", leave: "L", double_duty: "DD", rest_day: "L", relief_cover: "RC" };
 const STATUSES: { key: BulkStatus; label: string }[] = [
@@ -22,6 +23,7 @@ const STATUSES: { key: BulkStatus; label: string }[] = [
  */
 export function BulkMarkSheet({ open, onClose, employeeId }: { open: boolean; onClose: () => void; employeeId?: string }) {
   const t = useTheme();
+  useLang();
   const { db, act } = useDB();
   const { profile } = useAuth();
   const { toast } = useOverlay();
@@ -60,19 +62,20 @@ export function BulkMarkSheet({ open, onClose, employeeId }: { open: boolean; on
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Bulk mark by employee" subtitle="Select the days, then apply one mark." full
+    <Sheet open={open} onClose={onClose} title={tr("Bulk Mark by Employee")} subtitle={tr("Select the days, then apply one mark.")} full
       footer={<>
-        <Button label="Clear marks" variant="secondary" full loading={busy} disabled={!selected.size} onPress={() => run("clear")} />
-        <Button label={selected.size ? `Mark ${selected.size} day${selected.size > 1 ? "s" : ""}` : "Mark"} full loading={busy} disabled={!selected.size} onPress={() => run("mark")} />
+        <Button label={tr("Clear marks")} variant="secondary" full loading={busy} disabled={!selected.size} onPress={() => run("clear")} />
+        <Button label={selected.size ? tr(selected.size > 1 ? "Mark {n} days" : "Mark {n} day", { n: selected.size }) : tr("Mark")} full loading={busy} disabled={!selected.size} onPress={() => run("mark")} />
       </>}>
-      <Select label="Client" clearable value={client} onChange={(v) => { setClient(v); setEmp(""); }} placeholder="All clients" options={db.clients.map((c) => ({ value: c.id, label: c.name }))} />
-      <Select label="Employee" required searchable value={emp} onChange={setEmp} options={staff.map((x) => ({ value: x.id, label: x.name, sub: `${x.code} · ${clientName(db, x.client_id)}` }))} />
+      <View style={{ alignItems: "flex-end", marginBottom: 8 }}><LanguageToggle /></View>
+      <Select label={tr("Client")} clearable value={client} onChange={(v) => { setClient(v); setEmp(""); }} placeholder={tr("All Clients")} options={db.clients.map((c) => ({ value: c.id, label: c.name }))} />
+      <Select label={tr("Employee")} required searchable value={emp} onChange={setEmp} options={staff.map((x) => ({ value: x.id, label: x.name, sub: `${x.code} · ${clientName(db, x.client_id)}` }))} />
       <MonthStepper month={month} onChange={setMonth} />
       <View style={{ marginVertical: 12 }}>
-        <Chips value={status} onChange={setStatus} items={STATUSES} />
+        <Chips value={status} onChange={setStatus} items={STATUSES.map((s) => ({ ...s, label: tr(s.label) }))} />
       </View>
       {!e ? (
-        <T v="small" muted center style={{ paddingVertical: 24 }}>Choose an employee to load their month.</T>
+        <T v="small" muted center style={{ paddingVertical: 24 }}>{tr("Choose an employee to load their month.")}</T>
       ) : !ctx ? (
         <ActivityIndicator color={t.brand[500]} style={{ marginVertical: 24 }} />
       ) : (
@@ -91,9 +94,9 @@ export function BulkMarkSheet({ open, onClose, employeeId }: { open: boolean; on
               );
             }}
           />
-          <T v="small" muted style={{ marginTop: 8 }}>Greyed days are outside the employment or contract window. Tap a day again to deselect it.</T>
-          <Input label="Supervisor override reason" value={override} onChangeText={setOverride} multiline placeholder="Only needed for days past the backdate limit" />
-          {status === "double_duty" && <Banner tone="info" title="Double duty" sub="Writes the rostered shift plus the shift before it in the cycle, both as double duty." />}
+          <T v="small" muted style={{ marginTop: 8 }}>{tr("Greyed days are outside the employment or contract window. Tap a day again to deselect it.")}</T>
+          <Input label={tr("Supervisor override reason")} value={override} onChangeText={setOverride} multiline placeholder={tr("Only needed for days past the backdate limit")} />
+          {status === "double_duty" && <Banner tone="info" title={tr("Double duty")} sub={tr("Writes the rostered shift plus the shift before it in the cycle, both as double duty.")} />}
         </>
       )}
     </Sheet>

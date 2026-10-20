@@ -5,6 +5,7 @@ import { tap } from "../../components/ui";
 import type { AttStatus } from "../../data/seed";
 import { useTheme } from "../../theme/ThemeProvider";
 import { radius, Tone } from "../../theme/tokens";
+import { tr } from "../../lib/lang";
 
 // P/A/L/DD/X — the web app's attendance mark vocabulary and colours.
 export const MARK: Record<AttStatus, { code: string; label: string; tone: Tone }> = {
@@ -32,7 +33,7 @@ export function StatusPick({ value, onChange, disabled }: { value: AttStatus | n
             key={s}
             disabled={disabled}
             onPress={() => { tap(); onChange(s); }}
-            accessibilityLabel={m.label}
+            accessibilityLabel={tr(m.label)}
             style={{
               flex: 1, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center",
               backgroundColor: on ? tn.strong : "transparent", borderWidth: 1, borderColor: on ? tn.strong : t.border, opacity: disabled ? 0.5 : 1,
