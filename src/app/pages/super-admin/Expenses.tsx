@@ -4,6 +4,7 @@ import CategoryPicker from "../../components/CategoryPicker";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
+import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExpenseApprovalModal, { type ApprovableExpense } from "../../components/ExpenseApprovalModal";
@@ -2411,7 +2412,67 @@ export default function Expenses() {
             )}
           </>
         }
-      />
+      >
+        <div className="flex flex-col gap-3">
+          <Tabs<"expenses" | "fixed" | "advances" | "deferred">
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { value: "expenses", label: "Expenses" },
+              { value: "fixed", label: "Fixed expenses", count: fixedInstances.filter((i) => i.status === "pending").length || undefined },
+              { value: "advances", label: "Advances" },
+              { value: "deferred", label: "Deferred", count: deferred.filter((d) => d.remaining !== 0).length || undefined },
+            ]}
+          />
+          {activeTab === "expenses" && (() => {
+            const office = filtered.filter((e) => !e.client_name).reduce((n, e) => n + Number(e.amount), 0);
+            const total = expenseMetrics.total;
+            const top = expenseMetrics.perCategory[0];
+            const segs = expenseMetrics.perCategory.slice(0, 7);
+            const rest = expenseMetrics.perCategory.slice(7).reduce((n, c) => n + c.total, 0);
+            return (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {[
+                    { label: "Spent", v: <><span className="cur">PKR</span>{Math.round(total).toLocaleString()}</>, sub: "in the current filter" },
+                    { label: "Entries", v: filtered.length.toLocaleString(), sub: `average ${filtered.length ? Math.round(total / filtered.length).toLocaleString() : 0}` },
+                    { label: "Office share", v: total ? `${Math.round((office / total) * 100)}%` : "—", sub: "head office, not a client" },
+                    { label: "Biggest category", v: top ? `${Math.round((top.total / Math.max(1, total)) * 100)}%` : "—", sub: top ? top.name : "no expenses" },
+                  ].map((t) => (
+                    <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                      <span className="lbl">{t.label}</span>
+                      <span className="font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap">{t.v}</span>
+                      <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
+                    </div>
+                  ))}
+                </div>
+                {segs.length > 0 && (
+                  <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                    <div className="flex justify-between gap-2"><span className="lbl">Where it went</span>{categoryFilter !== "all" && <button type="button" onClick={() => setCategoryFilter("all")} className="text-xs text-brand-500 hover:underline">Show every category</button>}</div>
+                    <div className="flex h-3.5 rounded-full overflow-hidden bg-muted">
+                      {segs.map((c, i) => (
+                        <button key={c.id ?? c.name} type="button" title={`${c.name}: PKR ${c.total.toLocaleString()}`} aria-label={`${c.name}, ${Math.round((c.total / Math.max(1, total)) * 100)} percent`}
+                          onClick={() => setCategoryFilter(categoryFilter === (c.id ?? "all") ? "all" : (c.id ?? "all"))}
+                          className={`h-full ${categoryFilter !== "all" && categoryFilter !== c.id ? "opacity-35" : ""}`}
+                          style={{ width: `${(c.total / Math.max(1, total)) * 100}%`, background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      ))}
+                      {rest > 0 && <span className="h-full bg-[#4a4d3d]" style={{ width: `${(rest / Math.max(1, total)) * 100}%` }} />}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {segs.map((c, i) => (
+                        <button key={c.id ?? c.name} type="button" onClick={() => setCategoryFilter(categoryFilter === (c.id ?? "all") ? "all" : (c.id ?? "all"))}
+                          className={`inline-flex items-center gap-1.5 hover:text-foreground ${categoryFilter === c.id ? "text-foreground font-semibold" : ""}`}>
+                          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />{c.name} <span className="font-ledger">{Math.round(c.total).toLocaleString()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
@@ -2431,120 +2492,6 @@ export default function Expenses() {
               The record this ledger entry points at is not on this screen — it may have
               been deleted, or it may be outside the region you can see.
             </span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto">
-          {([
-            ["expenses", "Expenses"],
-            ["fixed", "Fixed Expenses"],
-            ["advances", "Advances"],
-            ["deferred", "Deferred"],
-          ] as const).map(([t, label]) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setActiveTab(t)}
-              // shrink-0 + nowrap: the "Fixed Expenses" tab carries an extra
-              // "N pending" suffix, which wrapped to a second line on a narrow
-              // screen and made that one button taller than its neighbours.
-              // The active tab also needs a transparent border, or it sits 2px
-              // shorter than the bordered inactive ones.
-              className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-md text-sm border transition-colors ${
-                activeTab === t
-                  ? "bg-brand-600 text-[#fff] border-transparent"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              {label}
-              {t === "fixed" && fixedTotals.count > 0 && (
-                <span className="ml-2 text-[11px] opacity-75">
-                  {fixedInstances.filter((i) => i.status === "pending").length} pending
-                </span>
-              )}
-              {/* The count is of what is still OPEN. A settled schedule is
-                  listed but is not something anybody is waiting on. */}
-              {t === "deferred" && deferred.some((d) => d.remaining !== 0) && (
-                <span className="ml-2 text-[11px] opacity-75">
-                  {deferred.filter((d) => d.remaining !== 0).length} open
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === "expenses" && (
-          <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-1 flex flex-col gap-4">
-              <div className="band on-dark p-4 md:p-5 rounded-2xl">
-                <p className="lbl mb-1">Total Expenses</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground">
-                  <span className="cur">PKR</span>{expenseMetrics.total.toLocaleString()}
-                </p>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  {filtered.length} entr{filtered.length === 1 ? "y" : "ies"} in current filter
-                </p>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-slate-200 flex-1">
-                <p className="text-xs text-slate-500 mb-2">By Category</p>
-                {expenseMetrics.perCategory.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    No expenses match the current filter.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
-                    {expenseMetrics.perCategory.map((c, i) => (
-                      <div
-                        key={c.id ?? c.name}
-                        className="flex items-center justify-between px-3 py-1.5 rounded border border-slate-100 bg-slate-50"
-                      >
-                        <span className="flex items-center gap-2 text-xs text-slate-700 truncate">
-                          <span
-                            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
-                          />
-                          {c.name}
-                        </span>
-                        <span className="text-xs text-slate-900 ml-2">
-                          PKR {c.total.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="lg:col-span-2 bg-white p-4 rounded-lg border border-slate-200">
-              <p className="text-xs text-slate-500 mb-2">Category Breakdown</p>
-              {expenseMetrics.perCategory.length === 0 ? (
-                <div className="h-64 flex items-center justify-center text-sm text-slate-500">
-                  No expenses match the current filter.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie
-                      data={expenseMetrics.perCategory}
-                      dataKey="total"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      innerRadius={50}
-                      paddingAngle={2}
-                    >
-                      {expenseMetrics.perCategory.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <RTooltip
-                      formatter={(v: number) => `PKR ${Number(v).toLocaleString()}`}
-                    />
-                    <Legend {...CHART_LEGEND} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
           </div>
         )}
 
