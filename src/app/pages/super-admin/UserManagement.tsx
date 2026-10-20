@@ -452,7 +452,40 @@ export default function UserManagement() {
             Create User
           </Button>
         }
-      />
+      >
+        {users.length > 0 && (() => {
+          // Band (2026-10-20): who can get in, and how far. Super admins hold
+          // every permission implicitly; everyone else holds what is ticked.
+          const byRole = new Map<string, number>();
+          for (const u of users) byRole.set(u.role, (byRole.get(u.role) ?? 0) + 1);
+          const scoped = users.filter((u) => u.branch_id).length;
+          const temp = users.filter((u) => u.must_change_password).length;
+          const isSuper = (u: Profile) => u.role === "super_admin" || u.role === "super_super_admin";
+          const accountant = users.filter((u) => isSuper(u) || (u.permissions ?? []).includes("accountant.view")).length;
+          const noAccess = users.filter((u) => !isSuper(u) && (u.permissions?.length ?? 0) === 0).length;
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+              <div className="col-span-2 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                <span className="lbl">{users.length} users by role</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[...byRole.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => (
+                    <span key={r} className="text-xs px-2.5 py-1 rounded-lg border border-border">{ROLE_LABEL[r as UserRole] ?? r} <span className="font-ledger font-semibold">{n}</span></span>
+                  ))}
+                </div>
+              </div>
+              {[
+                { label: "Scoped to a region", v: scoped, sub: `${users.length - scoped} see every region`, tone: "text-foreground" },
+                { label: "Accountant page", v: accountant, sub: "can open it (incl. super admins)", tone: "text-foreground" },
+                { label: "Need attention", v: temp + noAccess, sub: `${temp} on a temporary password · ${noAccess} with no permissions`, tone: temp + noAccess ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+              ].map((t) => (
+                <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
