@@ -291,7 +291,7 @@ export default function PartnershipRun() {
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-5">
         {/* ── Month, status, deadline ─────────────────────────────────────── */}
-        <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-5">
+        <div className="bg-card border border-border rounded-2xl p-4 md:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Month:</label>
@@ -408,7 +408,7 @@ export default function PartnershipRun() {
 
         {/* ── What it would pay ───────────────────────────────────────────── */}
         {run && partnerRows.length > 0 && (
-          <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <section className="bg-card border border-border rounded-2xl overflow-hidden">
             <h3 className="text-sm text-slate-900 px-4 py-3 border-b border-slate-200">
               What this run pays
             </h3>
@@ -468,7 +468,7 @@ export default function PartnershipRun() {
         )}
 
         {/* ── Review ──────────────────────────────────────────────────────── */}
-        <section className="bg-white border border-slate-200 rounded-lg">
+        <section className="bg-card border border-border rounded-2xl">
           <h3 className="text-sm text-slate-900 px-4 py-3 border-b border-slate-200">
             Review — {monthName(period)}
           </h3>
@@ -541,7 +541,7 @@ export default function PartnershipRun() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3">
+    <div className="bg-card border border-border rounded-2xl p-3">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="text-lg text-slate-900 tabular-nums mt-1">{value}</div>
     </div>

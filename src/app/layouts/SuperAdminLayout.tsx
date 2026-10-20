@@ -328,7 +328,7 @@ export default function SuperAdminLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {isSsaViewing && (
           <div className="bg-warning-50 border-b border-warning-200 px-6 py-2 flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2 text-warning-900">
+            <div className="flex items-center gap-2 text-warning-700 dark:text-warning-500">
               <Eye className="w-4 h-4" strokeWidth={1.5} />
               <span>
                 You are viewing <strong>{company?.name ?? ""}</strong> as Super Super Admin.
@@ -336,7 +336,7 @@ export default function SuperAdminLayout() {
             </div>
             <button
               onClick={handleExitView}
-              className="flex items-center gap-1 px-3 py-1 rounded text-warning-900 hover:bg-warning-100"
+              className="flex items-center gap-1 px-3 py-1 rounded text-warning-700 dark:text-warning-500 hover:bg-warning-100"
             >
               <X className="w-4 h-4" strokeWidth={1.5} /> Exit view
             </button>

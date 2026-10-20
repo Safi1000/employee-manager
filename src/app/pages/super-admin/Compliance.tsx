@@ -760,36 +760,36 @@ export default function Compliance() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-danger-700">Critical Alerts</p>
               <AlertCircle className="w-5 h-5 text-danger-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-danger-900">{metrics.critical}</p>
+            <p className="text-2xl text-danger-700 dark:text-danger-500">{metrics.critical}</p>
             <p className="text-[11px] text-danger-700/70 mt-1">In advance-notice window</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-warning-700">High Priority</p>
               <Bell className="w-5 h-5 text-warning-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-warning-900">{metrics.high}</p>
+            <p className="text-2xl text-warning-700 dark:text-warning-500">{metrics.high}</p>
             <p className="text-[11px] text-warning-700/70 mt-1">In advance-notice window</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
+          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-brand-700">Upcoming Deadlines</p>
               <CalendarIcon className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-brand-900">{metrics.upcoming}</p>
+            <p className="text-2xl text-brand-700 dark:text-brand-500">{metrics.upcoming}</p>
             <p className="text-[11px] text-brand-700/70 mt-1">Today or later</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-success-700">Active Alerts</p>
               <Bell className="w-5 h-5 text-success-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-success-900">{metrics.activeAlerts}</p>
+            <p className="text-2xl text-success-700 dark:text-success-500">{metrics.activeAlerts}</p>
             <p className="text-[11px] text-success-700/70 mt-1">Auto-derived from due dates</p>
           </div>
         </div>
@@ -799,7 +799,7 @@ export default function Compliance() {
             would be 758 warnings nobody can act on. One band, four numbers.
             It goes quiet on its own as the vetting upload lands. */}
         {coverageTotals && (
-          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+          <div className="bg-card rounded-2xl border border-border mb-6">
             <div className="p-6 border-b border-slate-200">
               <h3 className="text-base text-slate-900">Guard data coverage</h3>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -847,7 +847,7 @@ export default function Compliance() {
             the daily email; both carry the same content, and neither escalates.
             An alert stays here until someone acknowledges or resolves it. */}
         {raisedAlerts.length > 0 && (
-          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+          <div className="bg-card rounded-2xl border border-border mb-6">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="text-base text-slate-900">Raised Alerts</h3>
@@ -896,7 +896,7 @@ export default function Compliance() {
           </div>
         )}
 
-        <div id="compliance-dates-card" className="bg-white rounded-lg border border-slate-200 scroll-mt-4">
+        <div id="compliance-dates-card" className="bg-card rounded-2xl border border-border scroll-mt-4">
           <div className="p-6 border-b border-slate-200">
             <div className="flex gap-2">
               {([
@@ -909,7 +909,7 @@ export default function Compliance() {
                   onClick={() => setActiveTab(tab.key as typeof activeTab)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab.key
-                      ? "bg-brand-600 text-[#fff]"
+                      ? "bg-foreground text-background font-semibold"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -1251,7 +1251,7 @@ export default function Compliance() {
           )}
         </div>
 
-        <div className="mt-6 bg-white rounded-lg border border-slate-200 p-6">
+        <div className="mt-6 bg-card rounded-2xl border border-border p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base text-slate-900">Calendar View</h3>
             <div className="flex items-center gap-2">
@@ -1307,11 +1307,11 @@ export default function Compliance() {
                     key={idx}
                     className={`h-14 flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
                       hasCritical
-                        ? "bg-danger-100 text-danger-900 border border-danger-300"
+                        ? "bg-danger-100 text-danger-700 dark:text-danger-500 border border-danger-300"
                         : hasHigh
-                        ? "bg-warning-100 text-warning-900 border border-warning-300"
+                        ? "bg-warning-100 text-warning-700 dark:text-warning-500 border border-warning-300"
                         : hasEvents
-                        ? "bg-brand-50 text-brand-900 border border-brand-200"
+                        ? "bg-brand-50 text-brand-700 dark:text-brand-500 border border-brand-200"
                         : "text-slate-700 hover:bg-slate-50"
                     } ${isHighlighted ? "ring-2 ring-brand-500 ring-offset-1" : ""}`}
                     title={cell.events.map((e) => `${e.title} (${e.priority})`).join("\n") || ""}

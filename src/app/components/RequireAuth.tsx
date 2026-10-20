@@ -35,7 +35,7 @@ export default function RequireAuth({
     if (company.active === false || expired) {
       return (
         <div className="min-h-dvh flex items-center justify-center bg-slate-50 p-8">
-          <div className="max-w-md text-center bg-white border border-slate-200 rounded-lg p-8">
+          <div className="max-w-md text-center bg-card border border-border rounded-2xl p-8">
             <h1 className="text-xl text-slate-900 mb-2">Access suspended</h1>
             <p className="text-sm text-slate-600 mb-6">
               {expired

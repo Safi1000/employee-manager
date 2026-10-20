@@ -235,7 +235,7 @@ export default function RegionalPerformance() {
               <button
                 key={b}
                 onClick={() => setBasis(b)}
-                className={`px-3 py-2 text-sm ${basis === b ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-50"}`}
+                className={`px-3 py-2 text-sm ${basis === b ? "bg-foreground text-background font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
               >
                 {b === "revenue" ? "Revenue" : "Cash"}
               </button>
@@ -258,7 +258,7 @@ export default function RegionalPerformance() {
         <>
           {/* THE POOL, AND ITS SHARES, SO THEY VISIBLY SUM TO IT. */}
           <div className="border border-slate-200 rounded-lg p-5">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Head office pool</p>
+            <p className="lbl">Head office pool</p>
             <button
               type="button"
               onClick={() => setPoolOpen((v) => !v)}

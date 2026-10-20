@@ -217,7 +217,7 @@ export default function Companies() {
         </div>
 
         {addOpen && (
-          <form onSubmit={handleAdd} className="bg-white border border-slate-200 rounded-lg p-6 mb-6 space-y-4">
+          <form onSubmit={handleAdd} className="bg-card border border-border rounded-2xl p-6 mb-6 space-y-4">
             <h3 className="text-base text-slate-900">Add Company</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -276,7 +276,7 @@ export default function Companies() {
         {loading ? (
           <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
         ) : companies.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
+          <div className="bg-card border border-border rounded-2xl p-12 text-center">
             <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-3" strokeWidth={1.5} />
             <p className="text-slate-500">No companies yet. Create your first tenant above.</p>
           </div>

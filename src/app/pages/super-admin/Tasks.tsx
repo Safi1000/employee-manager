@@ -377,7 +377,7 @@ export default function Tasks() {
         )}
 
         {loading ? (
-          <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
+          <div className="bg-card border border-border rounded-2xl p-10 text-center text-slate-500">
             <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
           </div>
         ) : (

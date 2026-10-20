@@ -2284,63 +2284,63 @@ export default function Accounting() {
 
         {activeTab === "banks" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash in Hand</p>
+                <p className="lbl mb-1">Cash in Hand</p>
                 <span className="text-[10px] text-success-700/70" title="Cash in Hand is the sum of every custodian's held cash">
                   Σ custodians
                 </span>
               </div>
-              <p className="text-2xl text-success-900">PKR {cashBalance.toLocaleString()}</p>
+              <p className="text-2xl text-success-700 dark:text-success-500">PKR {cashBalance.toLocaleString()}</p>
               <p className="text-[11px] text-success-700/80 mt-1">
                 Opening: PKR {cashOpeningBalance.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Bank Balance</p>
-              <p className="text-2xl text-brand-900">PKR {totalAccountBalance.toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Bank Balance</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-brand-700 dark:text-brand-500"><span className="cur">PKR</span>{totalAccountBalance.toLocaleString()}</p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cheques in Transit</p>
-              <p className="text-2xl text-warning-900">PKR {totalPendingCheques.toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Cheques in Transit</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{totalPendingCheques.toLocaleString()}</p>
             </div>
-            <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
-              <p className="text-xs text-slate-300 mb-1">Net Available Cash</p>
-              <p className="text-2xl text-[#fff]">PKR {grandTotal.toLocaleString()}</p>
+            <div className="band on-dark p-4 md:p-5 rounded-2xl">
+              <p className="lbl mb-1">Net Available Cash</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground"><span className="cur">PKR</span>{grandTotal.toLocaleString()}</p>
             </div>
           </div>
         )}
 
         {activeTab === "receivables" && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-              <p className="text-xs text-slate-600 mb-1">Opening Balance</p>
-              <p className="text-xl text-slate-900">
-                PKR {receivableTotals.opening.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Opening Balance</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-slate-900">
+                <span className="cur">PKR</span>{receivableTotals.opening.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
-              <p className="text-xl text-brand-900">
-                PKR {receivableTotals.invoiced.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Total Invoiced</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-brand-700 dark:text-brand-500">
+                <span className="cur">PKR</span>{receivableTotals.invoiced.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Withholding Tax</p>
-              <p className="text-xl text-danger-900">
-                PKR {receivableTotals.withholding.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Withholding Tax</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-danger-700 dark:text-danger-500">
+                <span className="cur">PKR</span>{receivableTotals.withholding.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Received</p>
-              <p className="text-xl text-success-900">
-                PKR {receivableTotals.received.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Total Received</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-success-700 dark:text-success-500">
+                <span className="cur">PKR</span>{receivableTotals.received.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
-              <p className="text-xl text-warning-900">
-                PKR {receivableTotals.outstanding.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Outstanding</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-warning-700 dark:text-warning-500">
+                <span className="cur">PKR</span>{receivableTotals.outstanding.toLocaleString()}
               </p>
             </div>
           </div>
@@ -2348,28 +2348,28 @@ export default function Accounting() {
 
         {activeTab === "payables" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
-              <p className="text-xs text-slate-300 mb-1">Total Payable</p>
-              <p className="text-xl text-[#fff]">
-                PKR {payableTotals.total.toLocaleString()}
+            <div className="band on-dark p-4 md:p-5 rounded-2xl">
+              <p className="lbl mb-1">Total Payable</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-foreground">
+                <span className="cur">PKR</span>{payableTotals.total.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Pending</p>
-              <p className="text-xl text-warning-900">
-                PKR {payableTotals.pending.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Pending</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-warning-700 dark:text-warning-500">
+                <span className="cur">PKR</span>{payableTotals.pending.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Overdue</p>
-              <p className="text-xl text-danger-900">
-                PKR {payableTotals.overdue.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Overdue</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-danger-700 dark:text-danger-500">
+                <span className="cur">PKR</span>{payableTotals.overdue.toLocaleString()}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Paid</p>
-              <p className="text-xl text-success-900">
-                PKR {payableTotals.paid.toLocaleString()}
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Paid</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-success-700 dark:text-success-500">
+                <span className="cur">PKR</span>{payableTotals.paid.toLocaleString()}
               </p>
             </div>
           </div>
@@ -2377,22 +2377,22 @@ export default function Accounting() {
 
         {activeTab === "cash-custody" && custodySummary && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash in Hand</p>
-              <p className="text-2xl text-success-900">PKR {Math.round(custodySummary.totalCash).toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Total Cash in Hand</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-success-700 dark:text-success-500"><span className="cur">PKR</span>{Math.round(custodySummary.totalCash).toLocaleString()}</p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Owed to Partners (Undrawn)</p>
-              <p className="text-2xl text-warning-900">PKR {Math.round(custodySummary.totalPartnerOwed).toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Owed to Partners (Undrawn)</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{Math.round(custodySummary.totalPartnerOwed).toLocaleString()}</p>
             </div>
-            <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
-              <p className="text-xs text-slate-300 mb-1">Free Company Cash</p>
-              <p className={`text-2xl ${custodySummary.freeCash < 0 ? "text-danger-400" : "text-[#fff]"}`}>PKR {Math.round(custodySummary.freeCash).toLocaleString()}</p>
+            <div className="band on-dark p-4 md:p-5 rounded-2xl">
+              <p className="lbl mb-1">Free Company Cash</p>
+              <p className={`font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl ${custodySummary.freeCash < 0 ? "text-danger-400" : "text-[#fff]"}`}><span className="cur">PKR</span>{Math.round(custodySummary.freeCash).toLocaleString()}</p>
             </div>
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200 mb-6">
+        <div className="bg-card rounded-2xl border border-border mb-6">
           <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
             <div className="flex gap-2 flex-wrap">
               {visibleTabs.map((tab) => (
@@ -2401,7 +2401,7 @@ export default function Accounting() {
                   onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab
-                      ? "bg-brand-600 text-[#fff]"
+                      ? "bg-foreground text-background font-semibold"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -2616,7 +2616,7 @@ export default function Accounting() {
                       onClick={() => setPayableStatusFilter(s)}
                       className={`px-3 py-1 rounded-md text-xs capitalize transition-colors ${
                         payableStatusFilter === s
-                          ? "bg-brand-600 text-[#fff]"
+                          ? "bg-foreground text-background font-semibold"
                           : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                       }`}
                     >
@@ -2818,7 +2818,7 @@ export default function Accounting() {
                     type="button"
                     onClick={() => setChequeSectionView(v)}
                     className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                      chequeSectionView === v ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-100"
+                      chequeSectionView === v ? "bg-foreground text-background font-semibold" : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
                     {v === "cheques" ? "Cheques" : "Cash Deposits"}
@@ -4129,26 +4129,26 @@ export default function Accounting() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Opening Balance</p>
-                <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Opening Balance</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-900"><span className="cur">PKR</span>{Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
-                <p className="text-lg text-brand-700">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Total Invoiced</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700"><span className="cur">PKR</span>{selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Received</p>
-                <p className="text-lg text-success-700">PKR {selectedClient.total_received.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Received</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-success-700"><span className="cur">PKR</span>{selectedClient.total_received.toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Withholding</p>
-                <p className="text-lg text-danger-700">PKR {selectedClient.total_withholding.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Withholding</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700"><span className="cur">PKR</span>{selectedClient.total_withholding.toLocaleString()}</p>
                 <p className="text-[10px] text-slate-400 mt-0.5">deducted by the client</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
-                <p className="text-lg text-warning-700">PKR {selectedClient.outstanding.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Outstanding</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-warning-700"><span className="cur">PKR</span>{selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>
 
@@ -5493,7 +5493,7 @@ function HistoryBody({
               onClick={() => setScope(s)}
               className={`px-3 py-1.5 rounded-md text-xs ${
                 scope === s
-                  ? "bg-brand-600 text-[#fff]"
+                  ? "bg-foreground text-background font-semibold"
                   : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
               }`}
             >

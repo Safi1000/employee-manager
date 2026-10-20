@@ -135,7 +135,7 @@ export default function CompanyDetail() {
             </div>
 
             {inviteOpen && (
-              <form onSubmit={handleInvite} className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 mb-6 space-y-4">
+              <form onSubmit={handleInvite} className="bg-card border border-border rounded-2xl p-4 md:p-6 mb-6 space-y-4">
                 <div>
                   <h3 className="text-base text-slate-900">Add Super Admin for {company.name}</h3>
                   <p className="text-xs text-slate-500 mt-1">
@@ -182,12 +182,12 @@ export default function CompanyDetail() {
 
             <h2 className="text-lg text-slate-900 mb-4">Users</h2>
             {users.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-lg p-8 text-center">
+              <div className="bg-card border border-border rounded-2xl p-8 text-center">
                 <Plus className="w-8 h-8 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
                 <p className="text-slate-500 text-sm">No users yet. Add the first Super Admin so they can manage this company.</p>
               </div>
             ) : (
-              <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
+              <div className="bg-card border border-border rounded-2xl overflow-x-auto">
                 <table className="w-full min-w-[640px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>

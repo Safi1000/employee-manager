@@ -248,7 +248,7 @@ export default function PeriodClose() {
           </div>
         )}
 
-        <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-sm text-warning-900 flex items-start gap-2">
+        <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-sm text-warning-700 dark:text-warning-500 flex items-start gap-2">
           <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <div>
             <strong>How this works:</strong> Closing a month blocks <em>any</em> new
@@ -265,7 +265,7 @@ export default function PeriodClose() {
           <Tile label="Open" value={rows.length - closedCount} colour="text-warning-700" />
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>

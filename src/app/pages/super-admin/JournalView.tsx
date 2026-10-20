@@ -432,7 +432,7 @@ export default function JournalView() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap items-center gap-3">
             <ThemedSelect
               value={period}

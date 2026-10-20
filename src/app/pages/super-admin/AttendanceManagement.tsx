@@ -1235,7 +1235,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-lg border border-slate-200 mb-6 p-4 md:p-6">
+          <div className="bg-card rounded-2xl border border-border mb-6 p-4 md:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
               <div className="min-w-0">
                 <h3 className="text-base text-slate-900 truncate">
@@ -1542,7 +1542,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           <button
                             type="button"
                             onClick={() => setViewEmployee(employee)}
-                            className="text-brand-700 hover:text-brand-900 hover:underline"
+                            className="text-brand-700 hover:text-brand-700 dark:text-brand-500 hover:underline"
                             title="View attendance calendar"
                           >
                             {employee.display_code}
@@ -1745,7 +1745,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <h3 className="text-base text-slate-900">Attendance History</h3>
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
@@ -1853,17 +1853,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+              <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
                 <p className="text-sm text-success-700 mb-1">Present</p>
-                <p className="text-2xl text-success-900">{detailRecord.present}</p>
+                <p className="text-2xl text-success-700 dark:text-success-500">{detailRecord.present}</p>
               </div>
-              <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+              <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
                 <p className="text-sm text-danger-700 mb-1">Absent</p>
-                <p className="text-2xl text-danger-900">{detailRecord.absent}</p>
+                <p className="text-2xl text-danger-700 dark:text-danger-500">{detailRecord.absent}</p>
               </div>
-              <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+              <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
                 <p className="text-sm text-warning-700 mb-1">Leave</p>
-                <p className="text-2xl text-warning-900">{detailRecord.leave}</p>
+                <p className="text-2xl text-warning-700 dark:text-warning-500">{detailRecord.leave}</p>
               </div>
             </div>
 

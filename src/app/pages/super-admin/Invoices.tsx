@@ -1361,19 +1361,19 @@ export default function Invoices() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="p-2 rounded-md border border-brand-200 bg-brand-50">
               <p className="text-[11px] text-brand-700">Invoice Amount</p>
-              <p className="text-sm text-brand-900">
+              <p className="text-sm text-brand-700 dark:text-brand-500">
                 PKR {editInvoiceAmount.toLocaleString()}
               </p>
             </div>
             <div className="p-2 rounded-md border border-success-200 bg-success-50">
               <p className="text-[11px] text-success-700">Received</p>
-              <p className="text-sm text-success-900">
+              <p className="text-sm text-success-700 dark:text-success-500">
                 PKR {editReceived.toLocaleString()}
               </p>
             </div>
             <div className="p-2 rounded-md border border-warning-200 bg-warning-50">
               <p className="text-[11px] text-warning-700">Outstanding</p>
-              <p className="text-sm text-warning-900">
+              <p className="text-sm text-warning-700 dark:text-warning-500">
                 PKR {editOutstanding.toLocaleString()}
               </p>
             </div>
@@ -1498,19 +1498,19 @@ export default function Invoices() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div className="p-2 rounded-md border border-brand-200 bg-brand-50">
                 <p className="text-[11px] text-brand-700">Invoice Amount</p>
-                <p className="text-sm text-brand-900">
+                <p className="text-sm text-brand-700 dark:text-brand-500">
                   PKR {Number(paymentInvoice.invoice_amount).toLocaleString()}
                 </p>
               </div>
               <div className="p-2 rounded-md border border-success-200 bg-success-50">
                 <p className="text-[11px] text-success-700">Received</p>
-                <p className="text-sm text-success-900">
+                <p className="text-sm text-success-700 dark:text-success-500">
                   PKR {Number(paymentInvoice.amount_received).toLocaleString()}
                 </p>
               </div>
               <div className="p-2 rounded-md border border-warning-200 bg-warning-50">
                 <p className="text-[11px] text-warning-700">Outstanding</p>
-                <p className="text-sm text-warning-900">
+                <p className="text-sm text-warning-700 dark:text-warning-500">
                   PKR {paymentOutstanding.toLocaleString()}
                 </p>
               </div>

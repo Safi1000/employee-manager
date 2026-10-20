@@ -678,7 +678,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
 
       {/* Embedded in Financial Reports: same white-card + bordered tab-header
           frame as that page's tabs, so the two top tabs read as one report. */}
-      <div className={embedded ? "bg-white rounded-lg border border-slate-200" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
+      <div className={embedded ? "bg-card rounded-2xl border border-border" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
         {error && (
           <div className={`${embedded ? "m-4 md:m-6 mb-0" : "mb-4"} p-3 rounded-md border border-danger-200 bg-danger-50 text-danger-700 text-sm`}>
             {error}
@@ -697,7 +697,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 onClick={() => setActiveTab(t.key)}
                 className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${
                   activeTab === t.key
-                    ? "bg-brand-600 text-[#fff]"
+                    ? "bg-foreground text-background font-semibold"
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
@@ -920,25 +920,25 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Received</p>
-                <p className="text-lg text-brand-900">{currency(selectedStatement.received)}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Cash Received</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700 dark:text-brand-500">{currency(selectedStatement.received)}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Paid</p>
-                <p className="text-lg text-danger-900">{currency(selectedStatement.payrollPaid)}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Payroll Paid</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500">{currency(selectedStatement.payrollPaid)}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
-                <p className="text-lg text-danger-900">{currency(selectedStatement.expensesPaid)}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Direct Expenses</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500">{currency(selectedStatement.expensesPaid)}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
-                <p className="text-lg text-slate-700">{currency(selectedStatement.regionalOverhead)}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Regional Overhead</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(selectedStatement.regionalOverhead)}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
-                <p className="text-lg text-slate-700">{currency(selectedStatement.hoShare)}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Head Office</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(selectedStatement.hoShare)}</p>
               </div>
               <div
                 className={`p-3 rounded-lg border ${
@@ -950,7 +950,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 <p className={`text-xs mb-1 ${selectedStatement.netCash >= 0 ? "text-success-700" : "text-danger-700"}`}>
                   Net Cash
                 </p>
-                <p className={`text-lg ${selectedStatement.netCash >= 0 ? "text-success-900" : "text-danger-900"}`}>
+                <p className={`text-lg ${selectedStatement.netCash >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
                   {currency(selectedStatement.netCash)}
                 </p>
               </div>
@@ -1028,7 +1028,7 @@ function ClientStatementsTab({
   exportSlot?: ReactNode;
 }) {
   return (
-    <div className={bare ? "" : "bg-white rounded-lg border border-slate-200"}>
+    <div className={bare ? "" : "bg-card rounded-2xl border border-border"}>
       <div className={`${bare ? "pb-6" : "p-6"} flex flex-wrap items-end justify-between gap-3`}>
         <div>
           <h3 className="text-lg text-slate-900 mb-1">Client Statements — Cash Basis</h3>
@@ -1067,25 +1067,25 @@ function ClientStatementsTab({
       </div>
 
       <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-slate-200">
-        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Received</p>
-          <p className="text-lg text-brand-900">{currency(totals.received)}</p>
+        <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+          <p className="lbl mb-1">Cash Received</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700 dark:text-brand-500">{currency(totals.received)}</p>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Paid</p>
-          <p className="text-lg text-danger-900">{currency(totals.payroll)}</p>
+        <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+          <p className="lbl mb-1">Payroll Paid</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500">{currency(totals.payroll)}</p>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
-          <p className="text-lg text-danger-900">{currency(totals.expenses)}</p>
+        <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+          <p className="lbl mb-1">Direct Expenses</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500">{currency(totals.expenses)}</p>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
-          <p className="text-lg text-slate-700">{currency(totals.regional)}</p>
+        <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+          <p className="lbl mb-1">Regional Overhead</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(totals.regional)}</p>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
-          <p className="text-lg text-slate-700">{currency(totals.ho)}</p>
+        <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+          <p className="lbl mb-1">Head Office</p>
+          <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">{currency(totals.ho)}</p>
         </div>
         <div
           className={`p-3 rounded-lg border ${
@@ -1093,7 +1093,7 @@ function ClientStatementsTab({
           }`}
         >
           <p className={`text-xs mb-1 ${totals.net >= 0 ? "text-success-700" : "text-danger-700"}`}>Net Cash</p>
-          <p className={`text-lg ${totals.net >= 0 ? "text-success-900" : "text-danger-900"}`}>
+          <p className={`text-lg ${totals.net >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
             {currency(totals.net)}
           </p>
         </div>
@@ -1214,13 +1214,13 @@ function SummaryTile({
       type="button"
       onClick={onClick}
       disabled={!clickable}
-      className={`text-left w-full bg-white rounded-lg border border-slate-200 border-l-4 ${borderL} p-4 transition-shadow ${
+      className={`text-left w-full bg-card rounded-2xl border border-border border-l-4 ${borderL} p-4 transition-shadow ${
         clickable ? "hover:shadow-sm cursor-pointer" : "cursor-default"
       } ${active ? "ring-2 ring-brand-200" : ""}`}
     >
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+          <div className="lbl">{label}</div>
           <div className={`text-lg mt-1 ${valueText}`}>{value}</div>
           {subtitle && <div className="text-xs text-slate-400 mt-1">{subtitle}</div>}
           {clickable && (

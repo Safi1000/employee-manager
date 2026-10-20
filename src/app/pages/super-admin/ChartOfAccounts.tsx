@@ -360,7 +360,7 @@ export default function ChartOfAccounts() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6 space-y-4">
+        <div className="bg-card rounded-2xl border border-border p-4 md:p-6 space-y-4">
           <div className="flex flex-wrap items-center gap-2 justify-between">
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />

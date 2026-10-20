@@ -217,7 +217,7 @@ export default function TrialBalance() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <label className="text-sm text-slate-600">Period</label>

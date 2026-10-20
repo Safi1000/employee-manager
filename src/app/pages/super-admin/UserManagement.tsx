@@ -457,7 +457,7 @@ export default function UserManagement() {
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />

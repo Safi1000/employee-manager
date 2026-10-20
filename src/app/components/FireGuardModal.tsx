@@ -198,7 +198,7 @@ export default function FireGuardModal({
             <p className="text-xs font-semibold uppercase tracking-wide text-warning-800">
               Outstanding before exit
             </p>
-            <ul className="text-sm text-warning-900 space-y-1">
+            <ul className="text-sm text-warning-700 dark:text-warning-500 space-y-1">
               {gates.undisbursed_salary > 0 && (
                 <li className="flex justify-between gap-4">
                   <span>Salary not yet disbursed</span>

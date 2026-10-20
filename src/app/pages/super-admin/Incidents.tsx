@@ -658,7 +658,7 @@ export default function Incidents() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white border border-slate-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative md:col-span-2">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -680,7 +680,7 @@ export default function Incidents() {
         </div>
 
         {/* Table */}
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
           {/* Phone: one card per incident. Eight columns do not fit a handset,
               and an incident is read one at a time — a supervisor at a site is
               checking or logging a single event, not scanning a register. */}
@@ -955,7 +955,7 @@ function GuardMultiSelect({
                 className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-brand-50 text-brand-700 rounded-full"
               >
                 {emp ? emp.full_name : id}
-                <button type="button" onClick={() => toggle(id)} className="hover:text-brand-900">
+                <button type="button" onClick={() => toggle(id)} className="hover:text-brand-700 dark:text-brand-500">
                   <X className="w-3 h-3" />
                 </button>
               </span>

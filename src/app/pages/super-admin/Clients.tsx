@@ -1185,7 +1185,7 @@ export default function Clients() {
         )}
 
         {/* Filters */}
-        <div className="bg-white border border-slate-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="md:col-span-2 relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -1229,7 +1229,7 @@ export default function Clients() {
         </div>
 
         {/* List */}
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
           {/* Phone: one card per client. Tapping the card opens the detail
               panel, which is the only thing anyone does with this list on a
               handset — the counts are context, not the destination. */}

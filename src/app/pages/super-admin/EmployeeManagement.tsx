@@ -2581,7 +2581,7 @@ export default function EmployeeManagement() {
                     onClick={() => setEmpTab(value)}
                     className={`px-4 py-2 rounded-md text-sm transition-colors ${
                       empTab === value
-                        ? "bg-brand-600 text-[#fff]"
+                        ? "bg-foreground text-background font-semibold"
                         : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
@@ -2689,7 +2689,7 @@ export default function EmployeeManagement() {
                     onClick={() => setWaitlistTab(value)}
                     className={`px-4 py-2 rounded-md text-sm transition-colors ${
                       waitlistTab === value
-                        ? "bg-brand-600 text-[#fff]"
+                        ? "bg-foreground text-background font-semibold"
                         : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >

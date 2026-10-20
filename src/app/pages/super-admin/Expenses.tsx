@@ -2476,10 +2476,10 @@ export default function Expenses() {
         {activeTab === "expenses" && (
           <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-1 flex flex-col gap-4">
-              <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
-                <p className="text-xs text-slate-300 mb-1">Total Expenses</p>
-                <p className="text-2xl text-[#fff]">
-                  PKR {expenseMetrics.total.toLocaleString()}
+              <div className="band on-dark p-4 md:p-5 rounded-2xl">
+                <p className="lbl mb-1">Total Expenses</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground">
+                  <span className="cur">PKR</span>{expenseMetrics.total.toLocaleString()}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-1">
                   {filtered.length} entr{filtered.length === 1 ? "y" : "ies"} in current filter
@@ -2549,7 +2549,7 @@ export default function Expenses() {
         )}
 
         {activeTab === "expenses" && (
-        <div className="bg-white rounded-lg border border-slate-200 mb-6">
+        <div className="bg-card rounded-2xl border border-border mb-6">
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex-1 min-w-[220px] relative">
@@ -2662,7 +2662,7 @@ export default function Expenses() {
 
           {approvalView === "pending" && canApproveExpenses && selectedRows.length > 0 && (
             <div className="mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand-200 bg-brand-50 px-4 py-2">
-              <span className="text-sm text-brand-900">
+              <span className="text-sm text-brand-700 dark:text-brand-500">
                 {selectedRows.length} selected · PKR{" "}
                 {selectedRows.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()}
               </span>
@@ -2965,7 +2965,7 @@ export default function Expenses() {
         )}
 
         {activeTab === "expenses" && (
-        <div className="bg-white rounded-lg border border-slate-200 p-6">
+        <div className="bg-card rounded-2xl border border-border p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base text-slate-900">Category Management</h3>
             <Button variant="primary" size="sm" onClick={openCatAdd}>
@@ -3109,7 +3109,7 @@ export default function Expenses() {
         {activeTab === "fixed" && (
           <div className="space-y-6">
             {/* ---- This month's raised instances ---- */}
-            <div className="bg-white rounded-lg border border-slate-200">
+            <div className="bg-card rounded-2xl border border-border">
               <div className="p-6 border-b border-slate-200 flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">{monthLabel(fixedMonth)}</h3>
@@ -3148,17 +3148,17 @@ export default function Expenses() {
               </div>
 
               <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b border-slate-200">
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Awaiting Decision</p>
-                  <p className="text-lg text-warning-900">PKR {fixedTotals.pending.toLocaleString()}</p>
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Awaiting Decision</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{fixedTotals.pending.toLocaleString()}</p>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Approved (posted)</p>
-                  <p className="text-lg text-success-900">PKR {fixedTotals.approved.toLocaleString()}</p>
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Approved (posted)</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-success-700 dark:text-success-500"><span className="cur">PKR</span>{fixedTotals.approved.toLocaleString()}</p>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Denied</p>
-                  <p className="text-lg text-slate-700">PKR {fixedTotals.denied.toLocaleString()}</p>
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Denied</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700"><span className="cur">PKR</span>{fixedTotals.denied.toLocaleString()}</p>
                 </div>
               </div>
 
@@ -3254,7 +3254,7 @@ export default function Expenses() {
             </div>
 
             {/* ---- The templates themselves ---- */}
-            <div className="bg-white rounded-lg border border-slate-200">
+            <div className="bg-card rounded-2xl border border-border">
               <div className="p-6 border-b border-slate-200">
                 <h3 className="text-lg text-slate-900 mb-1">Recurring Definitions</h3>
                 <p className="text-sm text-slate-500">
@@ -3340,7 +3340,7 @@ export default function Expenses() {
         )}
 
         {activeTab === "advances" && (
-          <div className="bg-white rounded-lg border border-slate-200">
+          <div className="bg-card rounded-2xl border border-border">
             <div className="p-6 border-b border-slate-200">
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex-1 min-w-[220px] relative">

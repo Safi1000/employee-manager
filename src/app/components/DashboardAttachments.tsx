@@ -176,7 +176,7 @@ export default function DashboardAttachments() {
   };
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 mb-6 md:mb-8">
+    <div className="bg-card rounded-2xl border border-border mb-6 md:mb-8">
       <div className="p-6 border-b border-slate-200 flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <h3 className="text-base text-slate-900 flex items-center gap-2">

@@ -289,7 +289,7 @@ export default function ProfitDistribution() {
         {tab === "rules" && (
           <div className="space-y-3">
             {rules.length === 0 && (
-              <div className="bg-white rounded-lg border border-slate-200 py-12 text-center text-slate-500 text-sm">
+              <div className="bg-card rounded-2xl border border-border py-12 text-center text-slate-500 text-sm">
                 No distribution rules yet. Add one to define how profit is split.
               </div>
             )}
@@ -299,7 +299,7 @@ export default function ProfitDistribution() {
               const sumPct = lines.reduce((s, l) => s + l.percentage, 0);
               const retained = 100 - sumPct;
               return (
-                <div key={r.id} className="bg-white rounded-lg border border-slate-200">
+                <div key={r.id} className="bg-card rounded-2xl border border-border">
                   <div className="flex items-center justify-between p-4 cursor-pointer select-none" onClick={() => setExpandedRule(isExpanded ? null : r.id)}>
                     <div className="flex items-center gap-3">
                       {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
@@ -356,7 +356,7 @@ export default function ProfitDistribution() {
 
         {/* ── REFERRALS TAB ── */}
         {tab === "referrals" && (
-          <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+          <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">

@@ -338,7 +338,7 @@ export default function ProjectFinancing() {
         {tab === "projects" && (
           <div className="space-y-3">
             {projects.length === 0 && (
-              <div className="bg-white rounded-lg border border-slate-200 py-12 text-center text-slate-500 text-sm">
+              <div className="bg-card rounded-2xl border border-border py-12 text-center text-slate-500 text-sm">
                 No projects yet. Add one to start tracking investor capital.
               </div>
             )}
@@ -347,7 +347,7 @@ export default function ProjectFinancing() {
               const isExpanded = expandedProject === p.id;
               const projInvestments = investments.filter((i) => i.project_id === p.id);
               return (
-                <div key={p.id} className="bg-white rounded-lg border border-slate-200">
+                <div key={p.id} className="bg-card rounded-2xl border border-border">
                   <div className="flex items-center justify-between p-4 cursor-pointer select-none" onClick={() => setExpandedProject(isExpanded ? null : p.id)}>
                     <div className="flex items-center gap-3">
                       {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
@@ -419,7 +419,7 @@ export default function ProjectFinancing() {
 
         {/* ── INVESTORS TAB ── */}
         {tab === "investors" && (
-          <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+          <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">
@@ -473,7 +473,7 @@ export default function ProjectFinancing() {
         {/* ── LEDGER TAB ── */}
         {tab === "ledger" && (
           <div className="space-y-4">
-            <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4">
+            <div className="bg-card rounded-2xl border border-border p-4 flex flex-wrap gap-4">
               <div className="flex-1 min-w-[180px]">
                 <label className="block text-sm text-slate-700 mb-1">Project</label>
                 <ThemedSelect value={ledgerProjectId} onChange={(e) => setLedgerProjectId(e.target.value)}
@@ -492,7 +492,7 @@ export default function ProjectFinancing() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+            <div className="bg-card rounded-2xl border border-border overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">

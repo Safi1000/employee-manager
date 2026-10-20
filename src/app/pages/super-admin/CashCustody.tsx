@@ -732,7 +732,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             footer. The Transfers tab is gone too; transfers are recorded from the
             header button and read back in the Transaction Log. */}
         <div className="space-y-4">
-          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <div className="p-4 border-b border-slate-200">
               <h3 className="text-base text-slate-900">Cash Holdings</h3>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -848,7 +848,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <div className="bg-card rounded-2xl border border-border p-6">
             <h3 className="text-base text-slate-900 mb-1">Cash vs Liabilities</h3>
             <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
             <div className="space-y-2">
@@ -874,7 +874,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           {/* Partners Summary. The old Reconciliation tab repeated Net Balance in a
               second "Partner Balances" table whose only addition was the cash-impact
               wording — that is the last column here instead. */}
-          <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+          <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             <div className="p-4 border-b border-slate-200">
               <h3 className="text-base text-slate-900">Partners Summary</h3>
               <p className="text-xs text-slate-500 mt-0.5">

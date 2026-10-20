@@ -735,7 +735,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         )}
 
         {topTab === "financial" && (
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div className="bg-card rounded-2xl border border-border">
           {/* One report, no tab strip to choose from, when this is the standalone
               Partnership Report page. */}
           <div className={`p-4 md:p-6 border-b border-slate-200 overflow-x-auto${partnershipOnly ? " hidden" : ""}`}>
@@ -761,7 +761,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${activeTab === tab.key
-                      ? "bg-brand-600 text-[#fff]"
+                      ? "bg-foreground text-background font-semibold"
                       : "text-slate-600 hover:bg-slate-100"
                     }`}
                 >
@@ -993,34 +993,34 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               </div>
 
               <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-slate-200">
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
-                  <p className="text-lg text-brand-900">
-                    PKR {statementTotals.invoiced.toLocaleString()}
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Total Invoiced</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700 dark:text-brand-500">
+                    <span className="cur">PKR</span>{statementTotals.invoiced.toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Expense</p>
-                  <p className="text-lg text-danger-900">
-                    PKR {statementTotals.payroll.toLocaleString()}
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Payroll Expense</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500">
+                    <span className="cur">PKR</span>{statementTotals.payroll.toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
-                  <p className="text-lg text-danger-900">
-                    PKR {statementTotals.expenses.toLocaleString()}
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Direct Expenses</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500">
+                    <span className="cur">PKR</span>{statementTotals.expenses.toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
-                  <p className="text-lg text-slate-700">
-                    PKR {Math.round(statementTotals.regional).toLocaleString()}
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Regional Overhead</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">
+                    <span className="cur">PKR</span>{Math.round(statementTotals.regional).toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
-                  <p className="text-lg text-slate-700">
-                    PKR {Math.round(statementTotals.ho).toLocaleString()}
+                <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                  <p className="lbl mb-1">Head Office</p>
+                  <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700">
+                    <span className="cur">PKR</span>{Math.round(statementTotals.ho).toLocaleString()}
                   </p>
                 </div>
                 <div
@@ -1039,7 +1039,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </p>
                   <p
                     className={`text-lg ${
-                      statementTotals.income >= 0 ? "text-success-900" : "text-danger-900"
+                      statementTotals.income >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"
                     }`}
                   >
                     PKR {statementTotals.income.toLocaleString()}
@@ -1336,29 +1336,29 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
-                <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Total Invoiced</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700 dark:text-brand-500"><span className="cur">PKR</span>{selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Expense</p>
-                <p className="text-lg text-danger-900">PKR {selectedClient.payroll_expense.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Payroll Expense</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500"><span className="cur">PKR</span>{selectedClient.payroll_expense.toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
-                <p className="text-lg text-danger-900">PKR {selectedClient.expenses.toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Direct Expenses</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700 dark:text-danger-500"><span className="cur">PKR</span>{selectedClient.expenses.toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
-                <p className="text-lg text-slate-700">PKR {Math.round(selectedClient.regional_overhead).toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Regional Overhead</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700"><span className="cur">PKR</span>{Math.round(selectedClient.regional_overhead).toLocaleString()}</p>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
-                <p className="text-lg text-slate-700">PKR {Math.round(selectedClient.ho_share).toLocaleString()}</p>
+              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+                <p className="lbl mb-1">Head Office</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-slate-700"><span className="cur">PKR</span>{Math.round(selectedClient.ho_share).toLocaleString()}</p>
               </div>
               <div className={`p-3 rounded-lg border ${selectedClient.total_income >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}>
                 <p className={`text-xs mb-1 ${selectedClient.total_income >= 0 ? "text-success-700" : "text-danger-700"}`}>Total Income</p>
-                <p className={`text-lg ${selectedClient.total_income >= 0 ? "text-success-900" : "text-danger-900"}`}>
+                <p className={`text-lg ${selectedClient.total_income >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
                   PKR {selectedClient.total_income.toLocaleString()}
                 </p>
               </div>

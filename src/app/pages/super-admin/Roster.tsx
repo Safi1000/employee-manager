@@ -304,7 +304,7 @@ export default function Roster() {
         )}
 
         {/* Toolbar */}
-        <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-center gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -399,7 +399,7 @@ export default function Roster() {
         </div>
 
         {/* Grid */}
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead className="bg-slate-50">

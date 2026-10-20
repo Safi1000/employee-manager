@@ -1142,7 +1142,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
 
       {/* Filters — selecting Period / Client Group / Status updates the view
           immediately; there is no separate build step. */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
+      <div className="bg-card border border-border rounded-2xl p-4 flex flex-wrap items-end gap-3">
         <div>
           <label className="block text-xs text-slate-500 mb-1">Period</label>
           <input
@@ -1210,7 +1210,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
         if (r.kind === "record") {
           const rec = r.record;
           return (
-            <div key={`rec-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between gap-3">
+            <div key={`rec-${r.key}`} className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-medium text-slate-900 truncate">{r.client.name}</div>
                 <div className="text-xs text-slate-500 font-mono">
@@ -1238,7 +1238,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
         const inv = r.invoice;
         const cleared = isCleared(inv);
         return (
-          <div key={`inv-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between gap-3">
+          <div key={`inv-${r.key}`} className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium text-slate-900 truncate">{r.client.name}</div>
               <div className="text-xs text-slate-500 font-mono">
@@ -1268,7 +1268,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
         const s = simpleDrafts[r.key];
         if (!s) return null;
         return (
-          <div key={`simple-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+          <div key={`simple-${r.key}`} className="bg-card border border-border rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-slate-900">{s.client.name}</div>
@@ -1335,7 +1335,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
         const isVariable = (d.client.invoice_group ?? "FIXED") === "VARIABLE";
         const factor = isVariable ? 1 : prorationFactor(d.periodStart, d.periodEnd);
         return (
-          <div key={`draft-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+          <div key={`draft-${r.key}`} className="bg-card border border-border rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-slate-900">{d.client.name}</div>

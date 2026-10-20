@@ -444,7 +444,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         {/* ── PARTNERS TAB ── */}
         {tab === "partners" && (
           <div className="space-y-4">
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <div className="bg-card rounded-2xl border border-border p-4">
               <div className="relative max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                 <input type="text" placeholder="Search partners…" value={search} onChange={(e) => setSearch(e.target.value)}
@@ -452,7 +452,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
               </div>
             </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+            <div className="bg-card rounded-2xl border border-border overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -537,7 +537,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
               statement, which nets agency against profit share.
             </div>
             {/* Controls */}
-            <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4 items-end">
+            <div className="bg-card rounded-2xl border border-border p-4 flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-[180px]">
                 <label className="block text-sm text-slate-700 mb-2">Partner</label>
                 <ThemedSelect value={stmtPartner} onChange={(e) => setStmtPartner(e.target.value)}
@@ -584,8 +584,8 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                   { label: "Contributed", value: stmtStats.contributed, cls: "border-l-brand-500" },
                   { label: "Net Balance", value: stmtStats.balance, cls: stmtStats.balance >= 0 ? "border-l-success-500" : "border-l-danger-500" },
                 ].map((s) => (
-                  <div key={s.label} className={`bg-white rounded-lg border border-slate-200 border-l-4 ${s.cls} p-4`}>
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+                  <div key={s.label} className={`bg-card rounded-2xl border border-border border-l-4 ${s.cls} p-4`}>
+                    <p className="lbl mb-1">{s.label}</p>
                     <p className={`text-lg font-mono ${s.label === "Net Balance" && s.value < 0 ? "text-danger-700" : "text-slate-900"}`}>{fmt(s.value)}</p>
                     {s.label === "Net Balance" && s.value < 0 && <p className="text-[10px] text-danger-500 mt-0.5">Partner overdrawn</p>}
                     {s.label === "Net Balance" && s.value > 0 && <p className="text-[10px] text-success-600 mt-0.5">Company owes partner</p>}
@@ -596,7 +596,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
             {/* Ledger table */}
             {stmtPartner && (
-              <div className="bg-white rounded-lg border border-slate-200">
+              <div className="bg-card rounded-2xl border border-border">
                 <div className="p-4 border-b border-slate-200">
                   <h3 className="text-base text-slate-900">Ledger — {stmtPartnerObj?.name ?? ""}</h3>
                   <p className="text-xs text-slate-500 mt-0.5">Opening balance: {fmt(stmtPartnerObj?.opening_balance ?? 0)}</p>
@@ -678,7 +678,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
               </div>
             )}
             {!stmtPartner && (
-              <div className="bg-white rounded-lg border border-slate-200 py-16 text-center text-slate-500 text-sm">
+              <div className="bg-card rounded-2xl border border-border py-16 text-center text-slate-500 text-sm">
                 Select a partner to view their statement.
               </div>
             )}
@@ -687,7 +687,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
         {/* ── SUMMARY TAB ── */}
         {tab === "summary" && (
-          <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+          <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             {summaryLoading ? (
               <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
             ) : (

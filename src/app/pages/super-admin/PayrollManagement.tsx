@@ -4041,19 +4041,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 </div>
                 <div className="bg-success-50 p-2 rounded">
                   <p className="text-xs text-success-700">Present</p>
-                  <p className="text-success-900">{payslipData.present_days}</p>
+                  <p className="text-success-700 dark:text-success-500">{payslipData.present_days}</p>
                 </div>
                 <div className="bg-brand-50 p-2 rounded">
                   <p className="text-xs text-brand-700">Double duty</p>
-                  <p className="text-brand-900">{payslipData.double_duty_shifts}</p>
+                  <p className="text-brand-700 dark:text-brand-500">{payslipData.double_duty_shifts}</p>
                 </div>
                 <div className="bg-danger-50 p-2 rounded">
                   <p className="text-xs text-danger-700">Absent</p>
-                  <p className="text-danger-900">{payslipData.absent_days}</p>
+                  <p className="text-danger-700 dark:text-danger-500">{payslipData.absent_days}</p>
                 </div>
                 <div className="bg-warning-50 p-2 rounded">
                   <p className="text-xs text-warning-700">Leave</p>
-                  <p className="text-warning-900">{payslipData.leave_days}</p>
+                  <p className="text-warning-700 dark:text-warning-500">{payslipData.leave_days}</p>
                 </div>
               </div>
             </div>

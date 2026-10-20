@@ -462,3 +462,22 @@ input[type="number"] {
 @media (min-width: 768px) {
   .px-3.md\:p-8 > .page-band { margin: -2rem -2rem 1rem; top: -2rem; }
 }
+
+/* Currency marker inside a ledger figure: context, set small, so the number
+ * keeps its line. `<span className="cur">PKR</span>{amount}` */
+.cur {
+  font-size: 0.58em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+  margin-right: 0.35em;
+  vertical-align: 0.12em;
+}
+
+/* Stat-tile figures (`<p className="font-ledger whitespace-nowrap …">`) scale
+ * with the window instead of wrapping or spilling out of a narrow tile: a
+ * five-across row of thirteen-digit amounts still fits at laptop width. */
+p.font-ledger.whitespace-nowrap {
+  font-size: clamp(1rem, 1.45vw, 1.6rem);
+  line-height: 1.15;
+}

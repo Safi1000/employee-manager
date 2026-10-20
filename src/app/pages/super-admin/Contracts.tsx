@@ -365,7 +365,7 @@ export default function Contracts() {
           </div>
         )}
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -397,7 +397,7 @@ export default function Contracts() {
           </ThemedSelect>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
           {/* Phone: one card per contract. Eleven columns, several of them
               per-category breakdowns, is the widest table in the app. The card
               keeps what someone checks away from a desk — who it is with, when

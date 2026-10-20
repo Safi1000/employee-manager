@@ -483,7 +483,7 @@ export default function Settings() {
   };
 
   const renderBranches = () => (
-    <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6">
+    <div className="bg-card rounded-2xl border border-border p-4 md:p-6">
       <div className="flex items-center justify-between gap-3 mb-6">
         <h3 className="text-base text-slate-900">Regional Management</h3>
         <Button
@@ -614,7 +614,7 @@ export default function Settings() {
         </div>
 
         {canManageNotifications && (
-          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+          <div className="bg-card rounded-2xl border border-border mb-6">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
@@ -682,7 +682,7 @@ export default function Settings() {
           {renderBranches()}
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200 mt-6">
+        <div className="bg-card rounded-2xl border border-border mt-6">
           <div className="p-6 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <LayoutDashboard className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
@@ -730,7 +730,7 @@ export default function Settings() {
         </div>
 
         {canManageNotifications && (
-          <div className="bg-white rounded-lg border border-slate-200 mt-6">
+          <div className="bg-card rounded-2xl border border-border mt-6">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
@@ -846,7 +846,7 @@ export default function Settings() {
           )}
 
           <div className="border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-3 py-2 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <div className="px-3 py-2 bg-slate-50 lbl">
               This month, if applied
             </div>
             {hoBusy && <div className="p-3 text-sm text-slate-500">Loading preview…</div>}
@@ -986,7 +986,7 @@ function CompanyProfileSection() {
   };
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200">
+    <div className="bg-card rounded-2xl border border-border">
       <div className="p-6 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Building2 className="w-4 h-4 text-slate-600" strokeWidth={1.5} />

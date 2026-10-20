@@ -331,7 +331,7 @@ export default function Documents() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div className="bg-card rounded-2xl border border-border">
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex-1 min-w-[240px] relative">
