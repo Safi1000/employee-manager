@@ -30,7 +30,13 @@ export default function StatCard({ title, value, icon: Icon, trend, tone: tonePr
           <Icon className={`w-4 h-4 ${t.icon}`} strokeWidth={2} />
         </span>
       </div>
-      <p className={`font-ledger text-2xl md:text-[28px] font-semibold tracking-tight leading-none mt-2 md:mt-3 ${figure}`}>{value}</p>
+      <p className={`font-ledger text-xl md:text-2xl xl:text-[26px] font-semibold tracking-tight leading-none mt-2 md:mt-3 whitespace-nowrap overflow-hidden text-ellipsis ${figure}`}>
+        {/* The currency is context, not the figure: set it small so the
+            number keeps its line instead of wrapping under "PKR". */}
+        {typeof value === "string" && /^PKR\s/.test(value) ? (
+          <><span className="text-xs md:text-sm font-medium text-muted-foreground mr-1.5 align-middle">PKR</span>{value.replace(/^PKR\s+/, "")}</>
+        ) : value}
+      </p>
       {trend && (
         <p
           className={`text-xs font-medium mt-2 ${

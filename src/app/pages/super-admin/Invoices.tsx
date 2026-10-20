@@ -15,8 +15,14 @@ import {
   Building2,
   Wallet,
   Settings2,
+  ReceiptText,
+  CheckCircle2,
+  Clock,
+  Percent,
 } from "lucide-react";
 import Header from "../../components/Header";
+import Tabs from "../../components/Tabs";
+import StatCard from "../../components/StatCard";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import MobileCardList from "../../components/MobileCardList";
@@ -939,7 +945,17 @@ export default function Invoices() {
             )}
           </div>
         }
-      />
+      >
+        {/* Generate creates invoices — hidden without invoices.edit (backend
+            RLS also blocks the writes). */}
+        <Tabs<"ledger" | "generate">
+          value={tab}
+          onChange={setTab}
+          items={(["ledger", "generate"] as const)
+            .filter((t) => t !== "generate" || canEditInvoices)
+            .map((t) => ({ value: t, label: t === "ledger" ? "Invoices" : "Generate" }))}
+        />
+      </Header>
 
       <InvoiceStructureModal isOpen={structureOpen} onClose={() => setStructureOpen(false)} />
 
@@ -954,41 +970,15 @@ export default function Invoices() {
           </div>
         )}
 
-        <div className="flex gap-1 mb-6 border-b border-slate-200">
-          {/* Generate creates invoices — hidden without invoices.edit (backend
-              RLS also blocks the writes). */}
-          {(["ledger", "generate"] as const).filter((t) => t !== "generate" || canEditInvoices).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`px-4 py-2 text-sm -mb-px border-b-2 ${
-                tab === t
-                  ? "border-brand-500 text-brand-700 font-medium"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {t === "ledger" ? "Invoices" : "Generate"}
-            </button>
-          ))}
-        </div>
-
         {tab === "generate" && canEditInvoices && (
           <>
-            <div className="inline-flex mb-4 rounded-md border border-slate-200 bg-white p-0.5">
-              {(["invoice", "record"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setGenMode(m)}
-                  className={`px-3 py-1.5 text-sm rounded ${
-                    genMode === m ? "bg-brand-500 text-white font-medium" : "text-slate-600 hover:text-slate-800"
-                  }`}
-                >
-                  {m === "invoice" ? "Invoice" : "Detailed record"}
-                </button>
-              ))}
-            </div>
+            <Tabs<"invoice" | "record">
+              size="sm"
+              className="mb-4"
+              value={genMode}
+              onChange={setGenMode}
+              items={[{ value: "invoice", label: "Invoice" }, { value: "record", label: "Detailed record" }]}
+            />
             {/* Keyed by mode: each tab has its own drafts, so it remounts fresh. */}
             <InvoiceGenerate key={genMode} mode={genMode} onPosted={loadAll} />
           </>
@@ -1003,23 +993,20 @@ export default function Invoices() {
             been deleted, or it may be outside the region you can see.
           </div>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
-            <p className="text-2xl text-brand-900">PKR {summary.invoiced.toLocaleString()}</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Received</p>
-            <p className="text-2xl text-success-900">PKR {summary.received.toLocaleString()}</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
-            <p className="text-2xl text-warning-900">PKR {summary.outstanding.toLocaleString()}</p>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-5 md:mb-6">
+          <StatCard title="Total invoiced" value={`PKR ${summary.invoiced.toLocaleString()}`} icon={ReceiptText} tone="brand" />
+          <StatCard title="Total received" value={`PKR ${summary.received.toLocaleString()}`} icon={CheckCircle2} tone="success" />
+          <StatCard title="Outstanding" value={`PKR ${summary.outstanding.toLocaleString()}`} icon={Clock} tone="warning" />
+          <StatCard
+            title="Collected"
+            value={summary.invoiced > 0 ? `${Math.round((summary.received / summary.invoiced) * 100)}%` : "—"}
+            icon={Percent}
+            tone="info"
+          />
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center gap-3">
+        <div className="bg-card rounded-2xl border border-border overflow-hidden">
+          <div className="p-4 border-b border-border flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Client:</label>
               <ClientFilterSelect

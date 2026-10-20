@@ -15,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import Header from "../../components/Header";
+import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import MobileCardList from "../../components/MobileCardList";
@@ -1419,27 +1420,17 @@ export default function Clients() {
       >
         {detailRow && (
           <div className="space-y-4">
-            <div className="flex gap-1 border-b border-slate-200">
-              {([
+            <Tabs
+              size="sm"
+              value={detailTab}
+              onChange={setDetailTab}
+              items={([
                 { v: "overview", label: "Overview" },
                 { v: "contracts", label: `Contracts (${contracts.filter((c) => c.client_id === detailRow.id).length})` },
                 { v: "invoices", label: `Invoices (${invoices.filter((i) => i.client_id === detailRow.id).length})` },
                 { v: "documents", label: "Documents" },
-              ] as const).map((t) => (
-                <button
-                  key={t.v}
-                  type="button"
-                  onClick={() => setDetailTab(t.v)}
-                  className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
-                    detailTab === t.v
-                      ? "border-brand-600 text-brand-700"
-                      : "border-transparent text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+              ] as const).map((t) => ({ value: t.v, label: t.label }))}
+            />
 
             {detailTab === "overview" && (
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">

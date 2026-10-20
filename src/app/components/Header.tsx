@@ -43,7 +43,7 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
   return (
     // Fully opaque wrapper: the page scroller sits below the band, and in an
     // Android WebView a translucent sticky layer lets the table show through.
-    <div className="sticky top-0 z-20 bg-background px-3 md:px-8 pt-3 md:pt-5 pb-1 md:pb-2 flex-shrink-0">
+    <div className="page-band sticky top-0 z-20 bg-background px-3 md:px-8 pt-3 md:pt-5 pb-1 md:pb-2 flex-shrink-0">
       <div className="band on-dark rounded-2xl md:rounded-[22px] px-4 md:px-7 py-3.5 md:py-5 flex flex-col gap-3 md:gap-4 overflow-hidden">
         {hub && hub.tabs.length > 1 && (
           <div className="-mx-1 overflow-x-auto">

@@ -1,6 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import Header from "../../components/Header";
+import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
@@ -69,20 +70,13 @@ export default function Receivables() {
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Receivables" subtitle="Regional aging & DSO, reminder cadence, write-offs, attendance billing" />
 
-      <div className="flex gap-1 border-b border-slate-200 mb-4">
-        {([
+      <Tabs<Tab> className="mb-4" value={tab} onChange={setTab} items={([
           ["aging", "Regional Aging"],
           ["reminders", "Reminder Cadence"],
           ["writeoff", "Write-offs"],
           ["billing", "Attendance Billing"],
           ["settings", "Policy"],
-        ] as [Tab, string][]).map(([t, label]) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm border-b-2 -mb-px ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+        ] as [Tab, string][]).map(([t, label]) => ({ value: t, label }))} />
 
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 

@@ -452,3 +452,13 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* (A sticky box is held inside the scroller's padding, so `top` is pulled
+ * back by the same amount as the margin.)
+ * A page that puts its Header INSIDE its padded scroller (`flex-1 overflow-y-auto
+ * px-3 py-4 md:p-8`) would pad the band twice. Pull the band back out to the
+ * scroller's edge so every page's band sits in the same place. */
+.px-3.md\:p-8 > .page-band { margin: -1rem -0.75rem 0.75rem; top: -1rem; }
+@media (min-width: 768px) {
+  .px-3.md\:p-8 > .page-band { margin: -2rem -2rem 1rem; top: -2rem; }
+}
