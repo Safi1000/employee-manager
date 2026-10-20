@@ -368,6 +368,28 @@ export default function Clients() {
     });
   }, [rows, search, statusFilter, industryFilter, activeClientIds]);
 
+  // Portfolio figures for the band and the client cards (2026-10-20 redesign).
+  // Read from the invoices and counts this page already loads — nothing new is
+  // fetched and nothing is redefined.
+  const owedByClient = useMemo(() => {
+    const m = new Map<string, { owed: number; last: string | null; lastAmount: number }>();
+    for (const i of invoices as unknown as { client_id: string; invoice_date: string; invoice_amount: number; amount_received: number; outstanding?: number | null }[]) {
+      const cur = m.get(i.client_id) ?? { owed: 0, last: null, lastAmount: 0 };
+      cur.owed += Number(i.outstanding ?? Math.max(0, Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0)));
+      if (!cur.last || i.invoice_date > cur.last) { cur.last = i.invoice_date; cur.lastAmount = Number(i.invoice_amount ?? 0); }
+      m.set(i.client_id, cur);
+    }
+    return m;
+  }, [invoices]);
+  const portfolio = useMemo(() => {
+    const active = rows.filter((r) => activeClientIds.has(r.id));
+    const guards = active.reduce((n, r) => n + Number(r.employees_count ?? 0), 0);
+    const owed = rows.reduce((n, r) => n + (owedByClient.get(r.id)?.owed ?? 0), 0);
+    const top = [...active].sort((a, b) => Number(b.employees_count ?? 0) - Number(a.employees_count ?? 0))[0];
+    return { total: rows.length, active: active.length, guards, owed, top, topShare: top && guards ? Number(top.employees_count ?? 0) / guards : 0 };
+  }, [rows, activeClientIds, owedByClient]);
+  const [clientView, setClientView] = usePageState<"cards" | "table">("Clients.view", "cards");
+
   const resetForm = () => {
     setForm(emptyForm);
     setFieldErrors({});
@@ -1171,7 +1193,37 @@ export default function Clients() {
           </Button>
           ) : null
         }
-      />
+      >
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {[
+              { label: "Clients", v: portfolio.total.toLocaleString(), sub: `${portfolio.active} with a live contract`, tone: "text-foreground" },
+              { label: "Guards deployed", v: portfolio.guards.toLocaleString(), sub: "across active clients", tone: "text-foreground" },
+              { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "open invoices, all clients", tone: portfolio.owed ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+              { label: "Largest client", v: `${Math.round(portfolio.topShare * 100)}%`, sub: portfolio.top ? `of guards at ${portfolio.top.name}` : "—", tone: portfolio.topShare > 0.3 ? "text-[#f0a99a]" : "text-foreground" },
+            ].map((t) => (
+              <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                <span className="lbl">{t.label}</span>
+                <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span>
+                <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs<"all" | "active" | "inactive">
+              value={statusFilter}
+              onChange={setStatusFilter}
+              items={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }, { value: "all", label: "All" }]}
+            />
+            <Tabs<"cards" | "table">
+              className="ml-auto"
+              value={clientView}
+              onChange={setClientView}
+              items={[{ value: "cards", label: "Cards" }, { value: "table", label: "Table" }]}
+            />
+          </div>
+        </div>
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
@@ -1206,30 +1258,54 @@ export default function Clients() {
               <option key={s} value={s}>{s}</option>
             ))}
           </ThemedSelect>
-          <div className="md:col-span-4 flex flex-wrap gap-2">
-            {([
-              { v: "all", label: "All" },
-              { v: "active", label: "Active" },
-              { v: "inactive", label: "Inactive" },
-            ] as const).map((s) => (
-              <button
-                key={s.v}
-                type="button"
-                onClick={() => setStatusFilter(s.v)}
-                className={`px-3 py-1 rounded-md text-xs border transition-colors ${
-                  statusFilter === s.v
-                    ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
         </div>
 
+        {/* CARDS (desktop default): a portfolio, not a ledger — each client's
+            weight (guards, contracts), what they owe, and when they were last
+            invoiced, at a glance. The table stays one click away. */}
+        {clientView === "cards" && (
+          <div className="hidden md:grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-3">
+            {loading && <div className="col-span-full bg-card border border-border rounded-2xl px-4 py-10 text-center text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</div>}
+            {!loading && filteredRows.length === 0 && <div className="col-span-full bg-card border border-border rounded-2xl px-4 py-10 text-center text-sm text-muted-foreground">No clients match the current filters.</div>}
+            {!loading && filteredRows.map((row) => {
+              const isActive = activeClientIds.has(row.id);
+              const branchName = branches.find((b) => b.id === row.branch_id)?.name ?? "—";
+              const o = owedByClient.get(row.id);
+              const share = portfolio.guards ? Number(row.employees_count ?? 0) / portfolio.guards : 0;
+              return (
+                <div key={row.id} className="group bg-card border border-border rounded-[18px] p-4 flex flex-col gap-3 hover:border-brand-500/60 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <button type="button" onClick={() => { setDetailRow(row); setDetailTab("overview"); }} className="text-left min-w-0">
+                      <div className="font-display text-[17px] font-bold tracking-tight text-foreground group-hover:underline truncate">{row.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate"><span className="font-ledger">{row.client_code}</span> · {row.industry ?? "No industry"} · {branchName}</div>
+                    </button>
+                    <span className={`flex-shrink-0 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${isActive ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200" : "bg-muted text-muted-foreground border-border"}`}>{isActive ? "Active" : "Inactive"}</span>
+                  </div>
+                  <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-5 gap-y-2">
+                    <div><div className="lbl">Guards</div><div className="font-ledger text-lg font-semibold">{row.employees_count}</div></div>
+                    <div><div className="lbl">Contracts</div><div className="font-ledger text-lg font-semibold">{row.contracts_count}</div></div>
+                    <div className="text-right"><div className="lbl">Owes</div><div className={`font-ledger text-lg font-semibold whitespace-nowrap ${o && o.owed > 0 ? "text-warning-700 dark:text-warning-500" : "text-foreground"}`}>{o ? Math.round(o.owed).toLocaleString() : "0"}</div></div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex justify-between text-[11px] text-muted-foreground"><span>Share of deployed guards</span><span className="font-ledger">{Math.round(share * 100)}%</span></div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, share * 100)}%` }} /></div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs text-muted-foreground">
+                    <span className="truncate">{o?.last ? <>Last invoice <span className="font-ledger text-foreground">{formatDate(o.last)}</span> · {Math.round(o.lastAmount).toLocaleString()}</> : "Not invoiced yet"}</span>
+                    <span className="flex gap-0.5 flex-shrink-0">
+                      <button type="button" onClick={() => { setDetailRow(row); setDetailTab("overview"); }} className="p-1.5 rounded-lg hover:bg-accent" title="View details" aria-label={`View ${row.name}`}><Eye className="w-4 h-4" /></button>
+                      {canEditClients && <button type="button" onClick={() => { populateForm(row); setEditingId(row.id); setExpanded({ basic: true, tax: false, billing: false }); }} className="p-1.5 rounded-lg hover:bg-accent" title="Edit" aria-label={`Edit ${row.name}`}><Pencil className="w-4 h-4" /></button>}
+                      {canEditClients && <button type="button" onClick={() => handleDelete(row)} className="p-1.5 rounded-lg text-danger-600 hover:bg-danger-50" title="Delete" aria-label={`Delete ${row.name}`}><Trash2 className="w-4 h-4" /></button>}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* List */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <div className={`bg-card border border-border rounded-2xl overflow-hidden ${clientView === "cards" ? "md:hidden" : ""}`}>
           {/* Phone: one card per client. Tapping the card opens the detail
               panel, which is the only thing anyone does with this list on a
               handset — the counts are context, not the destination. */}
