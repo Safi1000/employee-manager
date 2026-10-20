@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy } from "lucide-react";
 import Header from "../../components/Header";
+import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
@@ -2269,21 +2270,36 @@ export default function Accounting() {
             )}
           </>
         }
-      />
-
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-        {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
-            <div className="flex-1">{error}</div>
-            <button onClick={() => setError(null)}>
-              <X className="w-4 h-4" />
-            </button>
+      >
+        <div className="flex flex-col gap-3">
+          {/* Net position (2026-10-20): the four ledgers on one line — what we
+              hold, what we are owed, what we owe — read from the same totals
+              each tab shows below. */}
+          <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <span className="lbl">Net position</span>
+            {[
+              { k: "Bank", v: totalAccountBalance },
+              { k: "Cash held", v: cashBalance },
+              { k: "Owed to us", v: receivableTotals.outstanding },
+              { k: "We owe", v: -(payableTotals.pending + payableTotals.overdue) },
+            ].map((x) => (
+              <span key={x.k} className="flex items-baseline gap-2 text-sm">
+                <span className="text-muted-foreground">{x.k}</span>
+                <span className={`font-ledger font-semibold ${x.v < 0 ? "text-[#f0a99a]" : "text-foreground"}`}>{x.v < 0 ? "−" : ""}{Math.abs(Math.round(x.v)).toLocaleString()}</span>
+              </span>
+            ))}
+            <span className="ml-auto flex items-baseline gap-2">
+              <span className="text-muted-foreground text-sm">=</span>
+              <span className="font-ledger text-xl font-semibold text-[#9ad1a3]"><span className="cur">PKR</span>{Math.round(totalAccountBalance + cashBalance + receivableTotals.outstanding - payableTotals.pending - payableTotals.overdue).toLocaleString()}</span>
+            </span>
           </div>
-        )}
-
+          <Tabs<typeof activeTab>
+            value={activeTab}
+            onChange={setActiveTab}
+            items={visibleTabs.map((t) => ({ value: t, label: ({ receivables: "Client receivables", payables: "Accounts payable", banks: "Bank accounts", "cash-custody": "Cash custody" } as Record<string, string>)[t] }))}
+          />
         {activeTab === "banks" && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <div className="flex items-center justify-between">
                 <p className="lbl mb-1">Cash in Hand</p>
@@ -2312,7 +2328,7 @@ export default function Accounting() {
         )}
 
         {activeTab === "receivables" && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <p className="lbl mb-1">Opening Balance</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-slate-900">
@@ -2347,7 +2363,7 @@ export default function Accounting() {
         )}
 
         {activeTab === "payables" && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
             <div className="band on-dark p-4 md:p-5 rounded-2xl">
               <p className="lbl mb-1">Total Payable</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-xl text-foreground">
@@ -2376,7 +2392,7 @@ export default function Accounting() {
         )}
 
         {activeTab === "cash-custody" && custodySummary && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <p className="lbl mb-1">Total Cash in Hand</p>
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-success-700 dark:text-success-500"><span className="cur">PKR</span>{Math.round(custodySummary.totalCash).toLocaleString()}</p>
@@ -2392,26 +2408,23 @@ export default function Accounting() {
           </div>
         )}
 
+        </div>
+      </Header>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+        {error && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div className="bg-card rounded-2xl border border-border mb-6">
           <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
-            <div className="flex gap-2 flex-wrap">
-              {visibleTabs.map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                    activeTab === tab
-                      ? "bg-foreground text-background font-semibold"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  {tab === "receivables" && "Client Receivables"}
-                  {tab === "payables" && "Accounts Payable"}
-                  {tab === "banks" && "Bank Accounts"}
-                  {tab === "cash-custody" && "Cash Custody"}
-                </button>
-              ))}
-            </div>
+
             {activeTab === "receivables" && (
               <div className="ml-auto flex items-center gap-2 flex-wrap">
                 <div className="relative">

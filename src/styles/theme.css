@@ -484,3 +484,4 @@ p.font-ledger.whitespace-nowrap {
 
 /* Band tile figures follow the same window scale as page tiles. */
 .band .font-ledger.text-2xl { font-size: clamp(1.05rem, 1.45vw, 1.5rem); }
+.band p.font-ledger.whitespace-nowrap { font-size: clamp(0.95rem, 1.2vw, 1.4rem); }
