@@ -194,8 +194,9 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   when payday is a week out and cash plus receivables under 30 days fall short.
 - **Built** — The band's fold animation is back, on a softer curve, at a full
   60 frames a second through the fold on Employees.
-- **Waiting on approval** — 0527 (client_cover from a contract's start date);
-  Accountant planning (needs new tables); importing an opening trial balance
+- **Applied 2026-10-21** — 0527 on named approval: client_cover counts a contract only
+  from the month it starts (Regent 1 out of September, in from October).
+- **Waiting on approval** — Accountant planning (needs new tables); importing an opening trial balance
   from Excel and bank balance sparklines (both wait on the cutover).
 - **Waiting on the cutover** — Opening balances: the cutover (0519/0523) posts
   them; it waits on the Lahore roster → Lahore August backfill → redraft the
