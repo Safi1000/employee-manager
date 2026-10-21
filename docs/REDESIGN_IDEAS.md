@@ -210,6 +210,38 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   them; it waits on the Lahore roster → Lahore August backfill → redraft the
   opening batch → cutover.
 
+## Round 4 (2026-10-21)
+
+- **Built** — My Profile: payslip PDF per month; leave banked / taken / unpaid.
+  Fixed: the warnings list asked for columns that do not exist and always
+  read "a clean record".
+- **Built** — Employee record ▸ Timeline: joined, postings, pay changes,
+  advances, warnings, code and state changes.
+- **Built** — Client cards: health score out of 100 (pays on time, staffed to
+  contract, complaints, margin), breakdown on hover.
+- **Built** — Contract Renewals: a Renewed card opens the contract's renew form.
+- **Built** — P&L: By region, every region's statement side by side.
+- **Built** — Dashboard: billing against contract value, clients billed more
+  than 10% off contract; free relievers on a short client's sheet.
+- **Built** — Audit Log: Reverse on undoable rows; Access & Governance: Review
+  access, exportable.
+- **Built** — Plain-language database errors everywhere (duplicate, still in
+  use, missing link, required field, value not allowed, wrong format).
+- **Built** — "N changes since you last looked" on record pages (admins).
+- **Fixed** — Dashboard figures follow permissions and are not fetched
+  without them; Shift Management no longer sticks inside Attendance.
+- **Applied** — 0529: advances' write gates were permissive (open to every
+  member); now restrictive.
+- **Needs your decision (database)** — invoices, invoice_payments,
+  bank_accounts and the ledger are readable by every company member; the
+  audit log too (with every before/after, salaries included), and its insert
+  policy is open. Fixing reads needs the custodian-cash and bank-picker
+  screens moved onto functions first.
+- **Needs data** — Emaar DHA ISB billed 203% of its contract value for
+  September (4.78M against 2.36M).
+- **Left** — Empty-state sweep, and checking the green and steel accent
+  themes on every screen (needs a signed-in browser).
+
 ## Clients, Contracts, Invoices
 
 - **Built** — Clients: band with clients, guards, owed and largest client's

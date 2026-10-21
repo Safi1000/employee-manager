@@ -3,6 +3,22 @@ import { useLocation } from "react-router";
 import { useAuth } from "../lib/auth";
 import { sectionOf } from "../lib/navMeta";
 import { HubStrip, useHubTabs } from "../lib/hubTabs";
+import { Link } from "react-router";
+import { supabase } from "../lib/supabase";
+
+/** Pages whose records the audit log covers, by the route's first segment. */
+const CHANGE_TABLES: Record<string, string[]> = {
+  invoices: ["invoices", "invoice_payments"],
+  expenses: ["expenses", "advances", "fixed_expenses"],
+  employees: ["employees"],
+  assignments: ["employees", "deployments"],
+  clients: ["clients", "contracts"],
+  contracts: ["contracts", "contract_lines", "contract_addendums"],
+  payroll: ["payslips"],
+  accounting: ["bank_accounts", "cheques", "cash_deposits", "cash_locations"],
+  incidents: ["incidents"],
+  "access-governance": ["profiles"],
+};
 
 interface HeaderProps {
   /** A string renders as the page heading; a node (e.g. a dropdown) replaces it. */
@@ -32,6 +48,26 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
   const companyName = profile?.display_company_name || company?.name || null;
   const auto = [section, companyName].filter(Boolean).join(" · ");
   const line = kicker ?? (auto || null);
+
+  // WHAT CHANGED SINCE YOU LAST LOOKED (2026-10-21). For pages about records
+  // the audit log covers, count the changes other people made since this user
+  // last opened the page (the visit time is kept in this browser). Only for
+  // those who can open the Audit Log, which is where the chip leads.
+  const [changed, setChanged] = useState<{ n: number; since: string } | null>(null);
+  useEffect(() => {
+    const tables = CHANGE_TABLES[pathname.split("/").filter(Boolean).slice(1, 2)[0] ?? ""];
+    const role = profile?.role;
+    if (!tables || !profile?.id || (role !== "super_admin" && role !== "super_super_admin")) { setChanged(null); return; }
+    const key = `lastSeen:${profile.id}:${pathname}`;
+    let since: string | null = null;
+    try { since = localStorage.getItem(key); localStorage.setItem(key, new Date().toISOString()); } catch { /* no storage: no chip */ }
+    if (!since) { setChanged(null); return; }
+    let cancelled = false;
+    void supabase.from("audit_log").select("id", { count: "exact", head: true })
+      .in("table_name", tables).gt("changed_at", since).neq("changed_by", profile.id)
+      .then(({ count, error }) => { if (!cancelled) setChanged(!error && count ? { n: count, since } : null); });
+    return () => { cancelled = true; };
+  }, [pathname, profile?.id, profile?.role]);
 
   // Inside a TabHub, draw the hub's switch in the band and tell the hub so it
   // drops its own strip. Layout effect: the claim lands before paint, so the
@@ -124,6 +160,12 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
               <div className="flex items-center gap-2 mb-1 md:mb-1.5 min-w-0">
                 {live && <span className="live-dot w-2 h-2 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />}
                 <span className="lbl truncate">{line}</span>
+                {changed && (
+                  <Link to="/super-admin/audit-log" title={`Changes others made since ${new Date(changed.since).toLocaleString()}`}
+                    className="ml-1 flex-shrink-0 rounded-full border border-brand-500/50 px-2 py-0.5 text-[10px] font-semibold text-brand-500 hover:bg-brand-500/10">
+                    {changed.n} change{changed.n === 1 ? "" : "s"} since you last looked
+                  </Link>
+                )}
               </div>
             )}
             <h1 className="font-display text-xl md:text-[30px] font-extrabold tracking-tight text-foreground leading-tight truncate">{title}</h1>

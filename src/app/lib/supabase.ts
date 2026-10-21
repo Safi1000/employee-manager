@@ -29,6 +29,26 @@ export function friendlyDbError(err: unknown): string {
   return e?.message ?? String(err);
 }
 
+/** A sentence for the database errors people actually meet; null leaves the
+ *  message as it is (a raised business rule already reads as a sentence). */
+function plainDbError(code: string, message: string, details: string): string | null {
+  const col = (details.match(/\(([^)]+)\)=/) ?? message.match(/column "([^"]+)"/))?.[1]?.replace(/_/g, " ");
+  switch (code) {
+    case "23505": return `That already exists${col ? ` — another record has the same ${col}` : ""}. Change it, or open the existing one.`;
+    case "23503":
+      return /still referenced|is still referenced|update or delete/i.test(message + details)
+        ? "This is still in use by other records, so it cannot be removed. Remove or move those first."
+        : "This points at something that does not exist (or no longer does). Pick it again from the list.";
+    case "23502": return `A required field is empty${col ? `: ${col}` : ""}.`;
+    case "23514": return "A value is outside what is allowed here — check the amounts and dates.";
+    case "22P02": case "22007": case "22008": return "A value is in the wrong format — check numbers and dates.";
+    case "22003": return "A number is too large for this field.";
+    case "40001": case "40P01": return "Someone else changed this at the same moment. Try again.";
+    case "PGRST116": return "That record could not be found — it may have been removed.";
+    default: return null;
+  }
+}
+
 // Single chokepoint so EVERY page — gated or not — shows the friendly message
 // when a REST write is refused by RLS or a require_perm() guard, instead of a
 // raw "new row violates row-level security policy" / "permission denied: x".
@@ -42,12 +62,21 @@ const permissionAwareFetch: typeof fetch = async (input, init) => {
   if (!href || !href.includes("/rest/v1/")) return res;
   try {
     const text = await res.clone().text();
-    if (!/42501|row-level security|permission denied/i.test(text)) return res;
     let body: Record<string, unknown> | null = null;
     try { body = JSON.parse(text); } catch { body = null; }
     if (!body || typeof body !== "object") return res;
-    body.message = PERMISSION_DENIED_MESSAGE;
-    if ("hint" in body) body.hint = null;
+    if (/42501|row-level security|permission denied/i.test(text)) {
+      body.message = PERMISSION_DENIED_MESSAGE;
+      if ("hint" in body) body.hint = null;
+    } else {
+      // Plain-language errors (2026-10-21): the database's common refusals
+      // get a sentence that says what happened. The original text is kept
+      // AFTER it, because several screens match on it (a constraint name, a
+      // table) to give their own, more specific explanation.
+      const plain = plainDbError(String(body.code ?? ""), String(body.message ?? ""), String(body.details ?? ""));
+      if (!plain) return res;
+      body.message = `${plain} (${String(body.message ?? "").trim()})`;
+    }
     const headers = new Headers(res.headers);
     headers.delete("content-length");
     return new Response(JSON.stringify(body), {
