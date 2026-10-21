@@ -14,6 +14,7 @@ import LedgersTab from "./reports/LedgersTab";
 import ScenariosTab from "./reports/ScenariosTab";
 import ContractedVsDeployed from "./ContractedVsDeployed";
 import AccountsGrid from "./accountant/AccountsGrid";
+import Planning from "./accountant/Planning";
 
 /**
  * ACCOUNTANT (2026-10-20) — the working surface for the people given
@@ -22,6 +23,7 @@ import AccountsGrid from "./accountant/AccountsGrid";
  *
  *   Accounts     the income & withdrawal state, every bank and cash holder,
  *                from the ledger
+ *   Planning     expected receipts and payments against the ledger (0528)
  *   Checks       every red control and the audit findings, with the rows
  *                behind them, and the accrual-to-cash bridge
  *   Ledgers      general, client, supplier, partner and guard ledgers
@@ -31,7 +33,7 @@ import AccountsGrid from "./accountant/AccountsGrid";
  * One search reaches any entity and one drawer opens any figure, as before.
  */
 
-type Section = "accounts" | "checks" | "ledgers" | "scenarios" | "cover";
+type Section = "accounts" | "planning" | "checks" | "ledgers" | "scenarios" | "cover";
 
 export default function Accountant() {
   const companyId = useCompanyId();
@@ -90,6 +92,7 @@ export default function Accountant() {
             onChange={setSection}
             items={[
               { value: "accounts", label: "Accounts" },
+              { value: "planning", label: "Planning" },
               { value: "checks", label: "Checks", count: red ?? undefined },
               { value: "ledgers", label: "Ledgers" },
               { value: "scenarios", label: "Scenarios" },
@@ -100,6 +103,7 @@ export default function Accountant() {
       </Header>
       <PageBody>
         {section === "accounts" && <AccountsGrid period={period} />}
+        {section === "planning" && <Planning period={period} />}
         {section === "checks" && (
           <OverviewTab period={period} onOpenTab={() => setSection("cover")} />
         )}

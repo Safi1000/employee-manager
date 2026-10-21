@@ -196,7 +196,15 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   60 frames a second through the fold on Employees.
 - **Applied 2026-10-21** — 0527 on named approval: client_cover counts a contract only
   from the month it starts (Regent 1 out of September, in from October).
-- **Waiting on approval** — Accountant planning (needs new tables); importing an opening trial balance
+- **Applied 2026-10-21** — 0528 on named approval: cash_plan and budget_lines, with
+  planning.view / planning.edit (grantable in Access & Governance).
+- **Built** — Accountant ▸ Planning: the month's plan (add, mark done with the
+  actual, drop, delete), plan against actual by kind from the ledger, and the
+  next 30 days' cash run with its low point; earlier months' items still
+  expected are called out.
+- **Built** — Financial Reports ▸ P&L: "vs budget" — the budget column and the
+  variance per line, typed in place by planning.edit for a single month.
+- **Was waiting on approval** — Accountant planning (needs new tables); importing an opening trial balance
   from Excel and bank balance sparklines (both wait on the cutover).
 - **Waiting on the cutover** — Opening balances: the cutover (0519/0523) posts
   them; it waits on the Lahore roster → Lahore August backfill → redraft the

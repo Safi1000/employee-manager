@@ -519,6 +519,8 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       // the checks, ledgers and scenarios. Granted person by person. Mirrored
       // in public.permission_keys by 0526.
       { key: "accountant.view", label: "View the Accountant page (accounts, checks, ledgers, scenarios)" },
+      { key: "planning.view", label: "See the cash plan and budget (Accountant ▸ Planning)" },
+      { key: "planning.edit", label: "Add and change the cash plan and budget" },
       { key: "cashflow.view", label: "View cashflow" },
       { key: "coa.view", label: "View Chart of Accounts & Trial Balance" },
       { key: "period_close.manage", label: "Close / reopen accounting periods" },
