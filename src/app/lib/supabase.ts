@@ -2119,6 +2119,8 @@ export type BankAccount = {
   account_type: "Current" | "Savings";
   opening_balance: number;
   balance: number;
+  /** Set when the balance was withheld from this user (0530); see bankCovers(). */
+  balanceHidden?: boolean;
   owner_type: BankAccountOwnerType;
   owner_partner_id: string | null;
   owner_client_id: string | null;

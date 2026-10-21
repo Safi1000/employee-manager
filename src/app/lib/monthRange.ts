@@ -66,7 +66,13 @@ export function monthKeysFrom(
  * The month the books actually begin: the earliest posted journal entry, else
  * the company's creation date, else null. Returns "YYYY-MM-DD".
  */
-export async function fetchLedgerStart(): Promise<string | null> {
+export async function fetchLedgerStart(companyId?: string | null): Promise<string | null> {
+  // 0530: one date through a function, so a screen whose user may not read the
+  // ledger (0531) still starts its months in the right place.
+  if (companyId) {
+    const { data, error } = await supabase.rpc("ledger_start_date", { p_company_id: companyId });
+    if (!error && data) return String(data).slice(0, 10);
+  }
   const { data: entry } = await supabase
     .from("journal_entries")
     .select("entry_date")

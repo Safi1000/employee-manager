@@ -1,4 +1,5 @@
 import ReversalDialog from "../../components/ReversalDialog";
+import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -651,12 +652,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // those waits was the whole page. Now it is one.
     const periodP = loadPeriodData(selectedPeriod);
     const ebP = supabase.from("employee_branches").select("employee_id, branch_id");
-    const linkedP = Promise.all([
-      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
-      supabase.from("expenses").select("cheque_id, amount").not("cheque_id", "is", null),
-      supabase.from("advances").select("cheque_id, amount").not("cheque_id", "is", null),
-      supabase.from("invoice_payments").select("cheque_id, amount").not("cheque_id", "is", null),
-    ]);
+    const linkedP = loadChequeLinkedSums(treasuryCompanyId);
 
     const [empRes, siteRes, depRes, cliRes, conRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
       // Region scopes the payroll roster (each row = an employee). Bank/treasury/
@@ -687,7 +683,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       supabase.from("deployments").select("guard_id, site_id").is("end_date", null),
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
-      supabase.from("bank_accounts").select("*").order("bank_name"),
+      loadBankOptions<BankAccount>(treasuryCompanyId, canViewBanking).then((data) => ({ data })),
       // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
       supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number }>(),
       supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
@@ -724,21 +720,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     setEmployeeAddlBranches(addl);
 
-    const [linkedPs, linkedEx, linkedAdv, linkedIp] = await linkedP;
-    const linked = new Map<string, number>();
-    for (const r of (linkedPs.data ?? []) as { cheque_id: string; net_salary: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.net_salary));
-    }
-    for (const r of (linkedEx.data ?? []) as { cheque_id: string; amount: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
-    }
-    for (const r of (linkedAdv.data ?? []) as { cheque_id: string; amount: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
-    }
-    for (const r of (linkedIp.data ?? []) as { cheque_id: string; amount: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
-    }
-    setChequeLinkedSums(linked);
+    setChequeLinkedSums(await linkedP);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
 
     await periodP;
@@ -1801,7 +1783,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           setRowError("Bank account not found.");
           return;
         }
-        if (pay > 0 && pay > Number(bank.balance)) {
+        if (pay > 0 && !(await bankCovers(bank, pay))) {
           setRowError("Selected bank account balance is insufficient for this payment.");
           return;
         }
@@ -1966,7 +1948,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         setError("Selected bank account not found.");
         return;
       }
-      if (total > Number(bank.balance)) {
+      if (!(await bankCovers(bank, total))) {
         // The overdraft guard stays; the balance FIGURE is banks.view data, so a
         // user without it gets a generic refusal, never the number.
         setError(

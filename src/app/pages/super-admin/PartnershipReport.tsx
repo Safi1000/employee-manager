@@ -14,6 +14,7 @@ import {
 } from "../../lib/excel";
 import Modal from "../../components/Modal";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { canReadInvoices } from "../../lib/bankOptions";
 import { useRegion } from "../../lib/region";
 import Button from "../../components/Button";
 import Partners from "./Partners";
@@ -724,6 +725,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
           )
         }
       />
+      {!canReadInvoices(profile) && (
+        // 0531: this page opens for banks/payables users, but revenue comes from
+        // invoices they may not read. Say so rather than show a smaller profit.
+        <div className="mx-4 lg:mx-6 mt-3 rounded-xl border border-warning-200 bg-warning-50 px-4 py-2.5 text-sm text-warning-700 dark:text-warning-500">
+          Revenue here needs invoice access (Invoices, Receivables or Reports). Without it, revenue and profit will read as nil once invoice reading is restricted — ask an admin to grant one.
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {/* Mounted once opened, then just hidden on other tabs so it keeps its

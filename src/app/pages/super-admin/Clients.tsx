@@ -59,6 +59,7 @@ import {
   validateEmployeeIdPrefix,
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { canReadInvoices } from "../../lib/bankOptions";
 import { useRegion, withRegion } from "../../lib/region";
 import { usePageState } from "../../lib/pageState";
 
@@ -200,6 +201,9 @@ export default function Clients() {
   // Add / edit / delete a client is gated on clients.edit (super_admin + SSA
   // implicit). Backend RLS (0310) enforces it too; this only hides the controls.
   const canEditClients = hasPermission(profile, "clients.edit");
+  // What a client owes, its invoices and its margin are money (0531): shown
+  // only to someone allowed to read invoices, and not fetched for anyone else.
+  const canSeeMoney = canReadInvoices(profile);
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -252,7 +256,9 @@ export default function Clients() {
         .order("is_head_office", { ascending: false })
         .order("name"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
-      supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
+      canSeeMoney
+        ? supabase.from("invoices").select("*").order("invoice_date", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
       supabase
         .from("employees")
         .select("id, client_id, status, contract_id, contract_line_id, assignment_effective_from, assignment_effective_to"),
@@ -408,7 +414,9 @@ export default function Clients() {
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     void Promise.all([
       supabase.from("client_complaints").select("client_id, status").eq("company_id", cid).not("status", "in", "(resolved,closed)"),
-      supabase.rpc("client_statement_loaded", { p_start: iso(ps), p_end: iso(pe), p_basis: "revenue", p_company_id: cid }),
+      canSeeMoney
+        ? supabase.rpc("client_statement_loaded", { p_start: iso(ps), p_end: iso(pe), p_basis: "revenue", p_company_id: cid })
+        : Promise.resolve({ data: [], error: null }),
     ]).then(([cc, st]) => {
       if (cancelled) return;
       const m = new Map<string, number>();
@@ -420,7 +428,7 @@ export default function Clients() {
       setLastMargin(mm);
     });
     return () => { cancelled = true; };
-  }, [profile?.view_as_company, profile?.company_id, company?.id, regionId]);
+  }, [profile?.view_as_company, profile?.company_id, company?.id, regionId, canSeeMoney]);
   const healthOf = (row: ClientRow) => {
     const parts: { k: string; got: number; note: string }[] = [];
     const o = owedByClient.get(row.id);
@@ -1252,7 +1260,9 @@ export default function Clients() {
             {[
               { label: "Clients", v: portfolio.total.toLocaleString(), sub: `${portfolio.active} with a live contract`, tone: "text-foreground" },
               { label: "Guards deployed", v: portfolio.guards.toLocaleString(), sub: "across active clients", tone: "text-foreground" },
-              { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "open invoices, all clients", tone: portfolio.owed ? "text-heed" : "text-up" },
+              canSeeMoney
+                ? { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "open invoices, all clients", tone: portfolio.owed ? "text-heed" : "text-up" }
+                : { label: "Active clients", v: portfolio.active.toLocaleString(), sub: `of ${portfolio.total} on the books`, tone: "text-foreground" },
               { label: "Largest client", v: `${Math.round(portfolio.topShare * 100)}%`, sub: portfolio.top ? `of guards at ${portfolio.top.name}` : "—", tone: portfolio.topShare > 0.3 ? "text-down" : "text-foreground" },
             ].map((t) => (
               <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
@@ -1350,7 +1360,7 @@ export default function Clients() {
                   <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-5 gap-y-2">
                     <div><div className="lbl">Guards</div><div className="font-ledger text-lg font-semibold">{row.employees_count}</div></div>
                     <div><div className="lbl">Contracts</div><div className="font-ledger text-lg font-semibold">{row.contracts_count}</div></div>
-                    <div className="text-right"><div className="lbl">Owes</div><div className={`font-ledger text-lg font-semibold whitespace-nowrap ${o && o.owed > 0 ? "text-warning-700 dark:text-warning-500" : "text-foreground"}`}>{o ? Math.round(o.owed).toLocaleString() : "0"}</div></div>
+                    {canSeeMoney && <div className="text-right"><div className="lbl">Owes</div><div className={`font-ledger text-lg font-semibold whitespace-nowrap ${o && o.owed > 0 ? "text-warning-700 dark:text-warning-500" : "text-foreground"}`}>{o ? Math.round(o.owed).toLocaleString() : "0"}</div></div>}
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex justify-between text-[11px] text-muted-foreground"><span>Share of deployed guards</span><span className="font-ledger">{Math.round(share * 100)}%</span></div>
@@ -1571,7 +1581,7 @@ export default function Clients() {
                 { v: "contracts", label: `Contracts (${contracts.filter((c) => c.client_id === detailRow.id).length})` },
                 { v: "invoices", label: `Invoices (${invoices.filter((i) => i.client_id === detailRow.id).length})` },
                 { v: "documents", label: "Documents" },
-              ] as const).map((t) => ({ value: t.v, label: t.label }))}
+              ] as const).filter((t) => canSeeMoney || t.v !== "invoices").map((t) => ({ value: t.v, label: t.label }))}
             />
 
             {detailTab === "overview" && (
@@ -1678,7 +1688,7 @@ export default function Clients() {
               </div>
             )}
 
-            {detailTab === "invoices" && (
+            {detailTab === "invoices" && canSeeMoney && (
               <div className="space-y-2">
                 {invoices.filter((i) => i.client_id === detailRow.id).length === 0 ? (
                   <p className="text-sm text-muted-foreground">No invoices for this client yet.</p>

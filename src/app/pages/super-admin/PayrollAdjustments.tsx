@@ -20,6 +20,7 @@ import Modal from "../../components/Modal";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { loadBankOptions } from "../../lib/bankOptions";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import { formatDate } from "../../lib/date";
 import { type PayrollAdjustment, adjustmentSettlementLabel } from "../../components/PayrollAdjustmentHistory";
@@ -70,10 +71,11 @@ export default function PayrollAdjustments() {
 
   useEffect(() => {
     if (!settling || !company?.id) return;
-    supabase.from("bank_accounts").select("id, bank_name, account_number").eq("company_id", company.id)
-      .then(({ data }) => setBanks((data ?? []) as any[]));
+    // The picker only: no balance unless the user may see banks (0530).
+    loadBankOptions<any>(company.id, hasPermission(profile, "banks.view"), "id, bank_name, account_number")
+      .then((data) => setBanks(data));
     loadCustodianOptions(company.id, false).then(setCustodians);
-  }, [settling, company?.id]);
+  }, [settling, company?.id, profile]);
 
   const open = useMemo(() => rows.filter((r) => r.status === "open"), [rows]);
   const rest = useMemo(() => rows.filter((r) => r.status !== "open"), [rows]);

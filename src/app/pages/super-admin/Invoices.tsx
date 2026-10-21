@@ -52,6 +52,7 @@ import {
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
@@ -245,7 +246,7 @@ export default function Invoices() {
     const [cliRes, conRes, bankRes, brRes, locRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
-      supabase.from("bank_accounts").select("*").order("bank_name"),
+      loadBankOptions<BankAccount>(treasuryCompanyId, canReadBankBalances(profile)).then((data) => ({ data, error: null as { message: string } | null })),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       // 0281: a cash receipt must name the custodian who took the money.
       supabase

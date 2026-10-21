@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
 import { useOpenParam } from "../../lib/openParam";
+import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 // Accounts payable, moved here from Banks & Ledgers (2026-10-21): that page's
 // own payables tab, embedded, so its figures and actions stay one implementation.
 const AccountsPayable = lazy(() => import("./Accounting"));
@@ -616,7 +617,9 @@ export default function Expenses() {
       supabase.from("expense_categories").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("vendors").select("*").order("name"),
-      supabase.from("bank_accounts").select("*").order("bank_name"),
+      // Banking access reads the accounts (balances included); anyone else
+      // gets the picker list without balances (0530).
+      loadBankOptions<BankAccount>(treasuryCompanyId, canViewBanking).then((data) => ({ data })),
       // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
       supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number }>(),
       supabase.from("employees").select("*").order("employee_code"),
@@ -696,27 +699,9 @@ export default function Expenses() {
     setBranches((brRes.data ?? []) as Branch[]);
     await loadFixedTemplates();
 
-    // Aggregate linked sums per cheque (across payslips/expenses/advances/invoice_payments).
-    const [linkedPs, linkedEx, linkedAdv, linkedIp] = await Promise.all([
-      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
-      supabase.from("expenses").select("id, cheque_id, amount").not("cheque_id", "is", null),
-      supabase.from("advances").select("id, cheque_id, amount").not("cheque_id", "is", null),
-      supabase.from("invoice_payments").select("cheque_id, amount").not("cheque_id", "is", null),
-    ]);
-    const linked = new Map<string, number>();
-    for (const r of (linkedPs.data ?? []) as { cheque_id: string; net_salary: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.net_salary));
-    }
-    for (const r of (linkedEx.data ?? []) as { cheque_id: string; amount: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
-    }
-    for (const r of (linkedAdv.data ?? []) as { cheque_id: string; amount: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
-    }
-    for (const r of (linkedIp.data ?? []) as { cheque_id: string; amount: number }[]) {
-      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
-    }
-    setChequeLinkedSums(linked);
+    // Per cheque, what is already linked to it — one function (0530), so this
+    // screen no longer reads every client receipt that came by cheque.
+    setChequeLinkedSums(await loadChequeLinkedSums(treasuryCompanyId));
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
     {
       const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
@@ -896,7 +881,7 @@ export default function Expenses() {
   // Bounded by the ledger's own start, not by a fixed count of months back
   // from today. See src/app/lib/monthRange.ts.
   const [ledgerStart, setLedgerStart] = useState<string | null>(null);
-  useEffect(() => { fetchLedgerStart().then(setLedgerStart); }, []);
+  useEffect(() => { fetchLedgerStart(treasuryCompanyId).then(setLedgerStart); }, [treasuryCompanyId]);
   const monthOptions = useMemo(() => monthKeysFrom(ledgerStart), [ledgerStart]);
 
   const expenseMetrics = useMemo(() => {
@@ -1188,7 +1173,7 @@ export default function Expenses() {
         if (row.payment_mode === "Bank") {
           if (!row.bank_account_id) throw new Error("This fixed expense has no bank account set. Edit it first.");
           const bank = banks.find((b) => b.id === row.bank_account_id);
-          if (bank && amount > Number(bank.balance)) throw new Error("Selected bank balance is insufficient.");
+          if (bank && !(await bankCovers(bank, amount))) throw new Error("Selected bank balance is insufficient.");
         }
 
         let custodianLocId: string | null = null;
@@ -1432,7 +1417,7 @@ export default function Expenses() {
     }
     if (form.payment_mode === "Bank") {
       const bank = banks.find((b) => b.id === form.bank_account_id);
-      if (bank && amount > Number(bank.balance)) {
+      if (bank && !(await bankCovers(bank, amount))) {
         setFormError("Selected bank balance is insufficient.");
         return;
       }
@@ -1734,7 +1719,7 @@ export default function Expenses() {
         const reversedBack = selected.payment_mode === "Bank" && selected.bank_account_id === editForm.bank_account_id
           ? Number(selected.amount)
           : 0;
-        if (bank && amount > Number(bank.balance) + reversedBack) {
+        if (bank && !(await bankCovers(bank, amount, reversedBack))) {
           setFormError("Selected bank balance is insufficient after reversal.");
           setSubmitting(false);
           return;
@@ -1946,7 +1931,7 @@ export default function Expenses() {
   // 0382. logAdvanceTransaction and describeAdvance moved into the database
   // alongside the advance RPCs, for the same reason their expense twins did.
 
-  const validateAdvance = (f: AdvanceForm, existingAmount?: number): string | null => {
+  const validateAdvance = async (f: AdvanceForm, existingAmount?: number): Promise<string | null> => {
     if (!f.employee_id) return "Select an employee.";
     const amt = Number(f.amount);
     if (!amt || amt <= 0) return "Enter a positive amount.";
@@ -1970,8 +1955,7 @@ export default function Expenses() {
     if (f.payment_mode === "Bank") {
       const bank = banks.find((b) => b.id === f.bank_account_id);
       if (bank) {
-        const budget = Number(bank.balance) + (existingAmount ?? 0);
-        if (amt > budget) return "Selected bank balance is insufficient.";
+        if (!(await bankCovers(bank, amt, existingAmount ?? 0))) return "Selected bank balance is insufficient.";
       }
     }
     return null;
@@ -1988,7 +1972,7 @@ export default function Expenses() {
   const handleAddAdvance = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    const err = validateAdvance(advForm);
+    const err = await validateAdvance(advForm);
     if (err) {
       setFormError(err);
       return;
@@ -2084,7 +2068,7 @@ export default function Expenses() {
       (advEditForm.payment_mode === "Cash" ||
         advEditForm.bank_account_id === advEditing.bank_account_id);
     const existingAmount = sameAccountAsBefore ? Number(advEditing.amount) : 0;
-    const err = validateAdvance(advEditForm, existingAmount);
+    const err = await validateAdvance(advEditForm, existingAmount);
     if (err) {
       setFormError(err);
       return;

@@ -42,6 +42,7 @@ import {
 import { validateBankAccount, validateIban } from "../../lib/validation";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { bankCovers, canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
@@ -142,6 +143,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   // pick up, and then UPDATE, a treasury belonging to somebody else. One
   // company on production today makes that harmless; it would not stay so.
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+  const canReadBanks = canReadBankBalances(profile);
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -284,7 +286,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   // Bounded by the ledger's own start, not by a fixed count of months back
   // from today. See src/app/lib/monthRange.ts.
   const [ledgerStart, setLedgerStart] = useState<string | null>(null);
-  useEffect(() => { fetchLedgerStart().then(setLedgerStart); }, []);
+  useEffect(() => { fetchLedgerStart(treasuryCompanyId).then(setLedgerStart); }, [treasuryCompanyId]);
   const monthOptions = useMemo(() => monthKeysFrom(ledgerStart), [ledgerStart]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -947,7 +949,10 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
       partnersRes,
       chequesRes,
     ] = await Promise.all([
-      supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
+      // A user who may not read banks (0531) gets the picker list without balances.
+      canReadBanks
+        ? supabase.from("bank_accounts").select("*").order("created_at", { ascending: false })
+        : loadBankOptions<BankAccount>(treasuryCompanyId, false).then((data) => ({ data, error: null })),
       // Scoped: an unscoped SSA sees every company's treasury row through the
       // ssa_all policy, and .limit(1) would pick an arbitrary one.
       // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
@@ -1433,7 +1438,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
       setError("Enter a positive withdrawal amount.");
       return;
     }
-    if (amount > Number(selectedBank.balance)) {
+    if (!(await bankCovers(selectedBank, amount))) {
       setError("Withdrawal exceeds available account balance.");
       return;
     }
@@ -3404,8 +3409,10 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
             // For outgoing cheques only: block over-issue if bank balance is insufficient
             if (chequeForm.direction !== "incoming") {
               const issuingBank = banks.find((b) => b.id === chequeForm.bank_account_id);
-              if (issuingBank && amount > Number(issuingBank.balance)) {
-                setChequeFormError(`Cheque amount (PKR ${amount.toLocaleString()}) exceeds the bank's available balance (PKR ${Number(issuingBank.balance).toLocaleString()}).`);
+              if (issuingBank && !(await bankCovers(issuingBank, amount))) {
+                setChequeFormError(issuingBank.balanceHidden
+                  ? `Cheque amount (PKR ${amount.toLocaleString()}) exceeds the bank's available balance.`
+                  : `Cheque amount (PKR ${amount.toLocaleString()}) exceeds the bank's available balance (PKR ${Number(issuingBank.balance).toLocaleString()}).`);
                 return;
               }
             }
@@ -3557,7 +3564,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               <option value="">Select bank</option>
               {banks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                  {b.bank_name} · {b.account_number}{b.balanceHidden ? "" : ` (PKR ${Number(b.balance).toLocaleString()})`}
                 </option>
               ))}
             </ThemedSelect>
@@ -5031,7 +5038,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                   `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
                 return (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} · {b.account_number} ({ownerLabel}) · PKR {Number(b.balance).toLocaleString()}
+                    {b.bank_name} · {b.account_number} ({ownerLabel}){b.balanceHidden ? "" : ` · PKR ${Number(b.balance).toLocaleString()}`}
                   </option>
                 );
               })}
@@ -5405,7 +5412,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                   <option value="">Select bank account…</option>
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                      {b.bank_name} · {b.account_number}{b.balanceHidden ? "" : ` (PKR ${Number(b.balance).toLocaleString()})`}
                     </option>
                   ))}
                 </ThemedSelect>
