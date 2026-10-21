@@ -5,6 +5,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import { useOpenParam } from "../../lib/openParam";
 import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 // Accounts payable, moved here from Banks & Ledgers (2026-10-21): that page's
@@ -417,6 +418,8 @@ export default function Expenses() {
 
   const { regionId } = useRegion();
   const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred" | "payables">("Expenses.activeTab", "expenses");
+  // Every band figure opens the entries behind it (2026-10-22: "every figure clickable").
+  const [sheet, setSheet] = useState<DetailContent | null>(null);
   // ?tab=payables (old Banks & Ledgers links, ledger drills) opens that tab.
   const [urlParams] = useSearchParams();
   useEffect(() => {
@@ -2472,17 +2475,43 @@ export default function Expenses() {
             return (
               <div className="flex flex-col gap-3">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  {[
-                    { label: "Advanced", v: <><span className="cur">PKR</span>{Math.round(total).toLocaleString()}</>, sub: "in the current filter" },
-                    { label: "Advances", v: advTotals.count.toLocaleString(), sub: `to ${byEmp.size} guard${byEmp.size === 1 ? "" : "s"} · average ${advTotals.count ? Math.round(total / advTotals.count).toLocaleString() : 0}` },
-                    { label: "Took more than one", v: repeat.toLocaleString(), sub: repeat ? "guards with repeat advances in view" : "nobody twice in this view" },
-                    { label: "Biggest client", v: clientsSorted[0] ? `${Math.round((clientsSorted[0].v / Math.max(1, total)) * 100)}%` : "—", sub: clientsSorted[0]?.name ?? "no advances" },
-                  ].map((t) => (
-                    <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                  {(() => {
+                    // Per guard in view: how many advances and how much.
+                    const perGuard = new Map<string, { name: string; n: number; v: number }>();
+                    for (const a of filteredAdvances) {
+                      const g = perGuard.get(a.employee_id) ?? { name: a.employee_name, n: 0, v: 0 };
+                      g.n += 1; g.v += Number(a.amount); perGuard.set(a.employee_id, g);
+                    }
+                    const guards = [...perGuard.values()].sort((a, b) => b.v - a.v);
+                    const money = (n: number) => Math.round(n).toLocaleString();
+                    const kicker = "Advances · in the current filter";
+                    return [
+                      { label: "Advanced", v: <><span className="cur">PKR</span>{money(total)}</>, sub: "in the current filter",
+                        open: () => setSheet({ kicker, title: "Advanced, by client", big: `PKR ${money(total)}`,
+                          rows: clientsSorted.map((c) => ({ label: c.name, value: money(c.v), hint: `${Math.round((c.v / Math.max(1, total)) * 100)}%` })) }) },
+                      { label: "Advances", v: advTotals.count.toLocaleString(), sub: `to ${byEmp.size} guard${byEmp.size === 1 ? "" : "s"} · average ${advTotals.count ? money(total / advTotals.count) : 0}`,
+                        open: () => setSheet({ kicker, title: "Advances, by guard", big: `${advTotals.count} to ${byEmp.size}`,
+                          rows: guards.slice(0, 40).map((g) => ({ label: g.name, value: money(g.v), hint: `${g.n} advance${g.n === 1 ? "" : "s"}` })),
+                          note: guards.length > 40 ? `The 40 largest of ${guards.length}.` : undefined }) },
+                      { label: "Took more than one", v: repeat.toLocaleString(), sub: repeat ? "guards with repeat advances in view" : "nobody twice in this view",
+                        open: () => setSheet({ kicker, title: "Took more than one", big: String(repeat),
+                          note: repeat ? "Guards with two or more advances in view — the ones most likely to carry a balance into the next payslip." : "Nobody has taken two advances in this view.",
+                          rows: guards.filter((g) => g.n > 1).sort((a, b) => b.n - a.n || b.v - a.v).map((g) => ({ label: g.name, value: money(g.v), hint: `${g.n} advances` })) }) },
+                      { label: "Biggest client", v: clientsSorted[0] ? `${Math.round((clientsSorted[0].v / Math.max(1, total)) * 100)}%` : "—", sub: clientsSorted[0]?.name ?? "no advances",
+                        open: () => {
+                          const c = clientsSorted[0];
+                          if (!c) return;
+                          const rows = filteredAdvances.filter((a) => (a.client_id ?? "none") === c.id).sort((a, b) => Number(b.amount) - Number(a.amount));
+                          setSheet({ kicker, title: c.name, big: `PKR ${money(c.v)}`, note: `${Math.round((c.v / Math.max(1, total)) * 100)}% of the advances in view.`,
+                            rows: rows.slice(0, 40).map((a) => ({ label: a.employee_name, value: money(Number(a.amount)), hint: `${formatDate(a.advance_date)} · ${a.payment_mode}` })) });
+                        } },
+                    ];
+                  })().map((t) => (
+                    <button key={t.label} type="button" onClick={t.open} className="group text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0 hover:border-brand-500/60">
                       <span className="lbl">{t.label}</span>
-                      <span className="font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap">{t.v}</span>
+                      <span className="font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap group-hover:underline">{t.v}</span>
                       <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
                 {total > 0 && (
@@ -2569,17 +2598,47 @@ export default function Expenses() {
             return (
               <div className="flex flex-col gap-3">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  {[
-                    { label: "Spent", v: <><span className="cur">PKR</span>{Math.round(total).toLocaleString()}</>, sub: "in the current filter" },
-                    { label: "Entries", v: filtered.length.toLocaleString(), sub: `average ${filtered.length ? Math.round(total / filtered.length).toLocaleString() : 0}` },
-                    { label: "Office share", v: total ? `${Math.round((office / total) * 100)}%` : "—", sub: "head office, not a client" },
-                    { label: "Biggest category", v: top ? `${Math.round((top.total / Math.max(1, total)) * 100)}%` : "—", sub: top ? top.name : "no expenses" },
-                  ].map((t) => (
-                    <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                  {(() => {
+                    const money = (n: number) => Math.round(n).toLocaleString();
+                    const kicker = "Expenses · in the current filter";
+                    const entry = (e: (typeof filtered)[number]) => ({
+                      label: e.description || e.category_name || "Expense",
+                      value: money(Number(e.amount)),
+                      hint: `${formatDate(e.expense_date)} · ${e.client_name ?? "Head office"} · ${e.category_name ?? "Uncategorised"}`,
+                    });
+                    const biggest = [...filtered].sort((a, b) => Number(b.amount) - Number(a.amount));
+                    return [
+                      { label: "Spent", v: <><span className="cur">PKR</span>{money(total)}</>, sub: "in the current filter",
+                        open: () => setSheet({ kicker, title: "Spent, by category", big: `PKR ${money(total)}`,
+                          rows: expenseMetrics.perCategory.map((c) => ({ label: c.name, value: money(c.total), hint: `${Math.round((c.total / Math.max(1, total)) * 100)}%` })) }) },
+                      { label: "Entries", v: filtered.length.toLocaleString(), sub: `average ${filtered.length ? money(total / filtered.length) : 0}`,
+                        open: () => setSheet({ kicker, title: "The largest entries", big: `${filtered.length} entries`,
+                          note: filtered.length > 25 ? `The 25 largest of ${filtered.length}; the list below has them all.` : undefined,
+                          rows: biggest.slice(0, 25).map(entry) }) },
+                      { label: "Office share", v: total ? `${Math.round((office / total) * 100)}%` : "—", sub: "head office, not a client",
+                        open: () => {
+                          const ho = filtered.filter((e) => !e.client_name);
+                          const byCat = new Map<string, number>();
+                          for (const e of ho) byCat.set(e.category_name ?? "Uncategorised", (byCat.get(e.category_name ?? "Uncategorised") ?? 0) + Number(e.amount));
+                          setSheet({ kicker, title: "Head office, not a client", big: `PKR ${money(office)}`,
+                            note: `${total ? Math.round((office / total) * 100) : 0}% of spending in view carries no client.`,
+                            rows: [...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: money(v) })) });
+                        } },
+                      { label: "Biggest category", v: top ? `${Math.round((top.total / Math.max(1, total)) * 100)}%` : "—", sub: top ? top.name : "no expenses",
+                        open: () => {
+                          if (!top) return;
+                          const rows = biggest.filter((e) => (e.category_name ?? "Uncategorized") === top.name);
+                          setSheet({ kicker, title: top.name, big: `PKR ${money(top.total)}`,
+                            note: rows.length > 25 ? `The 25 largest of ${rows.length}.` : undefined,
+                            rows: rows.slice(0, 25).map(entry) });
+                        } },
+                    ];
+                  })().map((t) => (
+                    <button key={t.label} type="button" onClick={t.open} className="group text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0 hover:border-brand-500/60">
                       <span className="lbl">{t.label}</span>
-                      <span className="font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap">{t.v}</span>
+                      <span className="font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap group-hover:underline">{t.v}</span>
                       <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
                 {recurring.length > 0 && (
@@ -2621,6 +2680,7 @@ export default function Expenses() {
           })()}
         </div>
       </Header>
+      <DetailSheet content={sheet} onClose={() => setSheet(null)} />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
