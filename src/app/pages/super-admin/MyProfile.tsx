@@ -147,9 +147,9 @@ function Card({
 
 function Section({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+    <div className="bg-card rounded-2xl border border-border overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-border flex items-baseline justify-between gap-2">
+        <h3 className="font-display text-base font-bold tracking-tight text-foreground">{title}</h3>
         {count != null && <span className="text-xs text-muted-foreground">{count}</span>}
       </div>
       {children}
@@ -307,12 +307,121 @@ export default function MyProfile() {
     );
   }
 
+  // The last six payslips, oldest first, for the band's pay strip.
+  const payTrend = payslips.slice(0, 6).reverse();
+  const payMax = Math.max(1, ...payTrend.map((p) => Number(p.net_salary || 0)));
+  // The month as a calendar: blanks before the 1st so each date sits under
+  // its weekday, Monday first.
+  const calendar = (() => {
+    const [y, m] = month.split("-").map(Number);
+    const days = new Date(y, m, 0).getDate();
+    const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+    const byDay = new Map(attendance.map((a) => [Number(a.attendance_date.slice(8, 10)), a.status ?? ""]));
+    return { lead, days: Array.from({ length: days }, (_, i) => ({ d: i + 1, status: byDay.get(i + 1) ?? null })) };
+  })();
+  const dayTone = (status: string | null) => {
+    const s = (status ?? "").toLowerCase();
+    if (!status) return "bg-muted/40 text-muted-foreground/60 border-transparent";
+    if (s.startsWith("present") || s === "p" || s === "double_duty") return "bg-success-100 text-success-700 dark:text-success-500 border-success-200";
+    if (s.startsWith("absent") || s === "a") return "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200";
+    if (s.startsWith("leave") || s === "l") return "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200";
+    return "bg-muted text-muted-foreground border-border";
+  };
+  const initials = (emp?.full_name ?? "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
+
   return (
     <>
-      <Header title="My Profile" subtitle={emp ? `${emp.full_name} · your record, attendance, pay and cash` : "Your own record"} />
+      <Header
+        title="My Profile"
+        subtitle={emp ? "Your record, attendance, pay and cash — read-only" : "Your own record"}
+        actions={
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="Month"
+            className="px-3 min-h-10 border border-border rounded-xl text-sm bg-card text-foreground"
+          >
+            {recentMonths().map((m) => (
+              <option key={m} value={m}>{fmtMonth(m)}</option>
+            ))}
+          </select>
+        }
+      >
+        {!loading && emp && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="h-12 w-12 rounded-2xl bg-brand-500 text-on-brand flex items-center justify-center font-display font-bold text-lg flex-shrink-0">{initials}</span>
+                <div className="min-w-0">
+                  <p className="font-display text-lg font-bold text-foreground truncate">{emp.full_name}</p>
+                  <p className="text-xs font-ledger text-muted-foreground">{codeIndex.byId.get(emp.id) ?? emp.employee_code ?? emp.guard_code ?? "—"}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+                {[
+                  ["Status", lifecycleStatusLabel({ lifecycle_state: emp.lifecycle_state ?? "", status: emp.status })],
+                  ["Posted at", emp.client?.name ?? "—"],
+                  ["Region", emp.branch?.name ?? "—"],
+                  ["Shift", emp.shift ? emp.shift[0].toUpperCase() + emp.shift.slice(1) : "—"],
+                  ["Joined", emp.join_date ? formatDate(emp.join_date) : "—"],
+                ].map(([k, v]) => (
+                  <div key={k}>
+                    <p className="lbl">{k}</p>
+                    <p className="text-foreground">{v}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                <span className="lbl">Base salary</span>
+                <span className={fig}><span className="cur">PKR</span>{Math.round(Number(emp.base_salary ?? 0)).toLocaleString()}</span>
+                <span className="text-xs text-muted-foreground truncate">{Number(emp.allowance ?? 0) > 0 ? `plus ${pkr(Number(emp.allowance))} allowance` : "no allowance"}</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                <span className="lbl">Present · {fmtMonth(month)}</span>
+                <span className={`${fig} text-up`}>{attSummary.present}<span className="text-sm text-muted-foreground font-normal"> / {calendar.days.length}</span></span>
+                <span className="text-xs text-muted-foreground truncate">{attSummary.absent} absent · {attSummary.leave} leave · {calendar.days.length - attSummary.marked} unmarked</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                <span className="lbl">Net pay · {fmtMonth(month)}</span>
+                <span className={`${fig} ${monthPayslip ? (monthPayslip.disbursed ? "text-up" : "text-heed") : ""}`}>{monthPayslip ? <><span className="cur">PKR</span>{Math.round(Number(monthPayslip.net_salary)).toLocaleString()}</> : "—"}</span>
+                <span className="text-xs text-muted-foreground truncate">
+                  {monthPayslip
+                    ? monthPayslip.disbursed
+                      ? `Paid${monthPayslip.disbursed_at ? ` ${formatDate(monthPayslip.disbursed_at.slice(0, 10))}` : ""}`
+                      : `${pkr(Number(monthPayslip.net_salary) - Number(monthPayslip.amount_paid))} still owed`
+                    : "no payslip for this month yet"}
+                </span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                <span className="lbl">{heldCash != null ? "Cash you hold" : "Owed to you"}</span>
+                <span className={`${fig} ${heldCash == null && outstandingPay > 0 ? "text-heed" : ""}`}><span className="cur">PKR</span>{Math.round(heldCash ?? outstandingPay).toLocaleString()}</span>
+                <span className="text-xs text-muted-foreground truncate">{heldCash != null ? "company cash in your custody" : "across every payslip, all time"}</span>
+              </div>
+              <div className="col-span-2 lg:col-span-1 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5 min-w-0">
+                <span className="lbl">Net pay · last {payTrend.length || 6} months</span>
+                {payTrend.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">no payslips yet</span>
+                ) : (
+                  <div className="flex items-end gap-1.5 h-12">
+                    {payTrend.map((p) => (
+                      <div key={p.id} className="flex-1 flex flex-col items-center gap-1 min-w-0" title={`${fmtMonth((p.period_month ?? "").slice(0, 7))}: ${pkr(p.net_salary)}${p.disbursed ? " · paid" : " · not yet paid"}`}>
+                        <span className={`w-full rounded-t ${p.disbursed ? "bg-up" : "bg-heed"}`} style={{ height: `${Math.max(8, (Number(p.net_salary || 0) / payMax) * 36)}px` }} />
+                        <span className="text-[9px] text-muted-foreground leading-none">{fmtMonth((p.period_month ?? "").slice(0, 7)).slice(0, 3)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Header>
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-5">
         {err && (
-          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{err}</div>
           </div>
@@ -328,137 +437,32 @@ export default function MyProfile() {
           </p>
         ) : (
           <>
-            {/* ── Who you are ── */}
-            <div className="bg-card rounded-xl border border-border p-5">
-              <div className="flex flex-wrap items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-500/15 text-brand-600 shrink-0">
-                  <UserRound className="w-6 h-6" strokeWidth={1.5} />
+            {/* ── Attendance, as the month's calendar ── */}
+            <Section title={`Attendance · ${fmtMonth(month)}`} count={attendance.length}>
+              <div className="p-4">
+                <div className="grid grid-cols-7 gap-1.5 max-w-xl">
+                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+                    <span key={d} className="lbl text-center">{d}</span>
+                  ))}
+                  {Array.from({ length: calendar.lead }, (_, i) => <span key={`b${i}`} />)}
+                  {calendar.days.map(({ d, status }) => (
+                    <span
+                      key={d}
+                      title={status ? `${d} ${fmtMonth(month)} — ${status.replace(/_/g, " ")}` : `${d} ${fmtMonth(month)} — not marked`}
+                      className={`aspect-square rounded-lg border flex flex-col items-center justify-center text-[11px] ${dayTone(status)}`}
+                    >
+                      <span className="font-semibold">{d}</span>
+                      {status && <span className="uppercase text-[9px] leading-none">{status === "double_duty" ? "DD" : status[0]}</span>}
+                    </span>
+                  ))}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-                    {emp.full_name}
-                  </h2>
-                  <p className="text-xs font-mono text-muted-foreground">
-                    {codeIndex.byId.get(emp.id) ?? emp.employee_code ?? emp.guard_code ?? "—"}
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
-                    {[
-                      ["Status", lifecycleStatusLabel({ lifecycle_state: emp.lifecycle_state ?? "", status: emp.status })],
-                      ["Posted at", emp.client?.name ?? "—"],
-                      ["Site / location", emp.location?.name ?? "—"],
-                      ["Region", emp.branch?.name ?? "—"],
-                      ["Designation", emp.department ?? "—"],
-                      ["Shift", emp.shift ? emp.shift[0].toUpperCase() + emp.shift.slice(1) : "—"],
-                      ["Joined", emp.join_date ? formatDate(emp.join_date) : "—"],
-                      ["Phone", emp.phone ?? "—"],
-                    ].map(([k, v]) => (
-                      <div key={k as string}>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</p>
-                        <p className="text-foreground truncate">{v as string}</p>
-                      </div>
-                    ))}
-                  </div>
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-success-100 border border-success-200" /> Present</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-danger-50 border border-danger-200" /> Absent</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-warning-50 border border-warning-200" /> Leave</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-muted/40" /> Not marked</span>
                 </div>
               </div>
-            </div>
-
-            {/* ── The numbers ── */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card
-                icon={Banknote}
-                label="Base salary"
-                tone="brand"
-                value={pkr(Number(emp.base_salary ?? 0))}
-                hint={Number(emp.allowance ?? 0) > 0 ? `plus ${pkr(Number(emp.allowance))} allowance` : "no allowance"}
-              />
-              <Card
-                icon={CalendarDays}
-                label={`Present · ${fmtMonth(month)}`}
-                tone="success"
-                value={String(attSummary.present)}
-                hint={`${attSummary.absent} absent · ${attSummary.leave} leave · ${attSummary.marked} days marked`}
-              />
-              <Card
-                icon={Wallet}
-                label={`Net pay · ${fmtMonth(month)}`}
-                value={monthPayslip ? pkr(monthPayslip.net_salary) : "—"}
-                hint={
-                  monthPayslip
-                    ? monthPayslip.disbursed
-                      ? `Paid${monthPayslip.disbursed_at ? ` ${formatDate(monthPayslip.disbursed_at.slice(0, 10))}` : ""}`
-                      : `${pkr(Number(monthPayslip.net_salary) - Number(monthPayslip.amount_paid))} still owed`
-                    : "No payslip for this month yet"
-                }
-                tone={monthPayslip?.disbursed ? "success" : "warning"}
-              />
-              {heldCash != null ? (
-                <Card
-                  icon={Wallet}
-                  label="Cash you hold"
-                  tone="warning"
-                  value={pkr(heldCash)}
-                  hint="Company cash in your custody"
-                />
-              ) : (
-                <Card
-                  icon={Wallet}
-                  label="Owed to you"
-                  tone={outstandingPay > 0 ? "warning" : "success"}
-                  value={pkr(outstandingPay)}
-                  hint="Across every payslip, all time"
-                />
-              )}
-            </div>
-
-            {/* ── Month selector, shared by the attendance and pay cards above ── */}
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="text-sm text-muted-foreground">Month</label>
-              <select
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className="px-2 py-1.5 border border-border rounded-md text-sm bg-card"
-              >
-                {recentMonths().map((m) => (
-                  <option key={m} value={m}>
-                    {fmtMonth(m)}
-                  </option>
-                ))}
-              </select>
-              <span className="text-xs text-muted-foreground">
-                Changes the attendance and net-pay cards above, and the attendance list below.
-              </span>
-            </div>
-
-            {/* ── Attendance ── */}
-            <Section title={`Attendance · ${fmtMonth(month)}`} count={attendance.length}>
-              {attendance.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-muted-foreground text-center">
-                  Nothing marked for this month.
-                </p>
-              ) : (
-                <div className="p-4 flex flex-wrap gap-1.5">
-                  {attendance.map((a) => {
-                    const s = (a.status ?? "").toLowerCase();
-                    const tone = s.startsWith("present") || s === "double_duty"
-                      ? "bg-success-100 text-success-700 dark:text-success-500 border-success-200"
-                      : s.startsWith("absent")
-                        ? "bg-danger-50 text-danger-700 border-danger-200"
-                        : s.startsWith("leave")
-                          ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                          : "bg-muted/50 text-muted-foreground border-border";
-                    return (
-                      <span
-                        key={a.attendance_date}
-                        title={`${formatDate(a.attendance_date)} — ${a.status}`}
-                        className={`inline-flex flex-col items-center justify-center w-10 h-10 rounded border text-[11px] ${tone}`}
-                      >
-                        <span className="font-medium">{Number(a.attendance_date.slice(8, 10))}</span>
-                        <span className="uppercase">{(a.status ?? "?")[0]}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
             </Section>
 
             {/* ── Payslips ── */}

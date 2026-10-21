@@ -168,6 +168,30 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — Recurring expense detector: flag a payee paid every month that is
   not set up as a fixed expense.
 
+## Contract Renewals
+
+- **Built** — A renewal board: one column per stage, cards move forward or
+  back with one tap. The band counts each stage (tap to filter the board) and
+  shows the share of decided renewals that were kept.
+- **Built** — "Ending in 90 days, not in the pipeline": live contracts close
+  to their end that nobody has started on, one tap to add them with the
+  contract's end date as the close date. Follows the region.
+- **Idea** — Owner and next step on each card (who is calling, what was
+  agreed), and a reminder when a card has not moved in 14 days.
+- **Idea** — On "Renewed", offer to draft the new contract from the old one
+  with the agreed increase.
+
+## My Profile
+
+- **Built** — The band says who you are (posting, region, shift, joined) and
+  the month: base salary, days present out of the month, net pay with paid or
+  owed, cash you hold (custodians) or pay owed to you, and a six-month pay
+  strip (green paid, amber not yet).
+- **Built** — Attendance as a real calendar, each date under its weekday, with
+  unmarked days shown as unmarked rather than missing.
+- **Idea** — A downloadable payslip PDF per month, and leave balance (taken
+  and left) beside attendance.
+
 ## Compliance and Admin
 
 - **Built** — Compliance: priority tiles and guard-data coverage meters.
