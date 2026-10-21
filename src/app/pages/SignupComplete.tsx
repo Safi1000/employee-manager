@@ -96,7 +96,7 @@ export default function SignupComplete() {
       <div className="absolute right-5 top-5"><ThemeToggle /></div>
 
       <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/15 text-brand-600 dark:text-brand-500">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-on-brand">
           <Shield className="h-6 w-6" />
         </div>
         <p className="font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>Bastion</p>

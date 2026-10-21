@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Plus, Loader2, UserPlus, KeyRound } from "lucide-react";
 import Button from "../../components/Button";
+import Header from "../../components/Header";
 import Modal from "../../components/Modal";
 import { supabase, type Company, type Profile, type UserRole } from "../../lib/supabase";
 import { callCreateUser, callChangePassword } from "../../lib/auth";
@@ -111,33 +112,66 @@ export default function CompanyDetail() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
-        <Link to="/super-super-admin" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to companies
-        </Link>
-
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+      <Header
+        title={company?.name ?? "Company"}
+        subtitle={company ? `Tenant ${company.id}` : loading ? "Loading…" : "Company not found"}
+        actions={
+          <div className="flex items-center gap-2">
+            <Link to="/super-super-admin" className="inline-flex items-center gap-1 rounded-xl border border-border px-3 min-h-10 text-sm text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="w-4 h-4" /> All companies
+            </Link>
+            {company && (
+              <Button variant="primary" onClick={() => setInviteOpen((v) => !v)}>
+                <UserPlus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Add Super Admin
+              </Button>
+            )}
+          </div>
+        }
+      >
+        {company && (() => {
+          const byRole = new Map<string, number>();
+          for (const u of users) byRole.set(u.role, (byRole.get(u.role) ?? 0) + 1);
+          const exp = (company as { subscription_expires_at?: string | null }).subscription_expires_at ?? null;
+          const left = exp ? Math.round((new Date(exp + "T00:00:00").getTime() - new Date(new Date().toDateString()).getTime()) / 86400000) : null;
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Status</span>
+                <span className={`font-display text-2xl font-bold leading-none ${company.active ? "text-up" : "text-down"}`}>{company.active ? "Active" : "Switched off"}</span>
+                <span className="text-xs text-muted-foreground">{company.active ? "its users can sign in" : "its users are blocked; data kept"}</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Users</span>
+                <span className="font-ledger text-2xl font-semibold leading-none">{users.length}</span>
+                <span className="text-xs text-muted-foreground truncate">{[...byRole].map(([r, n]) => `${n} ${r.replace(/_/g, " ")}`).join(" · ") || "no users yet"}</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Super admins</span>
+                <span className={`font-ledger text-2xl font-semibold leading-none ${(byRole.get("super_admin") ?? 0) === 0 ? "text-heed" : ""}`}>{byRole.get("super_admin") ?? 0}</span>
+                <span className="text-xs text-muted-foreground">{(byRole.get("super_admin") ?? 0) === 0 ? "add one so the company can be run" : "can manage the company"}</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Subscription</span>
+                <span className={`font-ledger text-2xl font-semibold leading-none ${left == null ? "" : left < 0 ? "text-down" : left <= 14 ? "text-heed" : "text-up"}`}>{left == null ? "—" : left < 0 ? `${-left}d over` : `${left}d left`}</span>
+                <span className="text-xs text-muted-foreground">{exp ? `paid until ${exp}` : "no subscription recorded"}</span>
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
+      <div className="max-w-6xl">
         {loading ? (
           <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
         ) : !company ? (
           <p className="text-muted-foreground">Company not found.</p>
         ) : (
           <>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-8">
-              <div>
-                <h1 className="text-2xl text-foreground">{company.name}</h1>
-                <p className="text-sm text-muted-foreground mt-1 font-mono">{company.id}</p>
-              </div>
-              <Button variant="primary" onClick={() => setInviteOpen((v) => !v)} className="self-stretch md:self-auto">
-                <UserPlus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                Add Super Admin
-              </Button>
-            </div>
-
             {inviteOpen && (
               <form onSubmit={handleInvite} className="bg-card border border-border rounded-2xl p-4 md:p-6 mb-6 space-y-4">
                 <div>
-                  <h3 className="text-base text-foreground">Add Super Admin for {company.name}</h3>
+                  <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Add Super Admin for {company.name}</h3>
                   <p className="text-xs text-muted-foreground mt-1">
                     Creates a Super Admin (full company access). For HR / Accounting / custom-title users,
                     sign in as this admin and use the in-app User Management page.
@@ -146,11 +180,11 @@ export default function CompanyDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-foreground mb-1">Email *</label>
-                    <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required className="w-full px-3 py-2 border border-border rounded-md text-sm" />
+                    <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm" />
                   </div>
                   <div>
                     <label className="block text-sm text-foreground mb-1">Full Name</label>
-                    <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md text-sm" />
+                    <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm" />
                   </div>
                   <div>
                     <label className="block text-sm text-foreground mb-1">Title</label>
@@ -158,13 +192,13 @@ export default function CompanyDetail() {
                       value={inviteTitle}
                       onChange={(e) => setInviteTitle(e.target.value)}
                       placeholder="e.g. CEO, Founder, Director"
-                      className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                      className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                     />
                     <p className="text-xs text-muted-foreground mt-1">Free-form display label.</p>
                   </div>
                   <div>
                     <label className="block text-sm text-foreground mb-1">Temporary Password *</label>
-                    <input type="text" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} required minLength={8} className="w-full px-3 py-2 border border-border rounded-md text-sm font-mono" />
+                    <input type="text" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} required minLength={8} className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm font-mono" />
                     <p className="text-xs text-muted-foreground mt-1">At least 8 characters. Share securely.</p>
                   </div>
                 </div>
@@ -180,7 +214,7 @@ export default function CompanyDetail() {
 
             {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
-            <h2 className="text-lg text-foreground mb-4">Users</h2>
+            <h2 className="font-display text-lg font-bold tracking-tight text-foreground mb-4">Users</h2>
             {users.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 text-center">
                 <Plus className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" strokeWidth={1.5} />

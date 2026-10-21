@@ -192,6 +192,47 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — A downloadable payslip PDF per month, and leave balance (taken
   and left) beside attendance.
 
+## Accounting Core (Chart of Accounts, Opening Balances)
+
+- **Built** — Chart of Accounts: one tile per account type (accounts and how
+  many have postings; tap to jump to that part of the tree), the share of the
+  chart in use, and an "Only accounts with postings" filter that keeps each
+  match's parents. Counts only — balances stay in the tree, from the ledger.
+- **Built** — Opening Balances: the batch's debit, credit and balance on the
+  band (from `opening_batch_totals`), and the four steps a batch passes
+  (create, add lines, balance, post) with the current one lit.
+- **Idea** — Chart of Accounts: show unused accounts older than a year as
+  candidates to switch off.
+- **Idea** — Opening Balances: import a trial balance from Excel straight into
+  a draft batch.
+
+## Partnership Run
+
+- **Built** — The month picker, status and actions move onto the band. The
+  month shows as four gates (ready to draft, drafted, reviewed, posted), each
+  answered by the database (the blocker, the run, the review, the deadline),
+  with the run's own totals: profit to divide, regional and equity shares.
+- **Idea** — A month-by-month strip of the year: which months are posted,
+  drafted, late or not started.
+
+## Sign-up
+
+- **Built** — The price summary sits on the dark band with the monthly total
+  shown large; the brand mark matches the rail.
+- (Login already had the new look; Role Selection only routes to the landing
+  page.)
+
+## Platform (Companies, Company Detail)
+
+- **Built** — Companies gets the command band: companies (active / switched
+  off), employees and users across every tenant, and subscriptions lapsed or
+  ending within 14 days.
+- **Built** — Company Detail: status, users by role, super admins (amber when
+  there are none), and subscription days left, with back and Add Super Admin
+  on the band.
+- **Idea** — A renewal list on Companies: tenants whose subscription ends this
+  month, with "record payment" one tap away.
+
 ## Compliance and Admin
 
 - **Built** — Compliance: priority tiles and guard-data coverage meters.

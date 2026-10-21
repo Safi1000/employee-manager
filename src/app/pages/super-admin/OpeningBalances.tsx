@@ -296,7 +296,56 @@ export default function OpeningBalances() {
 
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-      <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)" />
+      <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)">
+        {(() => {
+          // Where the selected batch stands, as the four steps it has to pass.
+          // The money on this band is opening_batch_totals' — nothing summed here.
+          const drafts = batches.filter((b) => String(b.status) === "draft").length;
+          const done = batches.length - drafts;
+          const step = !selected ? 0 : posted ? 4 : lines.length === 0 ? 1 : balanced ? 3 : 2;
+          const steps = ["Create a batch", "Add the lines", "Make it balance", "Post it"];
+          const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">Batches</span>
+                  <span className={fig}>{batches.length}</span>
+                  <span className="text-xs text-muted-foreground">{done} posted · {drafts} draft</span>
+                </div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">Debit</span>
+                  <span className={fig}>{totals ? <><span className="cur">PKR</span>{money(totals.total_debit)}</> : "—"}</span>
+                  <span className="text-xs text-muted-foreground">{selected ? `${lines.length} line${lines.length === 1 ? "" : "s"} in this batch` : "pick a batch"}</span>
+                </div>
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">Credit</span>
+                  <span className={fig}>{totals ? <><span className="cur">PKR</span>{money(totals.total_credit)}</> : "—"}</span>
+                  <span className="text-xs text-muted-foreground">{selBatch ? `as of ${selBatch.as_of_date}` : "—"}</span>
+                </div>
+                <div className={`rounded-[14px] border bg-card px-4 py-3 flex flex-col gap-1 ${totals && !balanced ? "border-heed/50" : "border-border"}`}>
+                  <span className="lbl">Balance</span>
+                  <span className={`${fig} ${!totals ? "" : balanced ? "text-up" : "text-heed"}`}>
+                    {!totals ? "—" : balanced ? "Balanced" : money(Math.abs(Number(totals.total_debit ?? 0) - Number(totals.total_credit ?? 0)))}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{!totals ? "pick a batch" : balanced ? (posted ? "posted to the ledger" : "ready to post") : "out by — debit and credit must match"}</span>
+                </div>
+              </div>
+              <ol className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {steps.map((label, i) => {
+                  const state = step > i ? "done" : step === i ? "now" : "next";
+                  return (
+                    <li key={label} className={`rounded-xl border px-3 py-2 flex items-center gap-2 text-xs ${state === "now" ? "border-brand-500 text-foreground" : "border-border text-muted-foreground"}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${state === "done" ? "bg-up text-ink" : state === "now" ? "bg-brand-500 text-on-brand" : "bg-muted text-muted-foreground"}`}>{state === "done" ? "✓" : i + 1}</span>
+                      {label}
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          );
+        })()}
+      </Header>
       {/* whitespace-pre-line: the staleness refusal lists what moved, one
           account per line, and a single-line paragraph would run them together. */}
       {err && <p className="text-sm text-danger-600 mb-3 whitespace-pre-line">{err}</p>}
@@ -304,13 +353,13 @@ export default function OpeningBalances() {
       <div className="grid md:grid-cols-3 gap-6">
         {/* Batch list + create */}
         <div className="space-y-4">
-          <section className="border border-border rounded-md p-3 space-y-2">
-            <h3 className="text-sm text-foreground">New batch</h3>
+          <section className="bg-card border border-border rounded-2xl p-4 space-y-2">
+            <h3 className="font-display text-base font-bold tracking-tight text-foreground">New batch</h3>
             <input type="date" className={FIELD + " w-full"} value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             <input className={FIELD + " w-full"} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description" />
             <Button variant="primary" size="sm" disabled={busy} onClick={createBatch}>Create batch</Button>
           </section>
-          <section className="border border-border rounded-md divide-y divide-border">
+          <section className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
             {batches.map((b) => (
               <button key={b.id} onClick={() => setSelected(b.id)}
                 ref={b.id === focusBatch ? focusBatchRow : undefined}
@@ -332,18 +381,12 @@ export default function OpeningBalances() {
 
         {/* Selected batch lines */}
         <div className="md:col-span-2 space-y-4">
-          {!selected && <p className="text-sm text-muted-foreground">Select or create a batch.</p>}
+          {!selected && <div className="bg-card border border-dashed border-border rounded-2xl p-8 text-center text-sm text-muted-foreground">Pick a batch on the left, or create one with the date the opening balances are as of.</div>}
           {selected && (
             <>
-              {totals && (
-                <div className={`rounded-md border p-3 text-sm flex items-center justify-between ${balanced ? "bg-success-50 border-success-200 text-success-700" : "bg-warning-50 border-warning-200 text-warning-700"}`}>
-                  <span>Debit {money(totals.total_debit)} · Credit {money(totals.total_credit)}</span>
-                  <span className="font-medium">{balanced ? "Balanced" : `Out by ${money(Math.abs(Number(totals.total_debit ?? 0) - Number(totals.total_credit ?? 0)))}`}</span>
-                </div>
-              )}
 
               {!posted && (
-                <section className="border border-border rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                <section className="bg-card border border-border rounded-2xl p-4 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                   <div className="col-span-2">
                     <label className="text-xs text-muted-foreground block mb-1">Account</label>
                     <ThemedSelect className={FIELD + " w-full"} value={accId} onChange={(e) => setAccId(e.target.value)}>
@@ -383,7 +426,7 @@ export default function OpeningBalances() {
                 </div>
               )}
 
-              <div className="overflow-x-auto border border-border rounded-md">
+              <div className="overflow-x-auto bg-card border border-border rounded-2xl">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>

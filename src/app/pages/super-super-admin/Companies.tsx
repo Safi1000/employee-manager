@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Building2, Plus, Loader2, ArrowRight, Eye, Power, CreditCard, X } from "lucide-react";
 import Button from "../../components/Button";
+import Header from "../../components/Header";
 import { supabase, type Company, type SubscriptionPayment } from "../../lib/supabase";
 import { formatDate } from "../../lib/date";
 import { useAuth } from "../../lib/auth";
@@ -203,22 +204,50 @@ export default function Companies() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-4 md:p-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl text-foreground">Companies</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage all tenant companies, their admins, and access.</p>
-          </div>
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+      <Header
+        title="Companies"
+        subtitle="Every tenant, its people and its subscription — open one, or view the app as it"
+        actions={
           <Button variant="primary" onClick={() => setAddOpen((v) => !v)}>
             <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
             New Company
           </Button>
-        </div>
+        }
+      >
+        {!loading && (() => {
+          // Counts of the rows on this page: tenants, and the people the list
+          // already counted per tenant. Nothing here is money.
+          const active = companies.filter((c) => c.active).length;
+          const today = todayStr();
+          const left = (c: CompanyRow) => (c.subscription_expires_at ? daysBetween(today, c.subscription_expires_at) : null);
+          const lapsed = companies.filter((c) => c.active && (left(c) ?? 1) < 0).length;
+          const soon = companies.filter((c) => c.active && (left(c) ?? -1) >= 0 && (left(c) ?? 99) <= 14).length;
+          const noSub = companies.filter((c) => c.active && c.subscription_expires_at == null).length;
+          const tiles = [
+            { k: "Companies", v: companies.length, sub: `${active} active · ${companies.length - active} switched off`, tone: "" },
+            { k: "Employees", v: companies.reduce((n, c) => n + (c.employee_count ?? 0), 0), sub: "across every tenant", tone: "" },
+            { k: "Users", v: companies.reduce((n, c) => n + (c.user_count ?? 0), 0), sub: "logins across every tenant", tone: "" },
+            { k: "Subscriptions", v: lapsed + soon, sub: `${lapsed} lapsed · ${soon} ending in 14 days · ${noSub} not set`, tone: lapsed ? "text-down" : soon ? "text-heed" : "text-up" },
+          ];
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {tiles.map((t) => (
+                <div key={t.k} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                  <span className="lbl">{t.k}</span>
+                  <span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v.toLocaleString()}</span>
+                  <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </Header>
+      <div>
 
         {addOpen && (
           <form onSubmit={handleAdd} className="bg-card border border-border rounded-2xl p-6 mb-6 space-y-4">
-            <h3 className="text-base text-foreground">Add Company</h3>
+            <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Add Company</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm text-foreground mb-1">Name *</label>
@@ -229,7 +258,7 @@ export default function Companies() {
                     if (!prefixTouched) setPrefix(suggestPrefix(e.target.value));
                   }}
                   required
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 />
               </div>
               <div>
@@ -239,7 +268,7 @@ export default function Companies() {
                   onChange={(e) => { setPrefix(e.target.value.toUpperCase()); setPrefixTouched(true); }}
                   placeholder="e.g. GGS, DE"
                   maxLength={6}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm uppercase"
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm uppercase"
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
                   {name.trim() && !prefixTouched && prefix
@@ -250,11 +279,11 @@ export default function Companies() {
               </div>
               <div>
                 <label className="block text-sm text-foreground mb-1">Contact Email</label>
-                <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md text-sm" />
+                <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm" />
               </div>
               <div>
                 <label className="block text-sm text-foreground mb-1">Contact Phone</label>
-                <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md text-sm" />
+                <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm" />
               </div>
             </div>
             <div className="flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-[12px] text-warning-700">
@@ -281,7 +310,7 @@ export default function Companies() {
             <p className="text-muted-foreground">No companies yet. Create your first tenant above.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto border-y border-border">
+          <div className="overflow-x-auto bg-card border border-border rounded-2xl">
             <table className="w-full min-w-[880px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>

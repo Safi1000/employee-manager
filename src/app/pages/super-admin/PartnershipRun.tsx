@@ -287,54 +287,102 @@ export default function PartnershipRun() {
       <Header
         title="Partnership Run"
         subtitle="Draft a month, review what it would pay, then post it to every partner's account"
-      />
+        actions={
+          <div className="flex items-center gap-2">
+            {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+            <ThemedSelect
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              aria-label="Month"
+              className="w-44 min-h-10 rounded-xl"
+            >
+              {periodOptions.map((p) => <option key={p} value={p}>{monthName(p)}</option>)}
+            </ThemedSelect>
+          </div>
+        }
+      >
+        {(() => {
+          // The month as the four gates it passes. Every state here is a
+          // database answer: the blocker, the run row, the review and the
+          // deadline. The money is the run's own totals, never re-added.
+          const flags = review.length + uninvoiced.length;
+          const stages: { label: string; sub: string; state: "done" | "now" | "next" | "stop" }[] = [
+            { label: "Ready to draft", sub: blocker ? "blocked — see below" : "nothing in the way", state: blocker ? "stop" : "done" },
+            { label: "Drafted", sub: run ? (run.status === "REVERSED" ? "reversed — draft again" : "computed, not posted") : "not yet", state: run && run.status !== "REVERSED" ? "done" : blocker ? "next" : "now" },
+            { label: "Reviewed", sub: run ? (flags ? `${flags} thing${flags === 1 ? "" : "s"} to look at` : "nothing flagged") : "after the draft", state: !run || run.status === "REVERSED" ? "next" : run.status === "POSTED" ? "done" : flags ? "now" : "done" },
+            { label: "Posted", sub: run?.status === "POSTED" ? `to every partner${run.posted_at ? ` · ${longDate(run.posted_at.slice(0, 10))}` : ""}` : deadline ? (deadline.days_late > 0 ? `${deadline.days_late}d late · due ${longDate(deadline.due_date)}` : `due ${longDate(deadline.due_date)}`) : "—", state: run?.status === "POSTED" ? "done" : run?.status === "DRAFT" ? "now" : "next" },
+          ];
+          const dot = { done: "bg-up text-ink", now: "bg-brand-500 text-on-brand", next: "bg-muted text-muted-foreground", stop: "bg-down text-ink" } as const;
+          const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
+          return (
+            <div className="flex flex-col gap-3">
+              <ol className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {stages.map((st, i) => (
+                  <li key={st.label} className={`rounded-[14px] border bg-card px-4 py-3 flex items-start gap-3 ${st.state === "now" ? "border-brand-500" : st.state === "stop" ? "border-down/60" : "border-border"}`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${dot[st.state]}`}>{st.state === "done" ? "✓" : st.state === "stop" ? "!" : i + 1}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-foreground">{st.label}</span>
+                      <span className={`block text-xs truncate ${st.state === "stop" || (st.label === "Posted" && deadline && deadline.days_late > 0 && run?.status !== "POSTED") ? "text-down" : "text-muted-foreground"}`}>{st.sub}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              {run && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { k: `Profit to divide · ${run.basis === "cash" ? "net cash" : run.basis === "revenue" ? "total income" : "basis not set"}`, v: run.total_profit },
+                    { k: "To regional partners", v: run.regional_total },
+                    { k: "To equity partners", v: run.equity_total },
+                  ].map((x) => (
+                    <div key={x.k} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                      <span className="lbl truncate">{x.k}</span>
+                      <span className={`${fig} ${Number(x.v ?? 0) < 0 ? "text-down" : ""}`}><span className="cur">PKR</span>{acct(x.v)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            {/* ── Actions ─────────────────────────────────────────────────────── */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                disabled={busy !== null || !!blocker || run?.status === "POSTED"}
+                onClick={draft}
+              >
+                {busy === "draft" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {run?.status === "DRAFT" ? "Re-draft" : "Draft this month"}
+              </Button>
+
+              {run?.status === "DRAFT" && (
+                <Button variant="primary" disabled={busy !== null || !canPost} onClick={() => post(false)}>
+                  {busy === "post" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Post the run
+                </Button>
+              )}
+
+              {run?.status === "POSTED" && (
+                <Button variant="danger" disabled={busy !== null || !canPost} onClick={reverse}>
+                  {busy === "reverse" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                  Reverse
+                </Button>
+              )}
+
+              {!canPost && run?.status === "DRAFT" && (
+                <span className="text-xs text-muted-foreground">
+                  Posting needs the <code className="text-[11px]">partnership.post</code> permission.
+                </span>
+              )}
+              {run?.status === "DRAFT" && (
+                <span className="text-xs text-muted-foreground">
+                  Re-drafting overwrites the draft. Nothing reaches the ledger until it is posted.
+                </span>
+              )}
+            </div>
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-5">
-        {/* ── Month, status, deadline ─────────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-2xl p-4 md:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-muted-foreground">Month:</label>
-              <ThemedSelect
-                value={period}
-                onChange={(e) => setPeriod(e.target.value)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
-              >
-                {periodOptions.map((p) => <option key={p} value={p}>{monthName(p)}</option>)}
-              </ThemedSelect>
-              {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/70" />}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {run ? (
-                <span className={`px-2 py-0.5 rounded text-xs border ${STATUS_STYLE[run.status] ?? ""}`}>
-                  {run.status}
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded text-xs border bg-muted/50 text-muted-foreground border-border">
-                  NOT DRAFTED
-                </span>
-              )}
-            </div>
-          </div>
-
-          {deadline && (
-            <div className="mt-3 pt-3 border-t border-border text-xs flex items-start gap-1.5">
-              <CalendarClock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground/70" />
-              {deadline.posted ? (
-                <span className="text-success-700">Posted. It was due {longDate(deadline.due_date)}.</span>
-              ) : deadline.days_late > 0 ? (
-                <span className="text-danger-700">
-                  <strong>{deadline.days_late} day{deadline.days_late === 1 ? "" : "s"} late</strong> —
-                  due {longDate(deadline.due_date)} and not posted.
-                </span>
-              ) : (
-                <span className="text-muted-foreground">Due {longDate(deadline.due_date)}.</span>
-              )}
-            </div>
-          )}
-        </div>
-
         {error && (
           <div className="bg-danger-50 border border-danger-200 rounded-lg px-4 py-3">
             {/* Whitespace preserved: the staleness and completeness refusals are
@@ -360,56 +408,11 @@ export default function PartnershipRun() {
           </div>
         )}
 
-        {/* ── Actions ─────────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="secondary"
-            disabled={busy !== null || !!blocker || run?.status === "POSTED"}
-            onClick={draft}
-          >
-            {busy === "draft" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-            {run?.status === "DRAFT" ? "Re-draft" : "Draft this month"}
-          </Button>
-
-          {run?.status === "DRAFT" && (
-            <Button variant="primary" disabled={busy !== null || !canPost} onClick={() => post(false)}>
-              {busy === "post" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Post the run
-            </Button>
-          )}
-
-          {run?.status === "POSTED" && (
-            <Button variant="danger" disabled={busy !== null || !canPost} onClick={reverse}>
-              {busy === "reverse" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-              Reverse
-            </Button>
-          )}
-
-          {!canPost && run?.status === "DRAFT" && (
-            <span className="text-xs text-muted-foreground">
-              Posting needs the <code className="text-[11px]">partnership.post</code> permission.
-            </span>
-          )}
-          {run?.status === "DRAFT" && (
-            <span className="text-xs text-muted-foreground">
-              Re-drafting overwrites the draft. Nothing reaches the ledger until it is posted.
-            </span>
-          )}
-        </div>
-
-        {/* ── Totals ──────────────────────────────────────────────────────── */}
-        {run && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Stat label={`Profit to divide (${run.basis === "cash" ? "Net Cash" : run.basis === "revenue" ? "Total Income" : "basis not set"})`} value={acct(run.total_profit)} />
-            <Stat label="Regional partners" value={acct(run.regional_total)} />
-            <Stat label="Equity partners" value={acct(run.equity_total)} />
-          </div>
-        )}
 
         {/* ── What it would pay ───────────────────────────────────────────── */}
         {run && partnerRows.length > 0 && (
           <section className="bg-card border border-border rounded-2xl overflow-hidden">
-            <h3 className="text-sm text-foreground px-4 py-3 border-b border-border">
+            <h3 className="font-display text-base font-bold tracking-tight text-foreground px-5 py-3.5 border-b border-border">
               What this run pays
             </h3>
             <div className="overflow-x-auto">
@@ -469,7 +472,7 @@ export default function PartnershipRun() {
 
         {/* ── Review ──────────────────────────────────────────────────────── */}
         <section className="bg-card border border-border rounded-2xl">
-          <h3 className="text-sm text-foreground px-4 py-3 border-b border-border">
+          <h3 className="font-display text-base font-bold tracking-tight text-foreground px-5 py-3.5 border-b border-border">
             Review — {monthName(period)}
           </h3>
           <div className="p-4 space-y-4">

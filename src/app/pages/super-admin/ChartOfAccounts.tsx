@@ -75,6 +75,8 @@ export default function ChartOfAccounts() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [coaSearch, setCoaSearch] = usePageState("ChartOfAccounts.coaSearch", "");
+  // Only accounts the ledger has touched (2026-10-21), with their parents.
+  const [onlyMoved, setOnlyMoved] = usePageState("ChartOfAccounts.onlyMoved", false);
 
   // What 0342 will refuse, computed once for the edit dialog. See the note in
   // the dialog for why this keys on system_key rather than system_account.
@@ -171,17 +173,16 @@ export default function ChartOfAccounts() {
 
   const filteredAccounts = useMemo(() => {
     const q = coaSearch.trim().toLowerCase();
-    if (!q) return accounts;
+    const moved = (a: ChartAccount) => { const b = balances.get(a.id); return !!b && (b.debit !== 0 || b.credit !== 0); };
+    if (!q && !onlyMoved) return accounts;
     // A matching child keeps its parent visible, otherwise a search for a
     // custodian's cash account shows it floating with no control account above
     // it and no indication of what it rolls up into.
     const byId = new Map(accounts.map((a) => [a.id, a]));
     const keep = new Set<string>();
     for (const a of accounts) {
-      if (
-        a.account_code.toLowerCase().includes(q) ||
-        a.account_name.toLowerCase().includes(q)
-      ) {
+      const matches = !q || a.account_code.toLowerCase().includes(q) || a.account_name.toLowerCase().includes(q);
+      if (matches && (!onlyMoved || moved(a))) {
         keep.add(a.id);
         let p = a.parent_id;
         while (p && !keep.has(p)) {
@@ -191,7 +192,7 @@ export default function ChartOfAccounts() {
       }
     }
     return accounts.filter((a) => keep.has(a.id));
-  }, [accounts, coaSearch]);
+  }, [accounts, coaSearch, onlyMoved, balances]);
 
   const childrenOf = useMemo(() => {
     const m = new Map<string | null, ChartAccount[]>();
@@ -347,7 +348,47 @@ export default function ChartOfAccounts() {
             }
           />
         }
-      />
+      >
+        {!loading && (() => {
+          // Counts, not money: how big each part of the tree is and how much of
+          // it the ledger has used. Balances stay in the tree, read from 0320.
+          const moved = (a: ChartAccount) => { const b = balances.get(a.id); return !!b && (b.debit !== 0 || b.credit !== 0); };
+          const live = accounts.filter((a) => a.active);
+          const used = accounts.filter(moved).length;
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                {ACCOUNT_TYPE_ORDER.map((t) => {
+                  const ofType = accounts.filter((a) => a.account_type === t);
+                  const usedOfType = ofType.filter(moved).length;
+                  return (
+                    <button key={t} type="button"
+                      onClick={() => document.getElementById(`coa-${t}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      className="text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 hover:border-brand-500/60 min-w-0">
+                      <span className="lbl truncate">{ACCOUNT_TYPE_LABEL[t]}</span>
+                      <span className="font-ledger text-2xl font-semibold leading-none">{ofType.length}</span>
+                      <span className="text-xs text-muted-foreground truncate">{usedOfType} with postings</span>
+                    </button>
+                  );
+                })}
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5 min-w-0">
+                  <span className="lbl">In use</span>
+                  <span className="font-ledger text-2xl font-semibold leading-none">{accounts.length ? Math.round((used / accounts.length) * 100) : 0}%</span>
+                  <span className="h-1.5 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${accounts.length ? (used / accounts.length) * 100 : 0}%` }} /></span>
+                  <span className="text-xs text-muted-foreground truncate">{live.length} active · {accounts.length - live.length} inactive · {accounts.filter((a) => a.is_control).length} control</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setOnlyMoved(!onlyMoved)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${onlyMoved ? "bg-brand-500 text-on-brand border-brand-500" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                  Only accounts with postings
+                </button>
+                <span className="text-xs text-muted-foreground">{used} of {accounts.length} accounts have a posting{region ? ` in ${region.name}` : ""}.</span>
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
@@ -369,7 +410,7 @@ export default function ChartOfAccounts() {
                 value={coaSearch}
                 onChange={(e) => setCoaSearch(e.target.value)}
                 placeholder="Search code or name…"
-                className="w-full pl-10 pr-3 py-2 border border-border rounded-md text-sm"
+                className="w-full pl-10 pr-3 py-2 border border-border rounded-xl text-sm bg-card"
               />
             </div>
             {isSuper && (
@@ -397,8 +438,8 @@ export default function ChartOfAccounts() {
                 const roots = rootsByType.get(type) ?? [];
                 if (roots.length === 0) return null;
                 return (
+                  <div key={type} id={`coa-${type}`} className="scroll-mt-40">
                   <CoaTypeSection
-                    key={type}
                     type={type}
                     roots={roots}
                     childrenOf={childrenOf}
@@ -408,6 +449,7 @@ export default function ChartOfAccounts() {
                     onEdit={openEdit}
                     onDelete={handleDelete}
                   />
+                  </div>
                 );
               })}
             </div>

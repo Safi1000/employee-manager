@@ -89,7 +89,7 @@ export default function Signup() {
         <div>
           <div className="mb-8 flex items-center justify-between">
             <Link to="/" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/15 text-brand-600 dark:text-brand-500">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-on-brand">
                 <Shield className="h-6 w-6" />
               </div>
               <div>
@@ -213,48 +213,44 @@ export default function Signup() {
 
         {/* ── live quote ── */}
         <aside className="lg:sticky lg:top-16 lg:self-start">
-          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xl shadow-black/5">
-            <div className="border-b border-border px-6 py-4">
-              <p className="text-sm font-semibold text-foreground">Your monthly invoice</p>
-              <p className="text-xs text-muted-foreground">Updates as you change the plan.</p>
+          <div className="band on-dark overflow-hidden rounded-[22px] shadow-xl shadow-black/10">
+            <div className="px-6 pt-5 pb-4">
+              <p className="lbl">Your monthly invoice · updates as you change the plan</p>
+              <div className="mt-3 font-ledger text-4xl font-semibold tracking-tight text-foreground leading-none whitespace-nowrap">{money(quote.total)}</div>
+              <p className="mt-1.5 text-xs text-muted-foreground">per month, for {quote.guards.toLocaleString()} guards</p>
             </div>
 
-            <div className="space-y-3 px-6 py-5">
+            <div className="space-y-2.5 px-6 pb-5">
               {quote.lines.map((l) => (
                 <div key={l.label} className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="text-muted-foreground">
                     <span className="text-foreground">{l.label}</span>{" "}
                     <em className="text-xs not-italic">{l.detail}</em>
                   </span>
-                  <b className="tabular-nums text-foreground">{money(l.amount)}</b>
+                  <b className="font-ledger tabular-nums text-foreground">{money(l.amount)}</b>
                 </div>
               ))}
 
-              <div className="flex items-baseline justify-between gap-3 border-t border-border pt-3 text-base">
-                <span className="font-semibold text-foreground">Total per month</span>
-                <b className="tabular-nums text-foreground">{money(quote.total)}</b>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="rounded-lg bg-muted/50 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Per guard</p>
-                  <p className="mt-1 text-sm font-bold tabular-nums text-foreground">{money(quote.perGuard)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+                <div className="rounded-[14px] border border-border bg-card p-3">
+                  <p className="lbl">Per guard</p>
+                  <p className="mt-1 font-ledger text-lg font-semibold tabular-nums text-foreground">{money(quote.perGuard)}</p>
                 </div>
-                <div className="rounded-lg bg-muted/50 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">AI credit / month</p>
-                  <p className="mt-1 text-sm font-bold tabular-nums text-foreground">{money(quote.aiCredit)}</p>
+                <div className="rounded-[14px] border border-border bg-card p-3">
+                  <p className="lbl">AI credit / month</p>
+                  <p className="mt-1 font-ledger text-lg font-semibold tabular-nums text-foreground">{money(quote.aiCredit)}</p>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-border bg-muted/30 px-6 py-4 text-xs text-muted-foreground">
+            <div className="space-y-2 border-t border-border px-6 py-4 text-xs text-muted-foreground">
               {[
                 `Covers ${quote.guards.toLocaleString()} guards, plus a 5-guard buffer`,
                 "Unlimited users on your team, at no extra cost",
                 "Cancel or change your plan any time",
               ].map((t) => (
                 <div key={t} className="flex items-start gap-2">
-                  <Check className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-success-600" strokeWidth={3} />
+                  <Check className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-up" strokeWidth={3} />
                   <span>{t}</span>
                 </div>
               ))}
