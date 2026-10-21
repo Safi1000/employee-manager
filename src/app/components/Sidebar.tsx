@@ -76,6 +76,8 @@ function BrandMark() {
 interface SidebarProps {
   title: string;
   links: SidebarItem[];
+  /** What is waiting in each section, keyed by section label (navBadges.ts). */
+  badges?: Record<string, { n: number; title: string }>;
 }
 
 const isGroup = (it: SidebarItem): it is SidebarGroup => "type" in it && it.type === "group";
@@ -101,7 +103,7 @@ function currentLink(links: SidebarLink[], path: string): SidebarLink | null {
   return best;
 }
 
-export default function Sidebar({ title, links }: SidebarProps) {
+export default function Sidebar({ title, links, badges = {} }: SidebarProps) {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -202,7 +204,24 @@ export default function Sidebar({ title, links }: SidebarProps) {
         <Search className="w-[18px] h-[18px]" strokeWidth={1.75} />
         <span className="text-[10px] font-semibold leading-none">⌘K</span>
       </button>
-      {sections.map((s) => {
+      {links.map((item) => {
+        if (!isGroup(item)) {
+          const l = item;
+          const home = l.to.split("/").filter(Boolean).length === 1;
+          return (
+            <NavLink key={l.to} to={l.to} end={home} title={badges[l.label]?.title ?? (home ? "Dashboard" : l.label)}
+              className={({ isActive }) => `relative ${railBtn} ${isActive ? railOn : railIdle}`}>
+              {badges[l.label] && (
+                <span className="absolute top-1 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-down text-ink text-[10px] font-bold leading-[18px] text-center">
+                  {badges[l.label].n > 99 ? "99+" : badges[l.label].n}
+                </span>
+              )}
+              <l.icon className="w-[19px] h-[19px]" strokeWidth={1.6} />
+              <span className="text-[10px] font-semibold leading-none truncate max-w-full px-0.5">{home ? "Home" : l.label.split(" ")[0]}</span>
+            </NavLink>
+          );
+        }
+        const s = item;
         const m = metaOf(s);
         const Icon = m.icon;
         const active = !!here && flattenLinks(s.children).some((l) => l.to === here.to);
@@ -215,21 +234,20 @@ export default function Sidebar({ title, links }: SidebarProps) {
             onMouseEnter={() => hoverOpen(s.basePath)}
             onMouseLeave={hoverClose}
             aria-expanded={isOut}
-            aria-label={s.label}
-            className={`${railBtn} ${active ? railOn : isOut ? "bg-sidebar-accent text-foreground" : railIdle}`}
+            aria-label={badges[s.label] ? `${s.label} — ${badges[s.label].title}` : s.label}
+            title={badges[s.label]?.title}
+            className={`relative ${railBtn} ${active ? railOn : isOut ? "bg-sidebar-accent text-foreground" : railIdle}`}
           >
+            {badges[s.label] && (
+              <span className="absolute top-1 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-down text-ink text-[10px] font-bold leading-[18px] text-center">
+                {badges[s.label].n > 99 ? "99+" : badges[s.label].n}
+              </span>
+            )}
             <Icon className="w-[19px] h-[19px]" strokeWidth={1.6} />
             <span className="text-[10px] font-semibold leading-none truncate max-w-full px-0.5">{m.short}</span>
           </button>
         );
       })}
-      {directLinks.map((l) => (
-        <NavLink key={l.to} to={l.to} end={l.to.split("/").length === 2} title={l.label}
-          className={({ isActive }) => `${railBtn} ${isActive ? railOn : railIdle}`}>
-          <l.icon className="w-[19px] h-[19px]" strokeWidth={1.6} />
-          <span className="text-[10px] font-semibold leading-none truncate max-w-full px-0.5">{l.label.split(" ")[0]}</span>
-        </NavLink>
-      ))}
       {pinnedLinks.length > 0 && (
         <>
           <span className="w-8 border-t border-sidebar-border my-1.5" />
@@ -307,6 +325,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
           <div className="px-5 pt-5 pb-3">
             <p className="lbl">{displayTitle}</p>
             <h2 className="font-display text-lg font-bold tracking-tight text-foreground mt-0.5">{flySection.label}</h2>
+            {badges[flySection.label] && <p className="mt-1 text-xs text-down">{badges[flySection.label].title}</p>}
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-3 space-y-0.5">{renderFlyChildren(flySection.children)}</div>
           {pinned.length === 0 && (
@@ -422,9 +441,9 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
       {/* Desktop: the section rail, with its flyout floating over the page */}
       <aside ref={railRef} className="on-dark hidden md:flex relative z-40 w-[76px] flex-shrink-0 bg-sidebar border-r border-sidebar-border flex-col">
-        <div className="h-16 flex items-center justify-center flex-shrink-0" title={displayTitle}>
+        <NavLink to={flat[0]?.to ?? "/"} end title={`${displayTitle} — Dashboard`} aria-label="Dashboard" className="h-16 flex items-center justify-center flex-shrink-0 hover:opacity-90">
           <BrandMark />
-        </div>
+        </NavLink>
         {rail}
         <div className="p-2 border-t border-sidebar-border flex flex-col items-center flex-shrink-0">
           {profile && (

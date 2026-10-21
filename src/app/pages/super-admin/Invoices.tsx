@@ -22,6 +22,7 @@ import {
   Percent,
 } from "lucide-react";
 import Header from "../../components/Header";
+import { useOpenParam } from "../../lib/openParam";
 // Client receivables, moved here from Banks & Ledgers (2026-10-21): that page's
 // own receivables tab, embedded, so statements, receipts and WHT stay one implementation.
 const ClientReceivables = lazy(() => import("./Accounting"));
@@ -926,6 +927,9 @@ export default function Invoices() {
   const editPaymentMaxAllowed = editingPayment && editInvoice
     ? Number(editInvoice.invoice_amount) - (Number(editInvoice.amount_received) - Number(editingPayment.amount))
     : 0;
+
+  // ⌘K action: "New invoice" opens the form directly.
+  useOpenParam("invoice", () => { setTab("ledger"); setForm({ ...emptyForm() }); setFieldErrors({}); setModalError(null); setIsAddOpen(true); }, canEditInvoices);
 
   return (
     <>

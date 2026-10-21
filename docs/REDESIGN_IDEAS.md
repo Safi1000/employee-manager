@@ -162,6 +162,45 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — Client profit: a 6-month net trend per client, and a "what if"
   (rate +5%, one guard fewer) on a client card.
 
+## Round 3 (2026-10-21) — the ideas, built
+
+- **Built** — Client receivables moved to Invoices and Accounts payable to
+  Expenses & Advances (the same code, embedded); Banks & Ledgers keeps bank
+  accounts and cash custody; old links forward with their focus.
+- **Built** — Receivables: an age bar per client (0–30, 31–60, 61–90, 90+
+  days on open invoices) with the 90+ amount called out.
+- **Built** — ⌘K "Do" actions: new expense, new advance, new invoice, record
+  a receipt, generate invoices, new task, mark attendance, add an employee —
+  each opens its form directly (`?new=…`), offered only where you have access.
+- **Built** — Counts on the rail: open alerts on Home, last month's unpaid
+  payslips on Workforce, fixed expenses awaiting a decision on Finance,
+  expired guard documents on Comply. Refresh every five minutes.
+- **Built** — Dashboard is its own Home icon (and the Bastion mark goes
+  there); Tasks has its own icon; the Overview section is gone.
+- **Built** — Client profit: a six-month profit strip per client, and a
+  "what if" on each card (rate +5%, one guard fewer), labelled as a what-if.
+- **Built** — Contract Renewals: owner and next step on each card (the
+  table already had owner_id and notes), and a "Nd idle" flag after 14 days
+  without a change.
+- **Built** — Chart of Accounts: "Unused for a year" — active, never posted
+  to, set up over a year ago — candidates to switch off.
+- **Built** — Partnership Run: the year as a strip of months (posted,
+  drafted, reversed, not started), tap one to open it.
+- **Built** — Companies: renewals lapsed or ending in 30 days, each with
+  "record payment".
+- **Built** — Expenses: "Paid every month, not set up as fixed" — the same
+  payee in each of the last three months with no fixed template.
+- **Built** — Dashboard: a "short for the salary run" chip in Needs attention
+  when payday is a week out and cash plus receivables under 30 days fall short.
+- **Built** — The band's fold animation is back, on a softer curve, at a full
+  60 frames a second through the fold on Employees.
+- **Waiting on approval** — 0527 (client_cover from a contract's start date);
+  Accountant planning (needs new tables); importing an opening trial balance
+  from Excel and bank balance sparklines (both wait on the cutover).
+- **Waiting on the cutover** — Opening balances: the cutover (0519/0523) posts
+  them; it waits on the Lahore roster → Lahore August backfill → redraft the
+  opening batch → cutover.
+
 ## Clients, Contracts, Invoices
 
 - **Built** — Clients: band with clients, guards, owed and largest client's

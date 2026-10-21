@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Building2, CornerDownLeft, FileText, KeyRound, Loader2, LogOut, Moon, Pin, Search, Star, Clock, UserCircle, type LucideIcon } from "lucide-react";
+import { Building2, CalendarCheck, CornerDownLeft, FileText, HandCoins, KeyRound, ListTodo, Loader2, LogOut, Moon, Pin, Plus, Receipt, Search, Star, Clock, UserCircle, UserPlus, type LucideIcon } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { useMode } from "../lib/mode";
@@ -100,6 +100,20 @@ export default function CommandPalette({ links, onChangePassword }: { links: Pal
   const items = useMemo<Item[]>(() => {
     const term = q.trim().toLowerCase();
     const pageItem = (l: PaletteLink, group: string): Item => ({ key: `${group}:${l.to}`, group, title: l.label, meta: l.section, icon: l.icon, run: () => go(l.to), pinPath: l.to });
+    // Things to DO (2026-10-21): each opens the form on its page, and is only
+    // offered when the page itself is one this user can open.
+    const doIt: Item[] = ([
+      { key: "do:expense", title: "New expense", meta: "Expenses & Advances", icon: Receipt, page: "/super-admin/expenses", to: "/super-admin/expenses?new=expense" },
+      { key: "do:advance", title: "New advance to a guard", meta: "Expenses & Advances", icon: HandCoins, page: "/super-admin/expenses", to: "/super-admin/expenses?new=advance" },
+      { key: "do:invoice", title: "New invoice", meta: "Invoices", icon: Plus, page: "/super-admin/invoices", to: "/super-admin/invoices?new=invoice" },
+      { key: "do:receipt", title: "Record a receipt from a client", meta: "Invoices · Receivables", icon: HandCoins, page: "/super-admin/invoices", to: "/super-admin/invoices?tab=receivables" },
+      { key: "do:generate", title: "Generate this month's invoices", meta: "Invoices · Generate", icon: FileText, page: "/super-admin/invoices", to: "/super-admin/invoices?tab=generate" },
+      { key: "do:task", title: "New task", meta: "Task Board", icon: ListTodo, page: "/super-admin/tasks", to: "/super-admin/tasks?new=task" },
+      { key: "do:attendance", title: "Mark attendance", meta: "Attendance", icon: CalendarCheck, page: "/super-admin/attendance", to: "/super-admin/attendance" },
+      { key: "do:employee", title: "Add an employee", meta: "Employees", icon: UserPlus, page: "/super-admin/employees", to: "/super-admin/employees" },
+    ] as (Omit<Item, "group" | "run"> & { page: string; to: string })[])
+      .filter((a) => byPath.has(a.page))
+      .map((a) => ({ key: a.key, group: "Do", title: a.title, meta: a.meta, icon: a.icon, run: () => go(a.to) }));
     const actions: Item[] = [
       { key: "a:mode", group: "Actions", title: "Switch light / dark", icon: Moon, run: () => { toggleMode(); close(); } },
       { key: "a:pw", group: "Actions", title: "Change password", icon: KeyRound, run: () => { close(); onChangePassword(); } },
@@ -108,14 +122,14 @@ export default function CommandPalette({ links, onChangePassword }: { links: Pal
     if (!term) {
       const pins = pinned.map((p) => byPath.get(p)).filter((l): l is PaletteLink => !!l).map((l) => pageItem(l, "Pinned"));
       const rec = recent.filter((p) => !pinned.includes(p)).map((p) => byPath.get(p)).filter((l): l is PaletteLink => !!l).slice(0, 5).map((l) => pageItem(l, "Recent"));
-      return [...pins, ...rec, ...(pins.length + rec.length ? [] : links.slice(0, 8).map((l) => pageItem(l, "Pages"))), ...actions];
+      return [...pins, ...rec, ...(pins.length + rec.length ? [] : links.slice(0, 8).map((l) => pageItem(l, "Pages"))), ...doIt.slice(0, 4), ...actions];
     }
     // Every word must appear in the label or the section: "pay run" finds
     // Payroll Run, "fin rep" finds Financial Reports.
     const words = term.split(/\s+/);
     const match = (s: string) => words.every((w) => s.toLowerCase().includes(w));
     const pages = links.filter((l) => match(`${l.label} ${l.section}`)).map((l) => pageItem(l, "Pages"));
-    return [...pages, ...hits, ...actions.filter((a) => match(a.title))];
+    return [...doIt.filter((a) => match(`${a.title} ${a.meta}`)), ...pages, ...hits, ...actions.filter((a) => match(a.title))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, links, hits, pinned, recent, byPath]);
 

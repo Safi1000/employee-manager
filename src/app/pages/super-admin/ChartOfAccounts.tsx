@@ -77,6 +77,8 @@ export default function ChartOfAccounts() {
   const [coaSearch, setCoaSearch] = usePageState("ChartOfAccounts.coaSearch", "");
   // Only accounts the ledger has touched (2026-10-21), with their parents.
   const [onlyMoved, setOnlyMoved] = usePageState("ChartOfAccounts.onlyMoved", false);
+  // Active accounts never posted to and over a year old: candidates to switch off.
+  const [onlyIdle, setOnlyIdle] = usePageState("ChartOfAccounts.onlyIdle", false);
 
   // What 0342 will refuse, computed once for the edit dialog. See the note in
   // the dialog for why this keys on system_key rather than system_account.
@@ -174,7 +176,9 @@ export default function ChartOfAccounts() {
   const filteredAccounts = useMemo(() => {
     const q = coaSearch.trim().toLowerCase();
     const moved = (a: ChartAccount) => { const b = balances.get(a.id); return !!b && (b.debit !== 0 || b.credit !== 0); };
-    if (!q && !onlyMoved) return accounts;
+    const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+    const idle = (a: ChartAccount) => a.active && !a.system_account && !moved(a) && !!a.created_at && a.created_at < yearAgo && !accounts.some((c) => c.parent_id === a.id);
+    if (!q && !onlyMoved && !onlyIdle) return accounts;
     // A matching child keeps its parent visible, otherwise a search for a
     // custodian's cash account shows it floating with no control account above
     // it and no indication of what it rolls up into.
@@ -182,7 +186,7 @@ export default function ChartOfAccounts() {
     const keep = new Set<string>();
     for (const a of accounts) {
       const matches = !q || a.account_code.toLowerCase().includes(q) || a.account_name.toLowerCase().includes(q);
-      if (matches && (!onlyMoved || moved(a))) {
+      if (matches && (!onlyMoved || moved(a)) && (!onlyIdle || idle(a))) {
         keep.add(a.id);
         let p = a.parent_id;
         while (p && !keep.has(p)) {
@@ -192,7 +196,7 @@ export default function ChartOfAccounts() {
       }
     }
     return accounts.filter((a) => keep.has(a.id));
-  }, [accounts, coaSearch, onlyMoved, balances]);
+  }, [accounts, coaSearch, onlyMoved, onlyIdle, balances]);
 
   const childrenOf = useMemo(() => {
     const m = new Map<string | null, ChartAccount[]>();
@@ -383,6 +387,17 @@ export default function ChartOfAccounts() {
                   className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${onlyMoved ? "bg-brand-500 text-on-brand border-brand-500" : "border-border text-muted-foreground hover:text-foreground"}`}>
                   Only accounts with postings
                 </button>
+                {(() => {
+                  const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+                  const n = accounts.filter((a) => a.active && !a.system_account && !moved(a) && !!a.created_at && a.created_at < yearAgo && !accounts.some((c) => c.parent_id === a.id)).length;
+                  return n > 0 ? (
+                    <button type="button" onClick={() => setOnlyIdle(!onlyIdle)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${onlyIdle ? "bg-brand-500 text-on-brand border-brand-500" : "border-border text-muted-foreground hover:text-foreground"}`}
+                      title="Active, never posted to, set up over a year ago — candidates to switch off">
+                      Unused for a year · {n}
+                    </button>
+                  ) : null;
+                })()}
                 <span className="text-xs text-muted-foreground">{used} of {accounts.length} accounts have a posting{region ? ` in ${region.name}` : ""}.</span>
               </div>
             </div>

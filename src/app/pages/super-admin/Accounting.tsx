@@ -598,6 +598,23 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
     return rows;
   }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec, allPaymentEvents]);
 
+  // Age of what each client owes on open invoices (2026-10-21): 0–30, 31–60,
+  // 61–90 and 90+ days since the invoice date. Opening balances are not
+  // invoices and are not aged here.
+  const ageByClient = useMemo(() => {
+    const m = new Map<string, [number, number, number, number]>();
+    const today = new Date(new Date().toDateString()).getTime();
+    for (const i of allInvoicesForRec) {
+      const owed = invoiceOutstanding(i);
+      if (!(owed > 0) || !i.client_id) continue;
+      const days = Math.floor((today - new Date(`${i.invoice_date.slice(0, 10)}T00:00:00`).getTime()) / 86400000);
+      const b = m.get(i.client_id) ?? [0, 0, 0, 0];
+      b[days <= 30 ? 0 : days <= 60 ? 1 : days <= 90 ? 2 : 3] += owed;
+      m.set(i.client_id, b);
+    }
+    return m;
+  }, [allInvoicesForRec]);
+
   const branchScopedReceivables = useMemo(() => {
     const branch = regionId ?? (receivablesBranchFilter === "all" ? null : receivablesBranchFilter);
     if (!branch) return displayedReceivables;
@@ -2627,20 +2644,21 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                     <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Withholding</th>
                     <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Received</th>
                     <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Outstanding</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground" title="Open invoices by days since invoiced">Age</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">
+                      <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
                   )}
                   {!loading && filteredReceivables.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">
+                      <td colSpan={8} className="px-6 py-10 text-center text-muted-foreground text-sm">
                         No client activity matching the current filters.
                       </td>
                     </tr>
@@ -2718,6 +2736,25 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                                     <span className={`block h-full rounded-full ${owing ? "bg-brand-500" : "bg-success-500"}`} style={{ width: `${pct * 100}%` }} />
                                   </span>
                                   <span className="text-[10px] text-muted-foreground">{owing ? `${Math.round(pct * 100)}% collected` : "settled"}</span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            {(() => {
+                              const b = ageByClient.get(item.id);
+                              const tot = b ? b[0] + b[1] + b[2] + b[3] : 0;
+                              if (!b || tot <= 0) return <span className="text-xs text-muted-foreground">{owing ? "opening only" : "—"}</span>;
+                              const cls = ["bg-success-500", "bg-brand-500", "bg-warning-500", "bg-danger-500"];
+                              const lbl = ["0–30", "31–60", "61–90", "90+"];
+                              return (
+                                <div className="flex flex-col gap-1 w-28" title={b.map((v, k) => `${lbl[k]} days: ${Math.round(v).toLocaleString()}`).join("\n")}>
+                                  <span className="flex h-1.5 rounded-full overflow-hidden bg-muted">
+                                    {b.map((v, k) => v > 0 && <span key={k} className={cls[k]} style={{ width: `${(v / tot) * 100}%` }} />)}
+                                  </span>
+                                  <span className={`text-[10px] ${b[3] > 0 ? "text-danger-700 dark:text-danger-500 font-semibold" : "text-muted-foreground"}`}>
+                                    {b[3] > 0 ? `${Math.round(b[3]).toLocaleString()} past 90 days` : b[2] > 0 ? `${Math.round(b[2]).toLocaleString()} at 61–90` : "all under 60 days"}
+                                  </span>
                                 </div>
                               );
                             })()}

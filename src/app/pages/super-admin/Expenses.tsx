@@ -5,6 +5,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
+import { useOpenParam } from "../../lib/openParam";
 // Accounts payable, moved here from Banks & Ledgers (2026-10-21): that page's
 // own payables tab, embedded, so its figures and actions stay one implementation.
 const AccountsPayable = lazy(() => import("./Accounting"));
@@ -2316,6 +2317,35 @@ export default function Expenses() {
     await loadAll();
   };
 
+  // Paid every month but not set up as a fixed expense (2026-10-21): the same
+  // payee — or, with no vendor, the same category and description — in each
+  // of the last three full months, with no fixed template for that vendor or
+  // category. A suggestion; nothing is created.
+  const recurring = useMemo(() => {
+    const now = new Date();
+    const months = [1, 2, 3].map((k) => { const d = new Date(now.getFullYear(), now.getMonth() - k, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; });
+    const groups = new Map<string, { label: string; vendor: string | null; category: string | null; months: Set<string>; total: number }>();
+    for (const e of expenses) {
+      const m = (e.expense_date ?? "").slice(0, 7);
+      if (!months.includes(m)) continue;
+      const words = (e.description ?? "").toLowerCase().replace(/[^a-z ]/g, " ").split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
+      const key = e.vendor_id ? `v:${e.vendor_id}` : `c:${e.category_id ?? ""}|${words}`;
+      const g = groups.get(key) ?? { label: e.vendor_name ?? (`${e.category_name ?? "Expense"}${words ? ` — ${words}` : ""}`), vendor: e.vendor_id ?? null, category: e.category_id ?? null, months: new Set<string>(), total: 0 };
+      g.months.add(m); g.total += Number(e.amount); groups.set(key, g);
+    }
+    const fixedVendors = new Set(fixedExpenses.map((f) => f.vendor_id).filter(Boolean));
+    const fixedCats = new Set(fixedExpenses.map((f) => f.category_id).filter(Boolean));
+    return [...groups.values()]
+      .filter((g) => g.months.size === months.length && !(g.vendor ? fixedVendors.has(g.vendor) : g.category && fixedCats.has(g.category)))
+      .map((g) => ({ ...g, avg: g.total / months.length }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 6);
+  }, [expenses, fixedExpenses]);
+
+  // ⌘K actions: "New expense" / "New advance" open the form directly.
+  useOpenParam("expense", () => { setActiveTab("expenses"); setFromRequest(null); setForm(emptyForm); setExpenseCustodianId(""); setIsAddOpen(true); }, canEditExpenses);
+  useOpenParam("advance", () => { setActiveTab("advances"); setAdvForm(emptyAdvanceForm); setAdvEmpSearch(""); setIsAdvAddOpen(true); }, canEditExpenses);
+
   const selectedCatName = selected ? categories.find((c) => c.id === selected.category_id)?.name ?? "—" : "";
 
   return (
@@ -2568,6 +2598,18 @@ export default function Expenses() {
                     </div>
                   ))}
                 </div>
+                {recurring.length > 0 && (
+                  <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-2">
+                    <span className="lbl mr-1">Paid every month, not set up as fixed</span>
+                    {recurring.map((r) => (
+                      <span key={r.label} className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs">
+                        <span className="text-foreground">{r.label}</span>
+                        <span className="font-ledger text-muted-foreground">~{Math.round(r.avg).toLocaleString()}/mo</span>
+                      </span>
+                    ))}
+                    {canEditExpenses && <button type="button" onClick={() => setActiveTab("fixed")} className="ml-auto text-xs text-brand-500 hover:underline">Set one up in Fixed expenses →</button>}
+                  </div>
+                )}
                 {segs.length > 0 && (
                   <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
                     <div className="flex justify-between gap-2"><span className="lbl">Where it went</span>{categoryFilter !== "all" && <button type="button" onClick={() => setCategoryFilter("all")} className="text-xs text-brand-500 hover:underline">Show every category</button>}</div>

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import RouteLoading from "../components/RouteLoading";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { isCompanyWide } from "../lib/navMeta";
+import { useNavBadges } from "../lib/navBadges";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
 import InactivityLogout from "../components/InactivityLogout";
@@ -75,7 +76,8 @@ const linkOrNull = (
 
 export default function SuperAdminLayout() {
   const { profile, company, setViewAsCompany } = useAuth();
-  const { regions, locked, region } = useRegion();
+  const { regions, locked, region, regionId } = useRegion();
+  const navBadges = useNavBadges(profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null, regionId);
   const navigate = useNavigate();
   const companyWidePage = isCompanyWide(useLocation().pathname);
 
@@ -216,8 +218,13 @@ export default function SuperAdminLayout() {
   // it was filed with Access & Governance and the Audit Log — screens you visit
   // to administer the system. A task board is not administration; it is the
   // thing you check when you arrive, which is what Overview is for.
-  const overview = buildGroup("Overview", "/super-admin/overview", [DASHBOARD, TASKS]);
-  if (overview) links.push(overview);
+  // 2026-10-21: no Overview section any more. The Dashboard is the rail's
+  // first icon (and the Bastion mark above it), and Tasks sits beside it as
+  // its own icon — two one-tap destinations rather than a flyout of two.
+  const dashLink = linkOrNull(profile, DASHBOARD);
+  if (dashLink) links.push(dashLink);
+  const tasksLink = linkOrNull(profile, TASKS);
+  if (tasksLink) links.push(tasksLink);
 
   // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
   // Deployment; billing → Invoices); Client Relationships dissolved (complaints
@@ -328,6 +335,7 @@ export default function SuperAdminLayout() {
       <Sidebar
         title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
         links={links}
+        badges={navBadges}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         {isSsaViewing && (

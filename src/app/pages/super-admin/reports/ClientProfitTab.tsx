@@ -50,6 +50,9 @@ export default function ClientProfitTab({ period, basis: basisProp }: { period: 
   // Last month on the same basis (for the change), and contracted heads (for
   // per-guard figures). Both are reads; nothing here re-derives the statement.
   const [prevNet, setPrevNet] = useState<Map<string, number> | null>(null);
+  /** Net per client for the six months ending this one, oldest first. */
+  const [trend, setTrend] = useState<Map<string, number[]>>(new Map());
+  const [whatIf, setWhatIf] = useState<Record<string, "rate" | "guard" | undefined>>({});
   const [heads, setHeads] = useState<Map<string, number>>(new Map());
   const [quick, setQuick] = usePageState<"all" | "loss" | "thin" | "healthy">("Reports.clientQuick", "all");
   const [sortBy, setSortBy] = usePageState<"net" | "margin" | "revenue" | "change">("Reports.clientSort", "net");
@@ -62,16 +65,28 @@ export default function ClientProfitTab({ period, basis: basisProp }: { period: 
     let cancelled = false;
     void (async () => {
       setPrevNet(null);
-      const [pv, cv] = await Promise.all([
+      const months = Array.from({ length: 6 }, (_, i) => { const [y, m] = period.split("-").map(Number); const d = new Date(y, m - 6 + i, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; });
+      const [pv, cv, ...hist] = await Promise.all([
         supabase.rpc("client_statement_loaded", { p_start: monthStart(prevKey), p_end: monthEnd(prevKey), p_basis: basis, p_company_id: companyId }),
         supabase.rpc("client_cover", { p_company_id: companyId, p_month: start }),
+        ...months.map((mk) => supabase.rpc("client_statement_loaded", { p_start: monthStart(mk), p_end: monthEnd(mk), p_basis: basis, p_company_id: companyId })),
       ]);
       if (cancelled) return;
+      const t = new Map<string, number[]>();
+      hist.forEach((h, i) => {
+        for (const r of ((h.data ?? []) as Row[])) {
+          if (!r.client_id) continue;
+          const arr = t.get(r.client_id) ?? Array(months.length).fill(0);
+          arr[i] = Number(r.net);
+          t.set(r.client_id, arr);
+        }
+      });
+      setTrend(t);
       setPrevNet(new Map(((pv.data ?? []) as Row[]).filter((r) => r.client_id).map((r) => [r.client_id!, Number(r.net)])));
       setHeads(new Map(((cv.data ?? []) as { client_id: string; contracted: number }[]).map((r) => [r.client_id, Number(r.contracted)])));
     })();
     return () => { cancelled = true; };
-  }, [companyId, start, prevKey, basis]);
+  }, [companyId, start, prevKey, basis, period]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -220,6 +235,21 @@ export default function ClientProfitTab({ period, basis: basisProp }: { period: 
       </span>
     );
   };
+  /** Six months of net as bars: green above zero, rust below. */
+  const Spark = ({ r }: { r: Row }) => {
+    const v = r.client_id ? trend.get(r.client_id) : undefined;
+    if (!v || v.every((x) => x === 0)) return null;
+    const max = Math.max(1, ...v.map((x) => Math.abs(x)));
+    return (
+      <span className="inline-flex items-center gap-[2px] h-5" title={`Net, last six months: ${v.map((x) => Math.round(x).toLocaleString()).join(" → ")}`}>
+        {v.map((x, i) => (
+          <span key={i} className="flex flex-col justify-center h-5 w-1.5">
+            <span className={`w-full rounded-sm ${x >= 0 ? "bg-success-500" : "bg-danger-500"} ${i === v.length - 1 ? "" : "opacity-60"}`} style={{ height: `${Math.max(8, (Math.abs(x) / max) * 100)}%` }} />
+          </span>
+        ))}
+      </span>
+    );
+  };
   const tone = (r: Row) => (band(r) === "loss" ? "text-danger-700 dark:text-danger-500" : band(r) === "thin" ? "text-warning-700 dark:text-warning-500" : "text-success-700 dark:text-success-500");
 
   return (
@@ -300,7 +330,35 @@ export default function ClientProfitTab({ period, basis: basisProp }: { period: 
                       <button type="button" onClick={() => void openCell(r, "net")} className={`font-ledger text-2xl font-semibold tracking-tight hover:underline ${Number(r.net) < 0 ? "text-danger-700 dark:text-danger-500" : "text-foreground"}`}>{Math.round(Number(r.net)).toLocaleString()}</button>
                       <Change r={r} />
                     </div>
-                    <Split r={r} wide />
+                    <div className="flex items-center justify-between gap-2">
+                      <Split r={r} wide />
+                      <Spark r={r} />
+                    </div>
+                    {(() => {
+                      // A what-if worked from this client's own figures — not a
+                      // forecast and not posted anywhere.
+                      const rev = Number(r.revenue), pay = Number(r.direct_payroll), net = Number(r.net);
+                      const mode = whatIf[r.client_id!];
+                      const after = mode === "rate" ? net + rev * 0.05 : mode === "guard" && h > 0 ? net - rev / h + pay / h : null;
+                      return (
+                        <div className="rounded-xl bg-muted/50 px-3 py-2 flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className="text-muted-foreground">What if</span>
+                          {([["rate", "rate +5%"], ["guard", "one guard fewer"]] as const).map(([k, label]) => (
+                            <button key={k} type="button" disabled={k === "guard" && h <= 0}
+                              onClick={() => setWhatIf((w) => ({ ...w, [r.client_id!]: w[r.client_id!] === k ? undefined : k }))}
+                              className={`rounded-full px-2 py-0.5 border ${mode === k ? "border-brand-500 text-foreground font-semibold" : "border-border text-muted-foreground hover:text-foreground"} disabled:opacity-40`}>
+                              {label}
+                            </button>
+                          ))}
+                          {after != null && (
+                            <span className="ml-auto font-ledger">
+                              → <span className={after < 0 ? "text-danger-700 dark:text-danger-500" : "text-foreground"}>{Math.round(after).toLocaleString()}</span>
+                              <span className="text-muted-foreground"> ({after >= net ? "+" : "−"}{Math.abs(Math.round(after - net)).toLocaleString()}, {pctTxt(rev ? after / (mode === "rate" ? rev * 1.05 : rev - rev / Math.max(1, h)) : null)})</span>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="grid grid-cols-3 gap-2 text-[11px]">
                       <button type="button" onClick={() => void openCell(r, "revenue")} className="text-left hover:underline"><span className="block text-muted-foreground">Revenue</span><span className="font-ledger text-foreground">{Math.round(Number(r.revenue)).toLocaleString()}</span></button>
                       <button type="button" onClick={() => void openCell(r, "direct_payroll")} className="text-left hover:underline"><span className="block text-muted-foreground">Payroll</span><span className="font-ledger text-foreground">{Math.round(Number(r.direct_payroll)).toLocaleString()}</span></button>
@@ -358,7 +416,7 @@ export default function ClientProfitTab({ period, basis: basisProp }: { period: 
                               </span>
                             ) : <span className="text-muted-foreground">—</span>}
                           </td>
-                          <td className="px-3 py-2.5 text-right">{r.client_id ? <Change r={r} /> : null}</td>
+                          <td className="px-3 py-2.5 text-right">{r.client_id ? <span className="inline-flex flex-col items-end gap-1"><Change r={r} /><Spark r={r} /></span> : null}</td>
                         </tr>
                       ))}
                       <tr className="border-t border-border text-xs">

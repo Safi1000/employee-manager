@@ -2,6 +2,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon, User as UserIcon, Mail, Check, Lock } from "lucide-react";
 import Header from "../../components/Header";
+import { useOpenParam } from "../../lib/openParam";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import PersonalChecklist from "../../components/PersonalChecklist";
@@ -288,6 +289,9 @@ export default function Tasks() {
       await loadAll();
     }
   };
+
+  // ⌘K action: "New task" opens the form directly.
+  useOpenParam("task", () => openCreate(), isAdmin);
 
   return (
     <>

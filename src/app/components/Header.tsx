@@ -96,8 +96,17 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
           {actions && <div className="flex items-center gap-2 md:gap-2.5 flex-wrap">{actions}</div>}
         </div>
         {children && (
-          <div className={`grid transition-opacity duration-200 ${folded ? "grid-rows-[0fr] opacity-0 -mt-3 md:-mt-4" : "grid-rows-[1fr] opacity-100"}`} aria-hidden={folded || undefined}>
-            <div className="min-h-0 overflow-hidden">{children}</div>
+          // The fold animates (2026-10-21, asked for back): the row height eases
+          // on a soft curve while the figures fade and lift a little, so the
+          // motion reads as one gesture. What made it stutter was the fold
+          // flipping at a single threshold and the scroll memory walking the
+          // page per event — both fixed above and in pageState — not the
+          // animation itself.
+          <div
+            className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${folded ? "grid-rows-[0fr] opacity-0 -mt-3 md:-mt-4" : "grid-rows-[1fr] opacity-100"}`}
+            aria-hidden={folded || undefined}
+          >
+            <div className={`min-h-0 overflow-hidden transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${folded ? "-translate-y-1.5" : "translate-y-0"}`}>{children}</div>
           </div>
         )}
       </div>

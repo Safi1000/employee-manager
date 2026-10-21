@@ -230,7 +230,11 @@ export default function Companies() {
             { k: "Users", v: companies.reduce((n, c) => n + (c.user_count ?? 0), 0), sub: "logins across every tenant", tone: "" },
             { k: "Subscriptions", v: lapsed + soon, sub: `${lapsed} lapsed · ${soon} ending in 14 days · ${noSub} not set`, tone: lapsed ? "text-down" : soon ? "text-heed" : "text-up" },
           ];
+          const due = companies
+            .filter((c) => c.active && c.subscription_expires_at && (left(c) ?? 99) <= 30)
+            .sort((a, b) => (left(a) ?? 0) - (left(b) ?? 0));
           return (
+            <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
               {tiles.map((t) => (
                 <div key={t.k} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
@@ -239,6 +243,25 @@ export default function Companies() {
                   <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
                 </div>
               ))}
+            </div>
+            {due.length > 0 && (
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                <span className="lbl">Renewals · lapsed or ending in 30 days</span>
+                <div className="flex flex-wrap gap-2">
+                  {due.map((c) => {
+                    const d = left(c)!;
+                    return (
+                      <button key={c.id} type="button" onClick={() => openSubscription(c)}
+                        className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs hover:border-brand-500/60">
+                        <span className="font-medium text-foreground">{c.name}</span>
+                        <span className={d < 0 ? "text-down" : d <= 14 ? "text-heed" : "text-muted-foreground"}>{d < 0 ? `${-d}d over` : `${d}d left`}</span>
+                        <span className="text-brand-500">record payment →</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             </div>
           );
         })()}

@@ -33,7 +33,8 @@ const BOARD_TONE: Record<Stage, string> = {
 };
 const OPEN: Stage[] = ["not_started", "contacted", "negotiating"];
 
-type Renewal = { id: string; client_id: string; stage: Stage; expected_close_date: string | null };
+type Renewal = { id: string; client_id: string; stage: Stage; expected_close_date: string | null; owner_id: string | null; notes: string | null; updated_at: string | null; created_at: string | null };
+const STALE_DAYS = 14;
 type Ending = { id: string; client_id: string; contract_code: string | null; end_date: string };
 
 const daysTo = (iso: string) => Math.round((new Date(iso).getTime() - new Date(new Date().toDateString()).getTime()) / 86400000);
@@ -49,13 +50,14 @@ export default function ContractRenewals() {
   const [renewals, setRenewals] = useState<Renewal[]>([]);
   const [ending, setEnding] = useState<Ending[]>([]);
   const [stageFilter, setStageFilter] = useState<Stage | "all">("all");
+  const [people, setPeople] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
 
   const load = useCallback(async () => {
     if (!companyId) return;
     const horizon = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
     const [cl, rn, ct] = await Promise.all([
       withRegionOrUnassigned(supabase.from("clients").select("id,name").eq("company_id", companyId), regionId).order("name"),
-      supabase.from("renewal_pipeline").select("id, client_id, stage, expected_close_date").eq("company_id", companyId).order("expected_close_date"),
+      supabase.from("renewal_pipeline").select("id, client_id, stage, expected_close_date, owner_id, notes, updated_at, created_at").eq("company_id", companyId).order("expected_close_date"),
       supabase.from("contracts").select("id, client_id, contract_code, end_date")
         .eq("company_id", companyId).eq("status", "active").eq("is_infinite", false)
         .not("end_date", "is", null).lte("end_date", horizon).order("end_date"),
@@ -65,6 +67,8 @@ export default function ContractRenewals() {
     setClients((cl.data ?? []) as { id: string; name: string }[]);
     setRenewals((rn.data ?? []) as Renewal[]);
     setEnding((ct.data ?? []) as Ending[]);
+    const { data: pr } = await supabase.from("profiles").select("id, full_name, email").eq("company_id", companyId).order("full_name");
+    setPeople((pr ?? []) as { id: string; full_name: string | null; email: string | null }[]);
     setLoaded(true);
   }, [companyId, regionId]);
   useEffect(() => { load(); }, [load]);
@@ -101,7 +105,7 @@ export default function ContractRenewals() {
   };
   const move = (r: Renewal, dir: -1 | 1) => {
     const next = RENEWAL_STAGES[RENEWAL_STAGES.indexOf(r.stage) + dir];
-    if (next) void run(supabase.from("renewal_pipeline").update({ stage: next }).eq("id", r.id));
+    if (next) void run(supabase.from("renewal_pipeline").update({ stage: next, updated_at: new Date().toISOString() }).eq("id", r.id));
   };
 
   const columns = stageFilter === "all" ? [...RENEWAL_STAGES] : [stageFilter];
@@ -127,7 +131,7 @@ export default function ContractRenewals() {
           <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="lbl flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5" /> Ending in 90 days, not in the pipeline</span>
-              <span className="text-xs text-muted-foreground">{dueSoon ? `${dueSoon} open renewal${dueSoon === 1 ? "" : "s"} due to close within 30 days` : "no open renewal is due within 30 days"}</span>
+              <span className="text-xs text-muted-foreground">{dueSoon ? `${dueSoon} open renewal${dueSoon === 1 ? "" : "s"} due to close within 30 days` : "no open renewal is due within 30 days"}{(() => { const n = shown.filter((r) => OPEN.includes(r.stage) && (r.updated_at ?? r.created_at) && -daysTo((r.updated_at ?? r.created_at)!.slice(0, 10)) >= STALE_DAYS).length; return n ? ` · ${n} untouched for two weeks` : ""; })()}</span>
             </div>
             {!loaded ? (
               <span className="text-sm text-muted-foreground">Reading contracts…</span>
@@ -186,16 +190,38 @@ export default function ContractRenewals() {
                 {items.map((r) => {
                   const d = r.expected_close_date ? daysTo(r.expected_close_date) : null;
                   const i = RENEWAL_STAGES.indexOf(r.stage);
+                  const lastMove = r.updated_at ?? r.created_at;
+                  const idle = lastMove ? -daysTo(lastMove.slice(0, 10)) : null;
+                  const stale = OPEN.includes(r.stage) && idle != null && idle >= STALE_DAYS;
                   return (
                     <article key={r.id} className="bg-card border border-border rounded-xl px-3 py-2.5 flex flex-col gap-1.5">
-                      <span className="text-sm font-medium text-foreground">{clientName.get(r.client_id)}</span>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">{clientName.get(r.client_id)}</span>
+                        {stale && <span className="flex-shrink-0 rounded-full bg-warning-50 text-warning-700 dark:text-warning-500 px-2 py-0.5 text-[10px] font-semibold" title="No change to this card for two weeks">{idle}d idle</span>}
+                      </div>
                       <span className={`text-xs ${d == null ? "text-muted-foreground" : OPEN.includes(r.stage) && d < 0 ? "text-danger-600" : OPEN.includes(r.stage) && d <= 30 ? "text-warning-700 dark:text-warning-500" : "text-muted-foreground"}`}>
                         {r.expected_close_date ? `Close ${formatDate(r.expected_close_date)}${OPEN.includes(r.stage) ? ` · ${d! < 0 ? `${-d!}d overdue` : `${d}d`}` : ""}` : "No close date"}
                       </span>
+                      <select
+                        value={r.owner_id ?? ""}
+                        onChange={(e) => run(supabase.from("renewal_pipeline").update({ owner_id: e.target.value || null, updated_at: new Date().toISOString() }).eq("id", r.id))}
+                        aria-label="Owner"
+                        className="w-full px-2 py-1 border border-border rounded-lg bg-card text-xs text-foreground"
+                      >
+                        <option value="">No owner yet</option>
+                        {people.map((p) => <option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
+                      </select>
+                      <input
+                        defaultValue={r.notes ?? ""}
+                        placeholder="Next step — e.g. send revised rates Friday"
+                        aria-label="Next step"
+                        onBlur={(e) => { const v = e.target.value.trim(); if (v !== (r.notes ?? "")) void run(supabase.from("renewal_pipeline").update({ notes: v || null, updated_at: new Date().toISOString() }).eq("id", r.id)); }}
+                        className="w-full px-2 py-1 border border-border rounded-lg bg-card text-xs text-foreground placeholder:text-muted-foreground"
+                      />
                       <div className="flex items-center gap-1 pt-0.5">
                         <button type="button" disabled={busy || i === 0} onClick={() => move(r, -1)} aria-label="Back a stage" className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowLeft className="w-3.5 h-3.5" /></button>
                         <ThemedSelect className={FIELD + " py-1 text-xs flex-1"} value={r.stage}
-                          onChange={(e) => run(supabase.from("renewal_pipeline").update({ stage: e.target.value }).eq("id", r.id))}>
+                          onChange={(e) => run(supabase.from("renewal_pipeline").update({ stage: e.target.value, updated_at: new Date().toISOString() }).eq("id", r.id))}>
                           {RENEWAL_STAGES.map((x) => <option key={x} value={x}>{STAGE_LABEL[x]}</option>)}
                         </ThemedSelect>
                         <button type="button" disabled={busy || i === RENEWAL_STAGES.length - 1} onClick={() => move(r, 1)} aria-label="Forward a stage" className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowRight className="w-3.5 h-3.5" /></button>

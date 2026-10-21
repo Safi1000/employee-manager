@@ -81,12 +81,23 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const ar = c?.receivables ?? null;
   const ar90 = ar && ar.total > 0 ? ar.buckets[3] / ar.total : 0;
 
+  // ---- payday ----
+  // The next run needs about last month's payroll in full — every payslip,
+  // paid or not — not only the part already disbursed.
+  const payNeed = c?.payrollLastFull || d.payrollPrev || d.payrollMtd;
+  const dueFirst = ar ? ar.buckets[0] : 0;
+  const payScale = Math.max(cashTotal + dueFirst, payNeed, 1) * 1.05;
+  const spare = cashTotal + dueFirst - payNeed;
+
   const attention = [
     d.can.compliance && d.licencesOverdue > 0 && { n: d.licencesOverdue, text: "guards with an expired document", to: "/super-admin/compliance" },
     d.can.compliance && d.licencesExpiring - d.licencesOverdue > 0 && { n: d.licencesExpiring - d.licencesOverdue, text: "guard documents expiring in 30 days", to: "/super-admin/compliance" },
     d.can.incidents && d.openIncidents > 0 && { n: d.openIncidents, text: "open incidents", to: "/super-admin/incidents" },
     d.can.contracts && d.contractsEnding.length > 0 && { n: d.contractsEnding.length, text: "contracts ending in 60 days", to: "/super-admin/contracts" },
     d.can.periodClose && d.periodClosedThisMonth === false && d.lastClosedMonth && { n: "!", text: `last closed: ${formatDate(d.lastClosedMonth)}`, to: "/super-admin/period-close" },
+    // A week out from payday and the money in hand plus what clients owe
+    // inside 30 days will not cover last month's payroll.
+    d.can.accounting && d.can.payroll && c && ar && payNeed > 0 && daysToPayday <= 7 && spare < 0 && { n: mil(-spare), text: `short for the salary run in ${daysToPayday} day${daysToPayday === 1 ? "" : "s"}`, to: "/super-admin/payroll" },
   ].filter(Boolean) as { n: number | string; text: string; to: string }[];
 
   // ---- run rate ----
@@ -95,14 +106,6 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const prevLabel = c ? new Date(new Date(`${c.billMonth}T00:00:00`).getFullYear(), new Date(`${c.billMonth}T00:00:00`).getMonth() - 1, 1).toLocaleDateString(undefined, { month: "long" }) : "";
   const billed = c?.billed ?? null;
   const billedPrev = c?.billedPrev ?? null;
-
-  // ---- payday ----
-  // The next run needs about last month's payroll in full — every payslip,
-  // paid or not — not only the part already disbursed.
-  const payNeed = c?.payrollLastFull || d.payrollPrev || d.payrollMtd;
-  const dueFirst = ar ? ar.buckets[0] : 0;
-  const payScale = Math.max(cashTotal + dueFirst, payNeed, 1) * 1.05;
-  const spare = cashTotal + dueFirst - payNeed;
 
   // ---- cash this month ----
   // From the ledger (2026-10-21): every bank and cash account's opening and

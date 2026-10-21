@@ -145,6 +145,8 @@ export default function PartnershipRun() {
   const [review, setReview] = useState<ReviewRow[]>([]);
   const [uninvoiced, setUninvoiced] = useState<Uninvoiced[]>([]);
   const [deadline, setDeadline] = useState<Deadline | null>(null);
+  /** The year at a glance: each month's run status (2026-10-21). */
+  const [yearRuns, setYearRuns] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "draft" | "post" | "reverse">(null);
   const [error, setError] = useState<string | null>(null);
@@ -179,6 +181,10 @@ export default function PartnershipRun() {
       supabase.rpc("partnership_posting_deadline", { p_company_id: companyId, p_period: month }),
     ]);
 
+    const { data: yr } = await supabase.from("profit_allocation_runs").select("period_month, status")
+      .eq("company_id", companyId).gte("period_month", firstOfMonth(periodOptions[periodOptions.length - 1]));
+    setYearRuns(new Map(((yr ?? []) as { period_month: string; status: string }[]).map((r) => [r.period_month.slice(0, 7), r.status])));
+
     // Each active partner's standing position. One call per partner because
     // partner_ledger takes a partner; it is a handful of rows, and the
     // alternative is recomputing a balance the ledger already keeps.
@@ -207,7 +213,7 @@ export default function PartnershipRun() {
     setReview((revRes.data ?? []) as ReviewRow[]);
     setUninvoiced((uninvRes.data ?? []) as Uninvoiced[]);
     setDeadline(((dueRes.data ?? []) as Deadline[])[0] ?? null);
-  }, [companyId, period]);
+  }, [companyId, period, periodOptions]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -327,6 +333,19 @@ export default function PartnershipRun() {
                   </li>
                 ))}
               </ol>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="lbl mr-1">The year</span>
+                {[...periodOptions].reverse().slice(-12).map((p) => {
+                  const st = yearRuns.get(p);
+                  const cls = st === "POSTED" ? "bg-up/20 text-up border-up/40" : st === "DRAFT" ? "bg-heed/15 text-heed border-heed/40" : st === "REVERSED" ? "bg-down/15 text-down border-down/40" : "border-border text-muted-foreground";
+                  return (
+                    <button key={p} type="button" onClick={() => setPeriod(p)} title={`${monthName(p)} — ${st ? st.toLowerCase() : "not started"}`}
+                      className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${cls} ${p === period ? "ring-2 ring-brand-500" : ""}`}>
+                      {new Date(`${p}-01T00:00:00`).toLocaleDateString(undefined, { month: "short" })}
+                    </button>
+                  );
+                })}
+              </div>
               {run && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {[
