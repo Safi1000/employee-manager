@@ -15,6 +15,7 @@ import ScenariosTab from "./reports/ScenariosTab";
 import ContractedVsDeployed from "./ContractedVsDeployed";
 import AccountsGrid from "./accountant/AccountsGrid";
 import Planning from "./accountant/Planning";
+import StatementTieout from "./accountant/StatementTieout";
 
 /**
  * ACCOUNTANT (2026-10-20) — the working surface for the people given
@@ -26,6 +27,8 @@ import Planning from "./accountant/Planning";
  *   Planning     expected receipts and payments against the ledger (0528)
  *   Checks       every red control and the audit findings, with the rows
  *                behind them, and the accrual-to-cash bridge
+ *   Tie-out      the month's statements against their sources, every rupee
+ *                placed, and what has nowhere to land (0539)
  *   Ledgers      general, client, supplier, partner and guard ledgers
  *   Scenarios    levers against actuals, computed and never posted
  *   Cover        contracted against deployed heads per client
@@ -33,7 +36,7 @@ import Planning from "./accountant/Planning";
  * One search reaches any entity and one drawer opens any figure, as before.
  */
 
-type Section = "accounts" | "planning" | "checks" | "ledgers" | "scenarios" | "cover";
+type Section = "accounts" | "planning" | "checks" | "tieout" | "ledgers" | "scenarios" | "cover";
 
 export default function Accountant() {
   const companyId = useCompanyId();
@@ -94,6 +97,7 @@ export default function Accountant() {
               { value: "accounts", label: "Accounts" },
               { value: "planning", label: "Planning" },
               { value: "checks", label: "Checks", count: red ?? undefined },
+              { value: "tieout", label: "Tie-out" },
               { value: "ledgers", label: "Ledgers" },
               { value: "scenarios", label: "Scenarios" },
               { value: "cover", label: "Contracted vs deployed" },
@@ -107,6 +111,7 @@ export default function Accountant() {
         {section === "checks" && (
           <OverviewTab period={period} onOpenTab={() => setSection("cover")} />
         )}
+        {section === "tieout" && <StatementTieout period={period} />}
         {section === "ledgers" && <LedgersTab period={period} />}
         {section === "scenarios" && <ScenariosTab period={period} />}
         {section === "cover" && <ContractedVsDeployed />}
