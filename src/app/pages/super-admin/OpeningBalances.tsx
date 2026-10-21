@@ -172,6 +172,25 @@ export default function OpeningBalances() {
         });
       }
 
+      // 0533: a security deposit given BEFORE the books start is company money
+      // held elsewhere on the opening date — an asset (1170) the bank's opening
+      // figure no longer contains. Outstanding on the batch date: given before
+      // it, and not back before it.
+      const asOf = batches.find((b) => b.id === selected)?.as_of_date as string | undefined;
+      const dep = await supabase.from("security_deposits")
+        .select("amount, given_on, returned_on, status")
+        .eq("company_id", companyId).eq("given_before_books", true);
+      // Before 0533 the table does not exist; nothing to add.
+      if (!dep.error && asOf) {
+        const open = ((dep.data ?? []) as { amount: number; given_on: string; returned_on: string | null }[])
+          .filter((d) => d.given_on <= asOf && (!d.returned_on || d.returned_on > asOf));
+        const total = open.reduce((s, d) => s + Number(d.amount), 0);
+        const depAcct = accounts.find((a) => a.account_code === "1170");
+        if (total !== 0 && depAcct) {
+          rows.push({ account_id: depAcct.id, debit: total, notes: `security_deposits — ${open.length} given before the books` });
+        }
+      }
+
       return rows;
   };
 
