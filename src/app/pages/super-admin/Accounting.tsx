@@ -3081,10 +3081,13 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                 </div>
               </div>
 
+              {/* 2026-10-21: the history scrolls inside a fixed box (headers stay put)
+                  so the panels below it — reconciliation, security deposits — are
+                  reachable without scrolling past every cheque ever written. */}
               {chequeSectionView === "cheques" && (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[26rem] rounded-xl border border-border overscroll-contain">
                 <table className="w-full">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-card">
                     <tr className="border-b border-border bg-muted/50">
                       <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Cheque #</th>
                       <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Type</th>
@@ -3320,9 +3323,9 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               )}
 
               {chequeSectionView === "deposits" && (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[26rem] rounded-xl border border-border overscroll-contain">
                 <table className="w-full">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-card">
                     <tr className="border-b border-border">
                       <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Slip #</th>
                       <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Bank</th>
