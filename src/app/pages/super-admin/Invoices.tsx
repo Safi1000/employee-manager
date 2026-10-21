@@ -55,6 +55,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
+import WhtRegister from "../../components/WhtRegister";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
@@ -185,13 +186,13 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = usePageState<"ledger" | "generate" | "receivables">("Invoices.tab", "ledger");
+  const [tab, setTab] = usePageState<"ledger" | "generate" | "receivables" | "wht">("Invoices.tab", "ledger");
   const canViewReceivables = hasPermission(profile, "receivables.view") || hasPermission(profile, "accounting.edit");
   // ?tab=receivables (old Banks & Ledgers links, ledger drills) opens that tab.
   const [urlParams] = useSearchParams();
   useEffect(() => {
     const t = urlParams.get("tab");
-    if (t === "receivables" || t === "ledger" || t === "generate") setTab(t);
+    if (t === "receivables" || t === "ledger" || t === "generate" || t === "wht") setTab(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlParams]);
   // Generate ▸ Invoice (the receivable, total only) | Detailed record (own record, 0499).
@@ -965,12 +966,12 @@ export default function Invoices() {
       >
         {/* Generate creates invoices — hidden without invoices.edit (backend
             RLS also blocks the writes). */}
-        <Tabs<"ledger" | "generate" | "receivables">
+        <Tabs<"ledger" | "generate" | "receivables" | "wht">
           value={tab}
           onChange={setTab}
-          items={(["ledger", "receivables", "generate"] as const)
-            .filter((t) => (t !== "generate" || canEditInvoices) && (t !== "receivables" || canViewReceivables))
-            .map((t) => ({ value: t, label: t === "ledger" ? "Invoices" : t === "receivables" ? "Receivables" : "Generate" }))}
+          items={(["ledger", "receivables", "wht", "generate"] as const)
+            .filter((t) => (t !== "generate" || canEditInvoices) && ((t !== "receivables" && t !== "wht") || canViewReceivables))
+            .map((t) => ({ value: t, label: t === "ledger" ? "Invoices" : t === "receivables" ? "Receivables" : t === "wht" ? "Withholding tax" : "Generate" }))}
         />
         {tab === "ledger" && (
           <div className="mt-3">
@@ -1016,6 +1017,10 @@ export default function Invoices() {
           </>
         )}
 
+
+        {tab === "wht" && canViewReceivables && (
+          <WhtRegister companyId={treasuryCompanyId} canEdit={canEditInvoices} onChanged={loadAll} />
+        )}
 
         {tab === "receivables" && canViewReceivables && (
           <Suspense fallback={<div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading receivables…</div>}>
@@ -1663,8 +1668,18 @@ export default function Invoices() {
             />
             <p className="text-[11px] text-muted-foreground mt-1">
               Prefilled from this client&rsquo;s agreed rate. The receivable is cleared by the
-              cash received <em>and</em> the tax withheld together.
+              cash received <em>and</em> the tax withheld together. WHT is recorded as a{" "}
+              <strong>claim</strong> until you verify it under Withholding tax.
             </p>
+            {paymentInvoice && Number(paymentForm.amount) > 0 && (() => {
+              const rest = Math.round((Number(paymentInvoice.invoice_amount ?? 0) - Number(paymentInvoice.amount_received ?? 0) - Number(paymentForm.amount)) * 100) / 100;
+              return rest > 0 && Number(paymentForm.withholding || 0) !== rest ? (
+                <button type="button" className="mt-1.5 text-xs font-semibold text-brand-700 dark:text-brand-500 hover:underline"
+                  onClick={() => setPaymentForm({ ...paymentForm, withholding: String(rest) })}>
+                  Rest is WHT (claimed): PKR {rest.toLocaleString()}
+                </button>
+              ) : null;
+            })()}
           </div>
 
           <div>
