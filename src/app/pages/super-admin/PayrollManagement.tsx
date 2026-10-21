@@ -318,6 +318,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
   const [cashCustodianId, setCashCustodianId] = useState<string>("");     // drawer (per-row) payment
   const [bulkCashCustodianId, setBulkCashCustodianId] = useState<string>(""); // bulk disburse
+  // 0542: allowance fuel cards — a man's fixed allowance can be paid onto his
+  // own card, loaded from a bank. Only active allowance cards are offered.
+  const [allowanceCards, setAllowanceCards] = useState<{ id: string; label: string; card_last4: string | null; holder_employee_id: string }[]>([]);
+  const [allowanceCardId, setAllowanceCardId] = useState<string>("");
+  // 0541: the parts a payslip was paid in, each through its own channel.
+  const [payslipParts, setPayslipParts] = useState<{ amount: number; paid_at: string; payment_mode: string; bank_account_id: string | null; fuel_card_id: string | null }[]>([]);
 
   const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
   const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -670,7 +676,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           .select(
             "id, company_id, employee_code, guard_code, display_number, full_name, phone, " +
             "client_id, branch_id, contract_id, contract_line_id, category, shift, status, lifecycle_state, " +
-            "base_salary, per_day_salary, allowance, bank_name, account_title, bank_account, bank_branch_code, iban, " +
+            "base_salary, per_day_salary, pay_basis, daily_rate, allowance, bank_name, account_title, bank_account, bank_branch_code, iban, " +
             "cnic_number, father_or_husband_name, designation, current_address, join_date, last_working_day, termination_date, exit_date, " +
             "eligible_for_rehire, assignment_effective_from, assignment_effective_to, opening_leaves, opening_leaves_month, created_at, " +
             "client:client_id(name)",
@@ -748,6 +754,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   useEffect(() => {
     if (!companyId) return;
     loadCustodianOptions(companyId, canViewBanking).then(setCustodians).catch(() => { /* attribution optional */ });
+    // 0542: before the fuel-card migration the table is absent — offer no cards.
+    void supabase.from("fuel_cards").select("id, label, card_last4, holder_employee_id")
+      .eq("company_id", companyId).eq("role", "allowance").eq("is_active", true).order("label")
+      .then(({ data, error }) => setAllowanceCards(error ? [] : ((data ?? []) as typeof allowanceCards)));
   }, [companyId]);
 
   // Item 1: persist the period + selected payslip so navigation resumes here.
@@ -980,7 +990,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // §10.1/§10.3: rate effective per attendance date drives earnings; per-day
       // rate = rate ÷ days_in_month is computed at RUNTIME, never stored.
       const rateEff = ap && ap.rate_effective > 0 ? ap.rate_effective : merged.base_salary;
-      const perDay = daysThisPeriod > 0 && rateEff > 0 ? rateEff / daysThisPeriod : 0;
+      // 0540: a per-day man's day is his own daily rate (attendance_payroll
+      // already earns his worked days at it); a paid leave day is the same rate.
+      const perDay = emp.pay_basis === "per_day"
+        ? Number(emp.daily_rate ?? 0)
+        : daysThisPeriod > 0 && rateEff > 0 ? rateEff / daysThisPeriod : 0;
       merged.per_day_salary = perDay > 0 ? Math.round(perDay) : null;
       // Worked earnings come from verified attendance × per-date rate (double duty /
       // relief cover already produce extra shifts in ap.earned). Paid leaves (up to
@@ -1301,8 +1315,25 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   useEffect(() => {
     setPaymentAmountDraft("");
     setCashCustodianId("");
+    setAllowanceCardId("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedPeriod, selectedRow?.amount_paid]);
+
+  // 0541: the parts this payslip has been paid in. Read, never added up into
+  // anything — Amount Paid above is the payslip's own figure.
+  const selectedPayslipId = selectedRow?.payslip_id ?? null;
+  const selectedPaid = selectedRow?.amount_paid ?? 0;
+  useEffect(() => {
+    setPayslipParts([]);
+    if (!selectedPayslipId) return;
+    let cancelled = false;
+    void supabase.from("payslip_payments")
+      .select("amount, paid_at, payment_mode, bank_account_id, fuel_card_id")
+      .eq("payslip_id", selectedPayslipId).order("paid_at")
+      .then(({ data, error }) => { if (!cancelled && !error) setPayslipParts((data ?? []) as typeof payslipParts); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPayslipId, selectedPaid]);
 
   // Load the stored override into the editor whenever the employee or the month
   // changes — otherwise a figure typed for one guard would sit in the box while
@@ -1462,11 +1493,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     amount_paid: row.amount_paid ?? 0,
     payment_mode: row.payment_mode,
     bank_account_id:
-      row.payment_mode === "Bank"
+      row.payment_mode === "Bank" || row.payment_mode === "Cheque" || row.payment_mode === "Card"
         ? row.bank_account_id
-        : row.payment_mode === "Cheque"
-          ? row.bank_account_id
-          : null,
+        : null,
     cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
     status: row.status,
     disbursed: row.disbursed,
@@ -1787,6 +1816,26 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           setRowError("Selected bank account balance is insufficient for this payment.");
           return;
         }
+      } else if (row.payment_mode === "Card") {
+        // 0542: onto his own allowance card, loaded from the chosen bank — the
+        // money leaves that bank.
+        if (!allowanceCardId || !allowanceCards.some((c) => c.id === allowanceCardId && c.holder_employee_id === row.employee.id)) {
+          setRowError("Choose his fuel card.");
+          return;
+        }
+        if (!row.bank_account_id) {
+          setRowError("Select the bank that loads the card.");
+          return;
+        }
+        bank = banks.find((b) => b.id === row.bank_account_id);
+        if (!bank) {
+          setRowError("Bank account not found.");
+          return;
+        }
+        if (pay > 0 && !(await bankCovers(bank, pay))) {
+          setRowError("Selected bank account balance is insufficient for this payment.");
+          return;
+        }
       } else if (row.payment_mode === "Cheque") {
         if (pay > 0) {
           if (!row.cheque_id) {
@@ -1876,11 +1925,14 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         p_target_paid: target,
         p_payment_mode: row.payment_mode,
         p_bank_account_id:
-          row.payment_mode === "Bank" || row.payment_mode === "Cheque" ? row.bank_account_id : null,
+          row.payment_mode === "Bank" || row.payment_mode === "Cheque" || row.payment_mode === "Card" ? row.bank_account_id : null,
         p_cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
         p_custodian_location_id: row.payment_mode === "Cash" ? custodianLocId : null,
         p_disbursed_at: disburseIso,
         p_description: payDesc,
+        // Sent only for a card payment, so the call is unchanged for every other
+        // channel (and works before 0542 adds the parameter).
+        ...(row.payment_mode === "Card" ? { p_fuel_card_id: allowanceCardId } : {}),
       });
       if (rpcErr) {
         // A concurrent payment on this row is the soft case — reload, no red error.
@@ -3626,6 +3678,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             PKR {balance.toLocaleString()}
                           </span>
                         </div>
+                        {payslipParts.length > 1 && (
+                          <ul className="text-[11px] text-muted-foreground space-y-0.5 pl-2 border-l border-border">
+                            {payslipParts.map((pt, i) => {
+                              const bank = pt.bank_account_id ? banks.find((b) => b.id === pt.bank_account_id) : null;
+                              const card = pt.fuel_card_id ? allowanceCards.find((c) => c.id === pt.fuel_card_id) : null;
+                              const via = pt.payment_mode === "Card"
+                                ? `fuel card${card ? ` ${card.label}` : ""}${bank ? ` (from ${bank.bank_name})` : ""}`
+                                : pt.payment_mode === "Bank" ? (bank ? bank.bank_name : "bank")
+                                : pt.payment_mode.toLowerCase();
+                              return (
+                                <li key={i} className="flex justify-between gap-2">
+                                  <span>{new Date(pt.paid_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {via}</span>
+                                  <span className="tabular-nums">PKR {Math.round(Number(pt.amount)).toLocaleString()}</span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
                         {selectedRow.amount_paid > 0 && balance !== 0 && (
                           <p className={`text-[11px] rounded px-2 py-1 border ${balance > 0 ? "text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200" : "text-danger-700 bg-danger-50 border-danger-200"}`}>
                             {balance > 0
@@ -3726,7 +3796,46 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <option value="Cash">Cash</option>
                       <option value="Bank">Bank</option>
                       <option value="Cheque">Cheque</option>
+                      {(allowanceCards.some((c) => c.holder_employee_id === selectedRow.employee.id) || selectedRow.payment_mode === "Card") && (
+                        <option value="Card">Fuel card</option>
+                      )}
                     </ThemedSelect>
+                    {selectedRow.payment_mode === "Card" && (
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">His fuel card *</label>
+                          <ThemedSelect
+                            value={allowanceCardId}
+                            disabled={afterNet && selectedRow.disbursed}
+                            onChange={(e) => setAllowanceCardId(e.target.value)}
+                            className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
+                          >
+                            <option value="">Select card…</option>
+                            {allowanceCards.filter((c) => c.holder_employee_id === selectedRow.employee.id).map((c) => (
+                              <option key={c.id} value={c.id}>{c.label}{c.card_last4 ? ` · ••${c.card_last4}` : ""}</option>
+                            ))}
+                          </ThemedSelect>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Loaded from bank *</label>
+                          <ThemedSelect
+                            value={selectedRow.bank_account_id ?? ""}
+                            disabled={afterNet && selectedRow.disbursed}
+                            onChange={(e) => updateEdit(selectedRow.employee.id, { bank_account_id: e.target.value || null })}
+                            className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
+                          >
+                            <option value="">Select bank account</option>
+                            {banks.map((b) => (
+                              <option key={b.id} value={b.id}>{bankLabel(b)}</option>
+                            ))}
+                          </ThemedSelect>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          His fixed allowance, paid onto his own card. It leaves the bank now; nothing is tracked on the card after that.
+                          Pay the rest of the salary separately — each part keeps its own channel.
+                        </p>
+                      </div>
+                    )}
                     {selectedRow.payment_mode === "Cash" && (
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Paid By (custodian) *</label>
@@ -3852,6 +3961,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         }
                         if (selectedRow.payment_mode === "Cash" && !cashCustodianId) {
                           setRowError("Select who is paying this cash (custodian).");
+                          return;
+                        }
+                        if (selectedRow.payment_mode === "Card" && !allowanceCardId) {
+                          setRowError("Choose his fuel card.");
                           return;
                         }
                         setRowError(null);

@@ -1309,6 +1309,10 @@ export type Employee = {
   status: "Active" | "On Leave" | "Inactive";
   base_salary: number | null;
   per_day_salary: number | null;
+  // 0540: monthly = base ÷ days in month × days worked; per_day = daily_rate ×
+  // days worked. The rate is the man's, never the client's.
+  pay_basis?: "monthly" | "per_day";
+  daily_rate?: number | null;
   // Always disbursed alongside salary, regardless of attendance. Untaxed.
   allowance: number | null;
   // One-time opening leave balance that OVERRIDES the accumulated carry-forward
@@ -2204,7 +2208,9 @@ export type BankTransaction = {
   created_at?: string;
 };
 
-export type PaymentMode = "Cash" | "Bank" | "Cheque";
+// 0542: "Card" pays onto the employee's own fuel card (an allowance card),
+// loaded from the bank named in bank_account_id.
+export type PaymentMode = "Cash" | "Bank" | "Cheque" | "Card";
 export type PayslipStatus = "Pending" | "Cleared";
 
 export type Payslip = {

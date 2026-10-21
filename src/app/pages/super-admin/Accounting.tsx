@@ -44,6 +44,7 @@ import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { bankCovers, canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import SecurityDeposits from "../../components/SecurityDeposits";
+import FuelCards from "../../components/FuelCards";
 import BankReconciliation from "../../components/BankReconciliation";
 import { tallyDate, useReconStatus } from "../../lib/reconStatus";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
@@ -3392,6 +3393,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
             </div>
             <BankReconciliation companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />
             <SecurityDeposits companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />
+            <FuelCards companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />
             </>
           )}
 

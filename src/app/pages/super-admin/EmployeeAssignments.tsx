@@ -87,6 +87,9 @@ const daysInCurrentMonth = () => {
 };
 const perDayOf = (base: number | null | undefined) =>
   base == null ? null : Math.round(Number(base) / daysInCurrentMonth());
+// 0540: a per-day man's day is his own rate, not his base spread over the month.
+const dayRateOf = (e: { pay_basis?: string; daily_rate?: number | null; base_salary: number | null }) =>
+  e.pay_basis === "per_day" ? Math.round(Number(e.daily_rate ?? 0)) : perDayOf(e.base_salary);
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `PKR ${Math.round(Number(n)).toLocaleString()}`;
 
@@ -246,7 +249,9 @@ export default function EmployeeAssignments() {
   // visible (Accounts) and only for the living (a fired guard's blank pay is
   // history, not a to-do).
   const missingBase = (e: EmployeeRow) =>
-    canAccounts && !isSeparatedState(e.lifecycle_state) && !(Number(e.base_salary) > 0);
+    canAccounts && !isSeparatedState(e.lifecycle_state) && !(Number(e.base_salary) > 0)
+    // 0540: a per-day man is paid from his daily rate; a base is not owed.
+    && !(e.pay_basis === "per_day" && Number(e.daily_rate) > 0);
   // Same idea for the joining date — an active posting with no join_date is a
   // half-finished assignment (attendance and the posting both key off it). Only
   // where the Joined column is even shown (Accounts, and not the Fired view).
@@ -1021,14 +1026,14 @@ export default function EmployeeAssignments() {
                                 type="button"
                                 onClick={(ev) => { ev.stopPropagation(); setSalaryTarget(e); }}
                                 className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground hover:bg-accent"
-                                title="Change base salary"
+                                title="Change pay — base salary or pay basis"
                                 aria-label={`Change base salary for ${e.full_name}`}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                             </span>
                           ) },
-                        { label: "Per day", value: (e: EmployeeRow) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
+                        { label: "Per day", value: (e: EmployeeRow) => <span className="tabular-nums">{money(dayRateOf(e))}{e.pay_basis === "per_day" && <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">daily rate</span>}</span> },
                         { label: "Allowance", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.allowance)}</span> },
                         {
                           label: showFired ? "Fired / left on" : "Joined",
@@ -1124,14 +1129,17 @@ export default function EmployeeAssignments() {
                                 type="button"
                                 onClick={(ev) => { ev.stopPropagation(); setSalaryTarget(e); }}
                                 className="opacity-60 group-hover:opacity-100 inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground hover:bg-accent"
-                                title="Change base salary"
+                                title="Change pay — base salary or pay basis"
                                 aria-label={`Change base salary for ${e.full_name}`}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                               </span>
                             </td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap" title={e.pay_basis === "per_day" ? "Paid per day worked at his own daily rate" : "Base ÷ days in month"}>
+                              {money(dayRateOf(e))}
+                              {e.pay_basis === "per_day" && <span className="ml-1 text-[10px] uppercase tracking-wide">daily rate</span>}
+                            </td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
                               {/* In Fired mode this column carries the date they
