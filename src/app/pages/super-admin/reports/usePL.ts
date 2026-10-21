@@ -76,7 +76,7 @@ function totals(sections: PLSection[]): PL {
   return { sections, revenue, cos, opex, tax, gross: revenue - cos, operating: revenue - cos - opex, net: revenue - cos - opex - tax };
 }
 
-async function load(companyId: string, basis: Basis, from: string, to: string, regionId: string | null): Promise<PL> {
+export async function loadPL(companyId: string, basis: Basis, from: string, to: string, regionId: string | null): Promise<PL> {
   if (basis === "cash") {
     const { data, error } = await supabase.rpc("client_statement_loaded", { p_start: monthStart(from), p_end: monthEnd(to), p_basis: "cash", p_company_id: companyId });
     if (error) throw new Error(error.message);
@@ -104,7 +104,7 @@ export function usePL(companyId: string | null, period: string, basis: Basis, cm
     let cancelled = false;
     setState((s) => ({ ...s, loading: true, error: null }));
     const r = ranges(period, cmp);
-    void Promise.all([load(companyId, basis, r.cur[0], r.cur[1], regionId), load(companyId, basis, r.cmp[0], r.cmp[1], regionId)])
+    void Promise.all([loadPL(companyId, basis, r.cur[0], r.cur[1], regionId), loadPL(companyId, basis, r.cmp[0], r.cmp[1], regionId)])
       .then(([a, b]) => { if (!cancelled) setState({ cur: a, cmp: b, error: null, loading: false }); })
       .catch((e: Error) => { if (!cancelled) setState({ cur: null, cmp: null, error: e.message, loading: false }); });
     return () => { cancelled = true; };

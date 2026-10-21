@@ -6,7 +6,7 @@ import ExportButton from "../../../components/ExportButton";
 import { exportTable } from "../../../lib/excel";
 import { useRegion } from "../../../lib/region";
 import { monthEnd, monthLabel, monthStart, money, useCompanyId, useDrill, type DrillTarget } from "./kit";
-import { ranges, type Basis, type Compare, type PL, type PLSection } from "./usePL";
+import { loadPL, ranges, type Basis, type Compare, type PL, type PLSection } from "./usePL";
 
 /**
  * Profit & loss on either basis, with a comparison column, change and share of
@@ -31,7 +31,7 @@ export default function PLTab({ period, basis, cmp, pl, loading, error }: {
   period: string; basis: Basis; cmp: Compare; pl: { cur: PL | null; cmp: PL | null }; loading: boolean; error: string | null;
 }) {
   const drill = useDrill();
-  const { regionId } = useRegion();
+  const { regionId, regions } = useRegion();
   const companyId = useCompanyId();
   const { profile } = useAuth();
   const r = ranges(period, cmp);
@@ -70,6 +70,26 @@ export default function PLTab({ period, basis, cmp, pl, loading, error }: {
     setBudgetErr(null);
   }, [companyId, showBudget, r.cur[0], r.cur[1], regionId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadBudget(); }, [loadBudget]);
+
+  // BY REGION (2026-10-21): every region's statement side by side, each read
+  // with the same loader as the statement itself, filtered to that region,
+  // and the company's total beside them.
+  const [byRegion, setByRegion] = useState(false);
+  const [regionPL, setRegionPL] = useState<{ id: string; name: string; pl: PL }[] | null>(null);
+  const [companyPL, setCompanyPL] = useState<PL | null>(null);
+  useEffect(() => {
+    if (!byRegion || !companyId) return;
+    let cancelled = false;
+    setRegionPL(null);
+    const list = [...regions].sort((a, b) => Number(a.is_head_office) - Number(b.is_head_office) || a.name.localeCompare(b.name));
+    void Promise.all([
+      ...list.map((g) => loadPL(companyId, basis, r.cur[0], r.cur[1], g.id).then((pl) => ({ id: g.id, name: g.name, pl }))),
+    ]).then(async (rs) => {
+      const total = await loadPL(companyId, basis, r.cur[0], r.cur[1], null);
+      if (!cancelled) { setRegionPL(rs); setCompanyPL(total); }
+    }).catch(() => { if (!cancelled) setRegionPL([]); });
+    return () => { cancelled = true; };
+  }, [byRegion, companyId, basis, r.cur[0], r.cur[1], regions]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveBudget = async (code: string, raw: string) => {
     if (!companyId) return;
     const v = raw.trim() === "" ? null : Number(raw.replace(/[^0-9.-]/g, ""));
@@ -159,12 +179,11 @@ export default function PLTab({ period, basis, cmp, pl, loading, error }: {
             <h2 className="font-display text-xl md:text-[22px] font-bold tracking-tight mt-1">Line by line</h2>
           </div>
           <div className="flex items-center gap-2">
-            {basis === "revenue" && canBudget && (
-              <div className="flex rounded-xl border border-border p-0.5 text-xs font-semibold">
-                <button type="button" onClick={() => setVsBudget(false)} className={`px-2.5 py-1 rounded-lg ${!vsBudget ? "bg-muted text-foreground" : "text-muted-foreground"}`}>vs {titles.cmp}</button>
-                <button type="button" onClick={() => setVsBudget(true)} className={`px-2.5 py-1 rounded-lg ${vsBudget ? "bg-muted text-foreground" : "text-muted-foreground"}`}>vs budget</button>
-              </div>
-            )}
+            <div className="flex rounded-xl border border-border p-0.5 text-xs font-semibold">
+              <button type="button" onClick={() => { setVsBudget(false); setByRegion(false); }} className={`px-2.5 py-1 rounded-lg ${!vsBudget && !byRegion ? "bg-muted text-foreground" : "text-muted-foreground"}`}>vs {titles.cmp}</button>
+              {basis === "revenue" && canBudget && <button type="button" onClick={() => { setVsBudget(true); setByRegion(false); }} className={`px-2.5 py-1 rounded-lg ${vsBudget && !byRegion ? "bg-muted text-foreground" : "text-muted-foreground"}`}>vs budget</button>}
+              {regions.length > 1 && <button type="button" onClick={() => setByRegion(true)} className={`px-2.5 py-1 rounded-lg ${byRegion ? "bg-muted text-foreground" : "text-muted-foreground"}`}>By region</button>}
+            </div>
             <ExportButton onExport={doExport} />
           </div>
         </div>
@@ -175,6 +194,51 @@ export default function PLTab({ period, basis, cmp, pl, loading, error }: {
               : r.ytd ? "Year to date sums each month's budget; switch to a single month to edit." : "Budget figures are set by people with planning access."}
           </p>
         )}
+        {byRegion ? (
+          !regionPL || !companyPL ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading every region…</div>
+          ) : (() => {
+            const cols = [...regionPL.map((x) => ({ key: x.id, name: x.name, pl: x.pl })), { key: "total", name: "Company", pl: companyPL }];
+            const grid = { gridTemplateColumns: `minmax(220px,2fr) repeat(${cols.length}, minmax(110px,1fr))` };
+            const valOf = (pl: PL, sec: PLSection["key"], key: string) => pl.sections.find((x) => x.key === sec)?.lines.find((l) => l.key === key)?.value ?? 0;
+            const tot = (label: string, f: (pl: PL) => number, ink = false) => (
+              <div key={label} className={`grid gap-3 items-center font-semibold text-sm ${ink ? "mx-3 my-1 rounded-xl bg-ink text-ink-foreground px-3 py-2.5" : "px-6 py-2 border-t border-border"}`} style={grid}>
+                <span>{label}</span>
+                {cols.map((c) => <span key={c.key} className={`font-ledger text-right ${f(c.pl) < 0 ? (ink ? "text-down" : "text-danger-700 dark:text-danger-500") : ""}`}>{money(f(c.pl))}</span>)}
+              </div>
+            );
+            return (
+              <div className="overflow-x-auto pb-2">
+                <div style={{ minWidth: 220 + cols.length * 122 }}>
+                  <div className="grid gap-3 px-6 py-2.5 bg-muted/60 border-y border-border text-xs font-semibold text-muted-foreground" style={grid}>
+                    <span>Line · {titles.cur}</span>
+                    {cols.map((c) => <span key={c.key} className={`text-right truncate ${c.key === "total" ? "text-foreground" : ""}`}>{c.name}</span>)}
+                  </div>
+                  {companyPL.sections.filter((x) => x.lines.length > 0).map((sec) => (
+                    <Fragment key={sec.key}>
+                      <div className="px-6 pt-3 pb-1"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm" style={{ background: SEC_COLOR[sec.key] }} /><span className="lbl text-foreground">{sec.title}</span></span></div>
+                      {sec.lines.map((l) => (
+                        <div key={l.key} className="grid gap-3 items-center px-6 pl-9 py-1 text-sm hover:bg-muted/40" style={grid}>
+                          <span className="truncate">{l.code && <span className="font-ledger text-xs text-muted-foreground mr-2">{l.code}</span>}{l.label}</span>
+                          {cols.map((c) => <span key={c.key} className={`font-ledger text-right ${c.key === "total" ? "font-semibold" : "text-muted-foreground"}`}>{money(valOf(c.pl, sec.key, l.key))}</span>)}
+                        </div>
+                      ))}
+                    </Fragment>
+                  ))}
+                  {tot("Revenue", (pl) => pl.revenue)}
+                  {tot("Gross profit", (pl) => pl.gross)}
+                  {tot(basis === "cash" ? "Cash profit before tax" : "Operating profit", (pl) => pl.operating)}
+                  {tot(basis === "cash" ? "Cash profit" : "Net profit", (pl) => pl.net, true)}
+                  <div className="grid gap-3 items-center px-6 py-2 text-xs text-muted-foreground" style={grid}>
+                    <span>Net margin</span>
+                    {cols.map((c) => <span key={c.key} className="font-ledger text-right">{pct(c.pl.net / (c.pl.revenue || 1))}</span>)}
+                  </div>
+                  <p className="px-6 pt-1 text-[11px] text-muted-foreground">Each region is its own ledger lines (and head office its own). The company column is the whole ledger; regional columns may not add to it exactly where a line carries no region.</p>
+                </div>
+              </div>
+            );
+          })()
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
@@ -230,6 +294,7 @@ export default function PLTab({ period, basis, cmp, pl, loading, error }: {
             </tbody>
           </table>
         </div>
+        )}
         <div className="h-3" />
       </section>
 

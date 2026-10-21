@@ -1309,7 +1309,7 @@ export default function AttendanceBoard() {
             (change_guard_shift RPC) and the Assignments & Pay data/department
             derivation, but none of that page's cards/filters/pay columns. Shown
             only to users who pass the same view gate as the standalone route. */}
-        {tab === "shifts" && canShiftMgmt && <Suspense fallback={<RouteLoading />}><ShiftManagement /></Suspense>}
+        {tab === "shifts" && canShiftMgmt && <Suspense fallback={<RouteLoading />}><ShiftManagement embedded /></Suspense>}
       </div>
 
       {drill && (

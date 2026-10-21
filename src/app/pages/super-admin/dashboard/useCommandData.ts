@@ -72,7 +72,18 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 // Counted against the contract: on duty, or away on leave in the roster.
 const ON_POST = ["present", "double_duty", "leave"];
 
-export function useCommandData(companyId: string | null | undefined, regionId: string | null, canReports: boolean, canLedger = canReports) {
+/** What this user may see (Dashboard.tsx `can`). A figure the user has no
+ *  permission for is not fetched at all — not merely hidden (2026-10-21). */
+export type DashPerms = {
+  reports: boolean; accounting: boolean; payroll: boolean; employees: boolean; expenses: boolean;
+  attendance: boolean; roster: boolean; contracts: boolean; invoices: boolean; receivables: boolean;
+};
+
+export function useCommandData(companyId: string | null | undefined, regionId: string | null, can: DashPerms) {
+  const canReports = can.reports;
+  const seesPosts = can.attendance || can.roster;
+  const seesBilling = can.invoices || can.reports;
+  const skip = Promise.resolve(null);
   const [data, setData] = useState<CommandData | null>(null);
 
   useEffect(() => {
@@ -106,7 +117,7 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
 
       const tasks = await Promise.allSettled([
         // 0 — on post, latest marked day
-        asOf
+        asOf && seesPosts
           ? fetchAllRows<{ worked_for_client_id: string | null; status: string }>(() =>
               withRegion(
                 supabase.from("attendance_records").select("worked_for_client_id, status").eq("attendance_date", asOf),
@@ -115,23 +126,23 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
             )
           : Promise.resolve([] as { worked_for_client_id: string | null; status: string }[]),
         // 1 — contracted heads this month
-        supabase.rpc("client_cover", { p_company_id: companyId, p_month: mStart }),
+        seesPosts || can.contracts || seesBilling ? supabase.rpc("client_cover", { p_company_id: companyId, p_month: mStart }) : skip,
         // 2 — invoices raised, this month and last
-        fetchAllRows<{ client_id: string; invoice_amount: number; invoice_date: string; service_month: string | null; branch_id: string | null }>(() =>
+        !seesBilling ? skip : fetchAllRows<{ client_id: string; invoice_amount: number; invoice_date: string; service_month: string | null; branch_id: string | null }>(() =>
           withRegion(supabase.from("invoices").select("client_id, invoice_amount, invoice_date, service_month, branch_id").or(`service_month.gte.${ppStart},invoice_date.gte.${ppStart}`), regionId) as never,
         ),
         // 3 — receipts this month
-        fetchAllRows<{ amount: number }>(() =>
+        !can.receivables ? skip : fetchAllRows<{ amount: number }>(() =>
           withRegion(supabase.from("invoice_payments").select("amount").gte("payment_date", mStart).lte("payment_date", today), regionId) as never,
         ),
         // 4 — open invoices for ageing
-        fetchAllRows<{ client_id: string; invoice_date: string; outstanding: number }>(() =>
+        !can.receivables ? skip : fetchAllRows<{ client_id: string; invoice_date: string; outstanding: number }>(() =>
           withRegion(supabase.from("invoices").select("client_id, invoice_date, outstanding").gt("outstanding", 0), regionId) as never,
         ),
         // 5 — cash held by custodians
-        supabase.rpc("cash_in_hand", { p_company_id: companyId }),
+        can.accounting ? supabase.rpc("cash_in_hand", { p_company_id: companyId }) : skip,
         // 6 — expenses this month
-        fetchAllRows<{ amount: number }>(() =>
+        !can.expenses ? skip : fetchAllRows<{ amount: number }>(() =>
           withRegion(supabase.from("expenses").select("amount").gte("expense_date", mStart).lte("expense_date", today), regionId) as never,
         ),
         // 7 — client statement, last full month (reports access only)
@@ -142,12 +153,13 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
         canReports ? supabase.rpc("ho_region_modes", { p_company_id: companyId, p_month: pStart }) : Promise.resolve({ data: null, error: null }),
         // 9 — contracted heads in the month being billed: a contract that
         // starts this month owes no invoice for last month (Regent 1, 2026-10-21).
-        supabase.rpc("client_cover", { p_company_id: companyId, p_month: pStart }),
+        seesBilling ? supabase.rpc("client_cover", { p_company_id: companyId, p_month: pStart }) : skip,
         // 10 — when each client's live contract began; client_cover counts a
         // contract that is active now even for a month before it started.
-        supabase.from("contracts").select("client_id, start_date").eq("status", "active").eq("contract_type", "guard_deployment"),
+        seesBilling ? supabase.from("contracts").select("client_id, start_date").eq("status", "active").eq("contract_type", "guard_deployment") : skip,
         // 11 — the month on every bank and cash account, from the ledger
-        canLedger
+        // Bank and cash balances: banking access only (not merely reports).
+        can.accounting
           ? (async () => {
               const { data: locs } = await supabase.from("cash_locations").select("id, coa_account_id").eq("company_id", companyId).eq("is_active", true);
               const accts = ((locs ?? []) as { coa_account_id: string | null }[]).map((l) => l.coa_account_id).filter(Boolean) as string[];
@@ -158,14 +170,14 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
             })()
           : Promise.resolve(null),
         // 12 — last month's payslips in full, and salary disbursed this month
-        fetchAllRows<{ net_salary: number; amount_paid: number | null; disbursed: boolean | null }>(() =>
+        !can.payroll ? skip : fetchAllRows<{ net_salary: number; amount_paid: number | null; disbursed: boolean | null }>(() =>
           withRegion(supabase.from("payslips").select("net_salary, amount_paid, disbursed").eq("period_month", pStart), regionId) as never,
         ),
-        fetchAllRows<{ amount_paid: number }>(() =>
+        !can.payroll ? skip : fetchAllRows<{ amount_paid: number }>(() =>
           withRegion(supabase.from("payslips").select("amount_paid").gte("disbursed_at", mStart).lte("disbursed_at", `${today}T23:59:59`), regionId) as never,
         ),
         // 14 — the workforce: who is on the books, who joined and left this month
-        fetchAllRows<{ lifecycle_state: string | null; join_date: string | null; last_working_day: string | null }>(() =>
+        !can.employees ? skip : fetchAllRows<{ lifecycle_state: string | null; join_date: string | null; last_working_day: string | null }>(() =>
           withRegion(supabase.from("employees").select("lifecycle_state, join_date, last_working_day").eq("company_id", companyId), regionId) as never,
         ),
       ]);
@@ -361,7 +373,7 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
       });
     })();
     return () => { cancelled = true; };
-  }, [companyId, regionId, canReports]);
+  }, [companyId, regionId, canReports, can.accounting, can.payroll, can.employees, can.expenses, can.attendance, can.roster, can.contracts, can.invoices, can.receivables]);
 
   return data;
 }

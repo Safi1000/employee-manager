@@ -224,14 +224,14 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             </Hit>
           )}
           <div className="flex-[999_1_420px] grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
-            {billed != null && (
+            {(d.can.invoices || d.can.reports) && billed != null && (
               <BandStat to="/super-admin/invoices" label={`Billed for ${billLabel}`} value={mil(billed)}
                 sub={c?.expectedClients ? `${c.billedClients} of ${c.expectedClients} contracted clients` : billedPrev ? `${prevLabel}: ${mil(billedPrev)}` : "by service month"}
                 tone={c?.notBilled && c.notBilled.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
             )}
-            {c?.receiptsMtd != null && <BandStat to="/super-admin/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
+            {d.can.receivables && c?.receiptsMtd != null && <BandStat to="/super-admin/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
             {d.can.accounting && <BandStat to="/super-admin/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
-            {ar && <BandStat to="/super-admin/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
+            {d.can.receivables && ar && <BandStat to="/super-admin/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
         </div>
 
@@ -260,7 +260,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
 
       {/* POST BOARD + RUN RATE / PAYDAY */}
       <div className="flex flex-wrap gap-4 md:gap-5 items-stretch">
-        {d.show("post_board") && sites && sites.length > 0 && (
+        {d.show("post_board") && (d.can.attendance || d.can.roster) && sites && sites.length > 0 && (
           <Card kicker="Post board" title="Every client, right now" className="flex-[2_1_620px]"
             aside={
               <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
@@ -290,7 +290,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
         )}
 
         <div className="flex-[1_1_340px] min-w-0 flex flex-col gap-4 md:gap-5">
-          {d.show("month_landing") && billed != null && (() => {
+          {d.show("month_landing") && (d.can.invoices || d.can.reports) && billed != null && (() => {
             const exp = c?.expectedClients ?? 0, done = c?.billedClients ?? 0;
             const pctDone = exp ? done / exp : 1;
             const change = billedPrev ? (billed - billedPrev) / billedPrev : null;
@@ -349,7 +349,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
 
       {/* CASH + CLIENT MAP */}
       <div className="flex flex-wrap gap-4 md:gap-5 items-stretch">
-        {d.show("cash_month") && cm && (
+        {d.show("cash_month") && d.can.accounting && cm && (
           <Card kicker="Cash this month · from the ledger" title={`From ${mil(cm.opening)} to ${mil(cm.closing)}`} className="flex-[1_1_420px]"
             aside={<Link to="/super-admin/accounting" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">By account</Link>}>
             {fall.map((f) => (
@@ -370,7 +370,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           </Card>
         )}
 
-        {d.show("client_map") && dots.length > 0 && c?.clientMap && (
+        {d.show("client_map") && d.can.reports && dots.length > 0 && c?.clientMap && (
           <Card kicker={`Client map · ${new Date(`${c.clientMap.month}T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}`} title="Who earns, who costs" className="flex-[1_1_460px]"
             aside={<span className="text-xs text-muted-foreground">Size = contracted guards</span>}>
             <div className="flex gap-2">
@@ -457,7 +457,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           );
         })()}
 
-        {d.show("receivables_ladder") && ar && ar.byClient.length > 0 && (
+        {d.show("receivables_ladder") && d.can.receivables && ar && ar.byClient.length > 0 && (
           <Card kicker="Money owed to us" title={`${mil(ar.total)} outstanding`} className="flex-[1_1_460px]"
             aside={<div className="flex gap-2.5 text-[11px] text-muted-foreground flex-wrap">{AGE.map((a) => <Legend key={a.label} color={a.color}>{a.label}</Legend>)}</div>}>
             {(() => {
@@ -483,7 +483,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           </Card>
         )}
 
-        {d.show("region_cards") && c?.regions && c.regions.length > 0 && (
+        {d.show("region_cards") && d.can.reports && c?.regions && c.regions.length > 0 && (
           <section aria-label="Regions" className="flex-[1_1_420px] min-w-0 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3.5">
             {c.regions.map((r) => {
               const mx = Math.max(...r.trend, 1), mn = Math.min(...r.trend) * 0.85;

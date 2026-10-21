@@ -29,7 +29,10 @@ import { usePageState } from "../../lib/pageState";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-export default function ShiftManagement() {
+/** `embedded`: shown as Attendance's Shifts tab — no page band of its own and
+ *  no scroller of its own (that page has both); the figures sit in a sub-band
+ *  that scrolls with the page (2026-10-21: it used to stick under Attendance). */
+export default function ShiftManagement({ embedded }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const { regionId } = useRegion();
   // Shift change is an HR action (not Base Salary / Joining Date, which are
@@ -159,6 +162,8 @@ export default function ShiftManagement() {
   const matchesEmp = useCallback((e: EmployeeRow) => {
     if (!eq) return true;
     const code = guardDisplayCode(e, clientById.get(e.client_id ?? "")?.employee_id_prefix) ?? "";
+    // The shift is searchable too, so a shift chip on the band finds its guards.
+    if ((e.shift ?? "").toLowerCase() === eq) return true;
     return `${e.full_name} ${code} ${e.employee_code ?? ""} ${e.guard_code ?? ""}`.toLowerCase().includes(eq);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eq, clientById]);
@@ -178,8 +183,47 @@ export default function ShiftManagement() {
 
   return (
     <>
-      <Header title="Shift Management" subtitle="View and change each guard's shift, by client" />
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
+      <ShiftFrame embedded={embedded}>
+        {!loading && (() => {
+          // The roster at a glance (2026-10-21): how many guards are posted, and
+          // how they split across shifts. Tap a shift to find its guards.
+          const all = [...rowsByClient.values()].flat();
+          const byShift = new Map<string, number>();
+          for (const e of all) { const k = (e.shift ?? "unset").toLowerCase(); byShift.set(k, (byShift.get(k) ?? 0) + 1); }
+          const shifts = [...byShift.entries()].sort((a, b) => b[1] - a[1]);
+          const total = Math.max(1, all.length);
+          const shades = ["bg-brand-500", "bg-calm", "bg-up", "bg-heed", "bg-rest"];
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,2fr)] gap-2.5">
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Clients</span>
+                <span className="font-ledger text-2xl font-semibold leading-none">{[...rowsByClient.keys()].length}</span>
+                <span className="text-xs text-muted-foreground">with guards posted</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Guards on the roster</span>
+                <span className="font-ledger text-2xl font-semibold leading-none">{all.length}</span>
+                <span className="text-xs text-muted-foreground">active, posted to a client</span>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2 min-w-0">
+                <span className="lbl">By shift · tap to find</span>
+                <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
+                  {shifts.map(([k, n], i) => <span key={k} className={shades[i % shades.length]} style={{ width: `${(n / total) * 100}%` }} />)}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                  {shifts.map(([k, n], i) => (
+                    <button key={k} type="button" onClick={() => setEmpSearch(empSearch === k ? "" : k)}
+                      className={`inline-flex items-center gap-1.5 capitalize ${empSearch === k ? "text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
+                      <span className={`w-2 h-2 rounded-full ${shades[i % shades.length]}`} />{k} <span className="font-ledger">{n}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </ShiftFrame>
+      <div className={embedded ? "space-y-4" : "flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4"}>
         {error && (
           <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">{error}</div>
         )}
@@ -299,4 +343,9 @@ export default function ShiftManagement() {
       )}
     </>
   );
+}
+
+function ShiftFrame({ embedded, children }: { embedded?: boolean; children: React.ReactNode }) {
+  if (!embedded) return <Header title="Shift Management" subtitle="View and change each guard's shift, by client">{children}</Header>;
+  return <div className="band on-dark rounded-[22px] px-4 md:px-6 py-4 mb-4">{children}</div>;
 }

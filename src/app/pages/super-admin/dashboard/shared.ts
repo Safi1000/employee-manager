@@ -38,6 +38,10 @@ export type DashCan = {
   incidents: boolean;
   coa: boolean;
   periodClose: boolean;
+  /** What was invoiced (invoices.view / .edit). */
+  invoices: boolean;
+  /** What clients owe and have paid (receivables.view, invoices.view, accounting.edit). */
+  receivables: boolean;
 };
 
 export type DashData = {

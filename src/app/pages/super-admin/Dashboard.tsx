@@ -73,6 +73,12 @@ export default function SuperAdminDashboard() {
     expenses: hasPermission(profile, "expenses.view"),
     payroll: hasPermission(profile, "payroll.view"),
     accounting: hasPermission(profile, "banks.view"),
+    // 2026-10-21: money a client owes or has paid, and what was invoiced, are
+    // each their own permission. The Dashboard used to show them to anyone who
+    // could open it — received this month, owed to us, billed, the payment
+    // feed — whatever their role.
+    invoices: hasPermission(profile, "invoices.view") || hasPermission(profile, "invoices.edit"),
+    receivables: hasPermission(profile, "receivables.view") || hasPermission(profile, "invoices.view") || hasPermission(profile, "accounting.edit"),
     reports: hasPermission(profile, "reports.view"),
     contracts: hasPermission(profile, "contracts.view"),
     roster: hasPermission(profile, "roster.view"),
@@ -84,7 +90,7 @@ export default function SuperAdminDashboard() {
   const nothingToShow =
     !can.compliance && !can.employees && !can.attendance && !can.expenses &&
     !can.payroll && !can.accounting && !can.reports && !can.contracts &&
-    !can.roster && !can.incidents;
+    !can.roster && !can.incidents && !can.invoices && !can.receivables;
 
 
   const [loading, setLoading] = useState(true);
@@ -155,17 +161,17 @@ export default function SuperAdminDashboard() {
           periodLastRes,
         ] = await Promise.all([
           // Region-aware widgets filter on branch_id via the global selector.
-          withRegion(supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"), regionId),
-          withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", today), regionId),
-          withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", yesterday), regionId),
-          withRegion(supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today), regionId),
-          withRegion(supabase.from("expenses").select("amount, expense_date, category_id").gte("expense_date", mStart).lte("expense_date", mEnd), regionId),
-          withRegion(supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd), regionId),
-          withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", periodMonthKey).eq("disbursed", true), regionId),
-          withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${pStart.slice(0, 7)}-01`).eq("disbursed", true), regionId),
+          can.employees ? withRegion(supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.attendance || can.roster ? withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", today), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.attendance || can.roster ? withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", yesterday), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.attendance || can.roster ? withRegion(supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.expenses ? withRegion(supabase.from("expenses").select("amount, expense_date, category_id").gte("expense_date", mStart).lte("expense_date", mEnd), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.expenses ? withRegion(supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.payroll ? withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", periodMonthKey).eq("disbursed", true), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          can.payroll ? withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${pStart.slice(0, 7)}-01`).eq("disbursed", true), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
           // Bank pool is shared across regions (spec §8) — stays company-wide.
-          supabase.from("bank_accounts").select("id, bank_name, balance").order("bank_name"),
-          fetchAllRows<{ client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }>(() =>
+          can.accounting ? supabase.from("bank_accounts").select("id, bank_name, balance").order("bank_name") : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          !can.receivables ? Promise.resolve([] as { client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }[]) : fetchAllRows<{ client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }>(() =>
             withRegion(
               supabase
                 .from("invoice_payments")
@@ -189,7 +195,7 @@ export default function SuperAdminDashboard() {
           //
           // No lower bound. Overdue items are the loudest rows here, not the
           // ones that fall out of the filter.
-          withRegion(
+          !can.compliance ? Promise.resolve({ data: [], error: null } as never) : withRegion(
             supabase
               .from("compliance_upcoming")
               .select("kind, ref_id, label, sublabel, due_date, days_remaining")
@@ -200,14 +206,14 @@ export default function SuperAdminDashboard() {
           ),
           // active contracts count — contracts carry no branch_id (region is via
           // client); left company-wide rather than restructure this count query.
-          supabase.from("contracts").select("id", { count: "exact", head: true }).eq("status", "active"),
+          can.contracts ? supabase.from("contracts").select("id", { count: "exact", head: true }).eq("status", "active") : Promise.resolve({ data: [], error: null, count: 0 } as never),
           // open incidents count (open + under_investigation)
-          withRegion(supabase.from("incidents").select("id", { count: "exact", head: true }).in("status", ["open", "under_investigation"]), regionId),
+          can.incidents ? withRegion(supabase.from("incidents").select("id", { count: "exact", head: true }).in("status", ["open", "under_investigation"]), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
           // expense categories for pie chart
           supabase.from("expense_categories").select("id, name"),
           // contracts ending in next 60 days — no branch_id on contracts; left
           // company-wide (region for contracts is derivable only via client).
-          supabase
+          !can.contracts ? Promise.resolve({ data: [], error: null } as never) : supabase
             .from("contracts")
             .select("id, contract_code, client_id, end_date")
             .eq("status", "active")
@@ -217,7 +223,7 @@ export default function SuperAdminDashboard() {
             .order("end_date")
             .limit(10),
           // recent incidents (last 30 days)
-          withRegion(
+          !can.incidents ? Promise.resolve({ data: [], error: null } as never) : withRegion(
             supabase
               .from("incidents")
               .select("id, incident_code, severity, category, occurred_at, status")
@@ -231,7 +237,7 @@ export default function SuperAdminDashboard() {
           // clients", so on the 1st of every month it emptied itself and the whole
           // section vanished. Guards and Guides last took a payment on 28 Jul, so
           // by August the feed had nothing to say. Newest first, no date filter.
-          withRegion(
+          !can.receivables ? Promise.resolve({ data: [], error: null } as never) : withRegion(
             supabase
               .from("invoice_payments")
               .select("id, client_id, invoice_id, amount, payment_date")
@@ -242,7 +248,7 @@ export default function SuperAdminDashboard() {
           // Guard compliance expiries — from compliance_upcoming, the one place
           // this is computed (0291/0292). No lower bound: an item that expired
           // last week is not "not yet due", it is the most urgent row there is.
-          withRegion(
+          !can.compliance ? Promise.resolve({ data: [], error: null } as never) : withRegion(
             supabase
               .from("compliance_upcoming")
               .select("kind, ref_id, days_remaining")
@@ -635,7 +641,7 @@ export default function SuperAdminDashboard() {
   // The command dashboard (2026-10-20) replaces the classic layout and the
   // three alternate designs that sat behind a floating switcher: one home
   // screen, read the same way by everyone.
-  const command = useCommandData(company?.id, regionId, can.reports, can.reports || can.accounting);
+  const command = useCommandData(company?.id, regionId, can);
   const data: DashData = {
     can, show, nothingToShow, branchScopeNote,
     companyName: profile?.display_company_name || company?.name || "Bastion",
