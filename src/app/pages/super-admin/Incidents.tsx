@@ -670,7 +670,7 @@ export default function Incidents() {
                 </div>
                 <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
                   <span className="lbl">What they were</span>
-                  {top.length === 0 && <span className="text-sm text-muted-foreground">No incidents logged.</span>}
+                  {top.length === 0 && <span className="text-sm text-muted-foreground">No incidents logged yet — the sites that need a visit show here once they are.</span>}
                   {top.map(([c, n]) => (
                     <div key={c} className="grid grid-cols-[minmax(0,1fr)_2rem] gap-2 items-center text-xs">
                       <span className="flex flex-col gap-1"><span className="capitalize truncate">{c.replace(/_/g, " ")}</span><span className="h-1.5 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-brand-500" style={{ width: `${(n / Math.max(1, rows.length)) * 100}%` }} /></span></span>
@@ -726,7 +726,9 @@ export default function Incidents() {
           <MobileCardList
             rows={loading ? [] : filteredRows}
             loading={loading}
-            empty="No incidents match the current filters."
+            empty={rows.length === 0
+              ? "No incidents logged yet. When a guard reports theft, a fight, damage or a breach at a site, log it with \"Log Incident\" — the client, the guards involved and what happened."
+              : "No incidents match the current filters."}
             rowKey={(row) => row.id}
             title={(row) => row.client_name ?? "—"}
             subtitle={(row) => {
@@ -816,7 +818,9 @@ export default function Incidents() {
                   <tr>
                     <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground text-sm">
                       <ShieldAlert className="w-5 h-5 inline-block mr-2 text-muted-foreground/70" />
-                      No incidents match the current filters.
+                      {rows.length === 0
+                        ? <>No incidents logged yet. When a guard reports theft, a fight, damage or a breach at a site, log it with &ldquo;Log Incident&rdquo; — the client, the guards involved and what happened.</>
+                        : "No incidents match the current filters."}
                     </td>
                   </tr>
                 )}

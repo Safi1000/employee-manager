@@ -29,8 +29,8 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — Plain-language errors: every database error mapped to a sentence
   that says what happened and what to do, with the technical text behind a
   "details" disclosure.
-- **Idea** — Empty states that teach: each empty table says what belongs there
-  and offers the button that creates the first one.
+- **Built** — Empty states that teach: each empty table says what belongs there
+  and names the button that creates the first one (swept 2026-10-22, Round 5).
 
 ## Dashboard (home)
 
@@ -273,6 +273,15 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — Payroll: a "split this payslip" button that pays the allowance to
   the card and the rest to the bank in one confirmation, instead of two
   disbursements.
+- **Built** — Dashboard ▸ Partner shares: each partner's share of the month
+  so far (cash basis, from `partnership_allocation`), each region's part in the
+  sheet, and a note while a region outside the partnership has not declared.
+- **Built** — Empty states that teach, on the screens that are empty on
+  production today: Incidents (none logged is no longer "no matches for the
+  filters"), Performance (bonus pools, appraisals, guard bonuses — what each
+  is and which button starts it). The rest of the list screens already said
+  what belongs there and how to add the first one; Kit issuance, Planning,
+  Fixed expenses, Recurring alerts and Vehicles were checked and left.
 
 ## Clients, Contracts, Invoices
 

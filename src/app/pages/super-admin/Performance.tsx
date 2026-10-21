@@ -295,7 +295,7 @@ export default function Performance() {
               </ul>
             </div>
           ))}
-          {pools.length === 0 && <p className="text-sm text-muted-foreground">No pools generated.</p>}
+          {pools.length === 0 && <p className="text-sm text-muted-foreground">No bonus pool for {year} yet. A pool is a set share of the growth in head office&rsquo;s or a region&rsquo;s profit over last year, split across its staff when it is generated. {canApprovePerf ? "Generate one with the buttons above; the performance approver then approves it." : "A performance approver generates and approves it."}</p>}
           <p className="text-xs text-muted-foreground/70">Payout to payslips happens in the payroll stream (§28).</p>
         </div>
       )}
@@ -409,7 +409,7 @@ function AppraisalsTab({
               </div>
             </div>
           ))}
-          {appraisals.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No appraisals yet.</p>}
+          {appraisals.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No appraisals yet. Start one under &ldquo;New appraisal&rdquo; above — pick the person, then move it through each stage to a rating.</p>}
         </div>
       </section>
 
@@ -512,7 +512,7 @@ function GuardBonusTab({
               </div>
             </div>
           ))}
-          {guardBonuses.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No guard bonuses accrued.</p>}
+          {guardBonuses.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No guard bonuses accrued yet. Use &ldquo;Accrue bonuses&rdquo; above — a full-attendance bonus for a month, or an Eid bonus — and each guard who qualifies gets a line here to approve.</p>}
         </div>
         <p className="text-xs text-muted-foreground/70 mt-1">Approved bonuses pay out via the guard payroll stream (§28).</p>
       </section>
