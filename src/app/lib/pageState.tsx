@@ -24,7 +24,7 @@ import {
   createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState,
   type Dispatch, type ReactNode, type SetStateAction,
 } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation } from "react-router";
 
 const PREFIX = "pageState:";
 
@@ -166,92 +166,4 @@ export function ScrollMemory({ children }: { children: ReactNode }) {
   }, [routeKey]);
 
   return <div ref={ref} className="contents">{children}</div>;
-}
-
-// ── Saved views (2026-10-22) ─────────────────────────────────────────────────
-// A VIEW is everything usePageState remembers for one page — tabs, filters,
-// searches, sorts, open groups — taken as one snapshot. Because every page
-// already keeps that state here, one mechanism gives all of them saved views
-// and shareable links without touching the pages. Scroll positions are not
-// part of a view.
-
-export type PageSnapshot = Record<string, string>;   // key suffix after the page prefix → raw JSON
-
-function pagePrefix(pathname: string) { return `${PREFIX}${pathname}`; }
-
-/** The page's remembered state, as raw stored strings keyed by what follows the path. */
-export function snapshotPage(pathname: string): PageSnapshot {
-  const out: PageSnapshot = {};
-  try {
-    const pre = pagePrefix(pathname);
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i);
-      if (!k || !k.startsWith(pre)) continue;
-      const rest = k.slice(pre.length);
-      // Only this page's own keys (":name" or "#scope:name"), never a deeper route's.
-      if (!rest.startsWith(":") && !rest.startsWith("#")) continue;
-      const v = sessionStorage.getItem(k);
-      if (v != null) out[rest] = v;
-    }
-  } catch { /* storage unavailable: an empty view */ }
-  return out;
-}
-
-/** Replace the page's remembered state with a snapshot; anything not in it returns to its default. */
-export function applySnapshot(pathname: string, snap: PageSnapshot) {
-  try {
-    const pre = pagePrefix(pathname);
-    const drop: string[] = [];
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i);
-      if (k && k.startsWith(pre) && (k[pre.length] === ":" || k[pre.length] === "#")) drop.push(k);
-    }
-    drop.forEach((k) => sessionStorage.removeItem(k));
-    for (const [rest, v] of Object.entries(snap)) {
-      if ((rest.startsWith(":") || rest.startsWith("#")) && typeof v === "string") sessionStorage.setItem(pre + rest, v);
-    }
-  } catch { /* storage unavailable: the page opens on its defaults */ }
-}
-
-/** A view as a URL-safe string, and back. Null when it cannot be read. */
-export function encodeView(snap: PageSnapshot): string {
-  const json = JSON.stringify(snap);
-  return btoa(String.fromCharCode(...new TextEncoder().encode(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-export function decodeView(s: string): PageSnapshot | null {
-  try {
-    const b = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
-    const obj = JSON.parse(new TextDecoder().decode(Uint8Array.from(b, (ch) => ch.charCodeAt(0))));
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
-    const out: PageSnapshot = {};
-    for (const [k, v] of Object.entries(obj)) if (typeof v === "string") out[k] = v;
-    return out;
-  } catch { return null; }
-}
-
-/**
- * Opens a page on a view carried in its link (`?view=…`): the snapshot is
- * written BEFORE the page mounts, so it reads it as its own remembered state,
- * then the parameter is taken off the address. Mounted once in the layout.
- */
-export function ViewLink({ children }: { children: ReactNode }) {
-  const { pathname, search, hash } = useLocation();
-  const navigate = useNavigate();
-  const params = new URLSearchParams(search);
-  const raw = params.get("view");
-  const [nonce, setNonce] = useState(0);
-  const applied = useRef<string | null>(null);
-  if (raw && applied.current !== raw) {
-    const snap = decodeView(raw);
-    if (snap) applySnapshot(pathname, snap);
-    applied.current = raw;
-  }
-  useEffect(() => {
-    if (!raw) return;
-    params.delete("view");
-    const rest = params.toString();
-    setNonce((n) => n + 1);   // remount the page so it re-reads the view
-    navigate({ pathname, search: rest ? `?${rest}` : "", hash }, { replace: true });
-  }, [raw]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div key={`${pathname}#${nonce}`} className="contents">{children}</div>;
 }

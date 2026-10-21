@@ -48,7 +48,7 @@ import {
   ClipboardList,
   ClipboardCheck,
 } from "lucide-react";
-import { ScrollMemory, ViewLink } from "../lib/pageState";
+import { ScrollMemory } from "../lib/pageState";
 
 type LinkDef = {
   to: string;
@@ -378,8 +378,7 @@ export default function SuperAdminLayout() {
         {/* Remembers each page's scroll position for the session (pageState.tsx). */}
         <ScrollMemory>
           <Suspense fallback={<RouteLoading />}>
-            {/* A link carrying a saved view (?view=…) opens the page on it. */}
-            <ViewLink><Outlet /></ViewLink>
+            <Outlet />
           </Suspense>
         </ScrollMemory>
       </div>
