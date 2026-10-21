@@ -34,6 +34,12 @@ const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 
 const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmt(Math.abs(n))}`;
 const fmtDate = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 const fmtStamp = (d: string) => new Date(d).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+/** A statement figure as typed: "2,368,041.00", "PKR 2368041" and " 2368041 " all read the same. */
+const parseAmount = (v: string): number | null => {
+  const t = v.replace(/pkr/i, "").replace(/[,\s]/g, "");
+  if (t === "" || !/^-?\d*\.?\d+$/.test(t)) return null;
+  return Number(t);
+};
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -95,15 +101,16 @@ export default function BankReconciliation({
   const bankName = (id: string) => companyBanks.find((b) => b.id === id)?.bank_name ?? banks.find((b) => b.id === id)?.bank_name ?? "Bank";
 
   const formBank = form ? companyBanks.find((b) => b.id === form.bankId) : undefined;
-  const formDiff = form && formBank && form.balance.trim() !== "" ? Number(form.balance) - Number(formBank.balance) : null;
+  const formAmount = form ? parseAmount(form.balance) : null;
+  const formDiff = formBank && formAmount != null ? formAmount - Number(formBank.balance) : null;
 
   const submit = async () => {
     if (!form) return;
     if (!form.bankId) return setErr("Choose the bank.");
-    if (form.balance.trim() === "" || Number.isNaN(Number(form.balance))) return setErr("Enter the balance the statement shows.");
+    if (formAmount == null) return setErr("Enter the balance the statement shows, as a number (commas are fine).");
     setBusy(true); setErr(null);
     const { error } = await supabase.rpc("reconcile_bank", {
-      p_bank_account_id: form.bankId, p_statement_date: form.date, p_statement_balance: Number(form.balance),
+      p_bank_account_id: form.bankId, p_statement_date: form.date, p_statement_balance: formAmount,
       p_post_difference: form.post, p_notes: form.notes.trim() || null,
     });
     setBusy(false);
