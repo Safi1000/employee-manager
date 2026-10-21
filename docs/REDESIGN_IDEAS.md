@@ -242,6 +242,38 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Left** — Empty-state sweep, and checking the green and steel accent
   themes on every screen (needs a signed-in browser).
 
+## Round 5 (2026-10-21 → 22) — the September reconciliation and what it needed
+
+- **Built** — Banks & Ledgers ▸ Bank accounts: **Security deposits** (bid,
+  performance, rent — company money held elsewhere, 1170, never an expense)
+  and **Bank reconciliation** (reconcile a bank on a date; what came after
+  shows; a "tallied on …" line on each bank card and a Banks tallied tile on
+  the Dashboard). Migrations 0533, 0534.
+- **Built** — Invoices ▸ Withholding tax: every WHT receipt is a claim until it
+  is seen deposited (certificate / CPR number), with an overdue flag at 45
+  days. 0536; 0543 stops a user verifying another region's receipt.
+- **Built** — Partnership: Lahore outside the partnership from September with a
+  declared monthly profit; Partnership Run ▸ By region; the equity share per
+  region. 0537, 0538.
+- **Built** — Accountant ▸ Tie-out: one month, every rupee in and out reached
+  two independent ways, and "money with nowhere to land" with the fix for
+  each item. 0539. September ties out on every line.
+- **Built** — Assignments & Pay: the base-salary pencil opens **Pay** —
+  monthly or per day at the man's own daily rate (relievers). 0540.
+- **Built** — Payroll: a payslip paid in parts shows each part and the channel
+  it went through; each part posts and reverses where it left. 0541.
+- **Built** — Accounting ▸ **Fuel cards**: company float cards (load, bill,
+  Attock balance, reverse a load) and allowance cards; "Fuel card" as a payroll
+  payment mode. The Attock portal figure is a nightly check. 0542.
+- **Needs data** — no fuel card is registered yet; until each float card has an
+  Attock balance entered it reads red, on purpose.
+- **Needs data** — Anjum Sharafat (reliever) has no rate of any kind.
+- **Idea** — Fuel cards: a monthly Attock statement import instead of one typed
+  balance, matching each bill line by date and amount.
+- **Idea** — Payroll: a "split this payslip" button that pays the allowance to
+  the card and the rest to the bank in one confirmation, instead of two
+  disbursements.
+
 ## Clients, Contracts, Invoices
 
 - **Built** — Clients: band with clients, guards, owed and largest client's

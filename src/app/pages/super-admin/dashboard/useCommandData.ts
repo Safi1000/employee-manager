@@ -72,7 +72,14 @@ export type CommandData = {
   expensesPaidMtd: number | null;
   clientMap: { month: string; rows: ClientDot[] } | null;
   regions: RegionCard[] | null;
+  /** Each partner's share of the running month so far, cash basis, from
+   *  partnership_allocation — the run's own arithmetic, not a copy of it.
+   *  `undeclared` names regions outside the partnership whose profit for the
+   *  month has not been declared yet (they count as nothing until it is). */
+  partners: { month: string; asOf: string; rows: PartnerPot[]; undeclared: string[] } | null;
 };
+
+export type PartnerPot = { partnerId: string; name: string; kind: "regional" | "equity"; amount: number; parts: { region: string; amount: number; sharePct: number | null }[] };
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 // Counted against the contract: on duty, or away on leave in the roster.
@@ -200,6 +207,15 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
               withRegion(supabase.from("employees").select("id, full_name, branch_id, lifecycle_state").eq("company_id", companyId).eq("category", "reliever"), regionId),
               withRegion(supabase.from("attendance_records").select("employee_id").eq("attendance_date", asOf), regionId),
             ]).then(([e, a]) => ({ data: { emps: (e.data ?? []) as { id: string; full_name: string; branch_id: string | null; lifecycle_state: string | null }[], marked: new Set(((a.data ?? []) as { employee_id: string }[]).map((r) => r.employee_id)) }, error: e.error ?? a.error }))
+          : skip,
+        // 17 — the partnership, this month so far (reports access: "financial reports & partnership")
+        canReports ? supabase.rpc("partnership_allocation", { p_start: mStart, p_end: today, p_basis: "cash", p_company_id: companyId }) : skip,
+        // 18 — regions outside the partnership, and what has been declared for them this month
+        canReports
+          ? Promise.all([
+              supabase.from("partnership_region_settings").select("branch_id, outside_from, outside_to").eq("company_id", companyId),
+              supabase.from("region_declared_profit").select("branch_id").eq("company_id", companyId).eq("period_month", mStart),
+            ]).then(([s, dp]) => ({ data: { outside: (s.data ?? []) as { branch_id: string; outside_from: string; outside_to: string | null }[], declared: new Set(((dp.data ?? []) as { branch_id: string }[]).map((r) => r.branch_id)) }, error: s.error ?? dp.error }))
           : skip,
       ]);
       if (cancelled) return;
@@ -419,6 +435,24 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
         expensesPaidMtd: ok<{ amount: number }[]>(6)?.reduce((s, r) => s + Number(r.amount ?? 0), 0) ?? null,
         clientMap,
         regions,
+        partners: (() => {
+          type PA = { row_kind: string; region_name: string | null; partner_id: string | null; partner_name: string | null; share_pct: number | null; amount: number };
+          const pa = ok<PA[]>(17);
+          if (!pa) return null;
+          const byPartner = new Map<string, PartnerPot>();
+          for (const r of pa) {
+            if (!r.partner_id || !["REGIONAL_PARTNER", "EQUITY_REGION"].includes(r.row_kind)) continue;
+            const p = byPartner.get(r.partner_id) ?? { partnerId: r.partner_id, name: r.partner_name ?? "Partner", kind: r.row_kind === "REGIONAL_PARTNER" ? "regional" as const : "equity" as const, amount: 0, parts: [] };
+            p.amount += Number(r.amount ?? 0);
+            p.parts.push({ region: r.region_name ?? "—", amount: Number(r.amount ?? 0), sharePct: r.share_pct == null ? null : Number(r.share_pct) });
+            byPartner.set(r.partner_id, p);
+          }
+          const od = ok<{ outside: { branch_id: string; outside_from: string; outside_to: string | null }[]; declared: Set<string> }>(18);
+          const undeclared = (od?.outside ?? [])
+            .filter((o) => o.outside_from <= today && (!o.outside_to || o.outside_to >= mStart) && !od!.declared.has(o.branch_id))
+            .map((o) => regionOf(o.branch_id));
+          return { month: mStart, asOf: today, rows: [...byPartner.values()].sort((a, b) => b.amount - a.amount), undeclared };
+        })(),
       });
     })();
     return () => { cancelled = true; };

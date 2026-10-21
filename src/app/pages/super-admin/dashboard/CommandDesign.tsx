@@ -567,6 +567,47 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             })}
           </section>
         )}
+
+        {/* PARTNER POT — each partner's share of the month so far, cash basis,
+            read from partnership_allocation (the run's own arithmetic). The
+            month is not final until its run is posted. Company-wide. */}
+        {d.show("partner_pot") && d.can.reports && c?.partners && c.partners.rows.length > 0 && (() => {
+          const pp = c.partners;
+          const month = new Date(`${pp.month}T00:00:00`).toLocaleDateString(undefined, { month: "long" });
+          const top = Math.max(1, ...pp.rows.map((r) => Math.abs(r.amount)));
+          return (
+            <Card kicker={`Partners · ${month} so far`} title="Shares earned" className="flex-[1_1_380px]"
+              aside={<span className="text-xs text-muted-foreground">Cash basis · company-wide · final when the run is posted</span>}>
+              <div className="flex flex-col gap-3">
+                {pp.rows.map((r) => (
+                  <Hit key={r.partnerId} label={`${r.name} share`} onClick={() => setSheet({
+                    kicker: `Partnership · ${month} to ${formatDate(pp.asOf)}`, title: r.name, big: fmt(r.amount),
+                    note: r.kind === "regional"
+                      ? "Their share of their region's profit after its head-office charge, cash basis, as the partnership run computes it."
+                      : "The equity share: what is left of every region's profit after the regional partners, cash basis.",
+                    rows: r.parts.map((x) => ({ label: x.region, value: fmt(x.amount), hint: x.sharePct != null && r.kind === "regional" ? `${x.sharePct}%` : undefined })),
+                    link: { to: "/super-admin/partnership-run", label: "Open Partnership Run" },
+                  })}>
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm text-foreground font-medium group-hover:underline truncate">{r.name}
+                        <span className="text-muted-foreground font-normal"> · {r.kind === "regional" ? r.parts.map((x) => x.region).join(", ") : "equity"}</span>
+                      </span>
+                      <span className="font-ledger text-lg font-semibold whitespace-nowrap">{fmt(r.amount)}</span>
+                    </span>
+                    <span className="mt-1.5 block relative h-2 rounded-full bg-muted overflow-hidden">
+                      <span className={`absolute inset-y-0 left-0 rounded-full ${r.amount < 0 ? "bg-down" : "bg-brand-500"}`} style={{ width: `${(Math.abs(r.amount) / top) * 100}%` }} />
+                    </span>
+                  </Hit>
+                ))}
+                {pp.undeclared.length > 0 && (
+                  <Link to="/super-admin/partnership-run" className="text-xs text-heed hover:underline">
+                    {pp.undeclared.join(", ")}: profit not declared for {month} yet — counts as nothing until it is.
+                  </Link>
+                )}
+              </div>
+            </Card>
+          );
+        })()}
       </div>
 
       {/* NEXT 30 DAYS */}
