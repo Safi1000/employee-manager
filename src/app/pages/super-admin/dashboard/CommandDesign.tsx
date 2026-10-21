@@ -137,14 +137,16 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const openSite = (s: SiteTile) => setSheet({
     kicker: `${s.region} · as marked ${c?.asOf ? formatDate(c.asOf) : "today"}`,
     title: s.name,
-    big: `${s.onPost} / ${s.contracted || "—"} on post`,
+    big: `${s.onPost} / ${s.contracted || "—"} on strength`,
     note: s.marked === 0 ? "No attendance has been marked for this client on this day yet, so cover cannot be read. Mark the register to see it here." :
       s.contracted === 0 ? "Guards are marked for this client but no contracted heads were found for the month — cover the company absorbs." :
-      s.onPost < s.contracted ? `${s.contracted - s.onPost} post${s.contracted - s.onPost > 1 ? "s" : ""} uncovered. Send a reliever from the roster, or check the attendance has been marked.` :
-      "Every contracted post is covered.",
+      s.onPost < s.contracted ? `${s.contracted - s.onPost} head${s.contracted - s.onPost > 1 ? "s" : ""} short of contract${s.absent ? ` — ${s.absent} marked absent` : ""}. Send a reliever from the roster, or check the attendance has been marked.` :
+      `Every contracted head is filled${s.onLeave ? ` — ${s.onLeave} of them on leave` : ""}.`,
     rows: [
       { label: "Contracted heads", value: fmt(s.contracted), hint: "Active guard-deployment contracts this month" },
-      { label: "Marked present or double duty", value: fmt(s.onPost) },
+      { label: "Present or double duty", value: fmt(s.present) },
+      { label: "On leave", value: fmt(s.onLeave), hint: "Counts against the contract" },
+      { label: "Absent", value: fmt(s.absent), hint: "Leaves the post short" },
       { label: "Difference", value: fmt(s.onPost - s.contracted) },
     ],
     link: { to: "/super-admin/attendance", label: "Open attendance" },
@@ -186,27 +188,27 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           {(d.can.attendance || d.can.roster) && c && (
             <Hit
               onClick={() => setSheet({
-                kicker: "Right now", title: "Uncovered posts", big: fmt(shortHeads),
-                note: sites ? "Clients with fewer guards marked on post than their contracts ask for." : "Coverage by client needs the contract cover figures; showing today's attendance instead.",
+                kicker: "Right now", title: "Short of contract", big: fmt(shortHeads),
+                note: sites ? "Clients with fewer guards on strength (present, double duty or on leave) than their contracts ask for." : "Coverage by client needs the contract cover figures; showing today's attendance instead.",
                 rows: short.slice(0, 12).map((s) => ({ label: s.name, value: `${s.contracted - s.onPost} short`, hint: s.region })),
                 link: { to: "/super-admin/attendance", label: "Open attendance" },
               })}
               className="flex-[1_1_300px] flex gap-5 items-center"
-              label="Guards on post now"
+              label="Guards on strength now"
             >
-              <svg width="128" height="128" viewBox="0 0 132 132" role="img" aria-label={`${Math.round(coverPct * 100)} percent of posts covered`} className="flex-shrink-0">
+              <svg width="128" height="128" viewBox="0 0 132 132" role="img" aria-label={`${Math.round(coverPct * 100)} percent of contracted heads filled`} className="flex-shrink-0">
                 <circle cx="66" cy="66" r="54" fill="none" stroke="#2e3125" strokeWidth="12" />
                 <circle cx="66" cy="66" r="54" fill="none" stroke="#e9a73c" strokeWidth="12" strokeLinecap="round" strokeDasharray={`${(C * Math.min(1, coverPct)).toFixed(1)} ${C.toFixed(1)}`} transform="rotate(-90 66 66)" />
                 <text x="66" y="62" textAnchor="middle" fontFamily="Bricolage Grotesque, sans-serif" fontSize="27" fontWeight="700" fill="#f3eee2">{pct(Math.min(1, coverPct)).replace(".0%", "%")}</text>
-                <text x="66" y="82" textAnchor="middle" fontFamily="Hanken Grotesk, sans-serif" fontSize="11" fill="#bdb6a0">posts covered</text>
+                <text x="66" y="82" textAnchor="middle" fontFamily="Hanken Grotesk, sans-serif" fontSize="11" fill="#bdb6a0">of contract</text>
               </svg>
               <span className="flex flex-col gap-1.5 min-w-0">
-                <span className="lbl">Guards on post {c?.asOf ? `· ${formatDate(c.asOf)}` : "today"}</span>
+                <span className="lbl">Guards on strength {c?.asOf ? `· ${formatDate(c.asOf)}` : "today"}</span>
                 <span className="font-display text-5xl md:text-[54px] font-extrabold leading-none tracking-tight text-foreground group-hover:underline">
                   {sites ? fmt(onPost) : `${d.attendanceTodayPct}%`}
                   {sites && <span className="text-2xl text-muted-foreground font-semibold"> / {fmt(contracted)}</span>}
                 </span>
-                <span className="text-[13px] text-heed">{sites ? (shortHeads > 0 ? `${shortHeads} posts uncovered across ${short.length} clients — tap for the list` : "Every marked post is covered") : `Yesterday ${d.attendanceYesterdayPct}%`}</span>
+                <span className="text-[13px] text-heed">{sites ? (shortHeads > 0 ? `${shortHeads} heads short across ${short.length} clients — tap for the list` : "Every marked client is at contract strength") : `Yesterday ${d.attendanceYesterdayPct}%`}</span>
                 {unmarked.length > 0 && <span className="text-xs text-muted-foreground">{unmarked.length} client{unmarked.length > 1 ? "s" : ""} not marked yet — left out of the figure</span>}
               </span>
             </Hit>
@@ -260,10 +262,10 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
               const nm = list.length - ml.length;
               return (
                 <div key={region} className="flex flex-col gap-2">
-                  <div className="flex justify-between text-xs text-muted-foreground"><span className="font-bold text-foreground">{region}</span><span className="font-ledger">{o} / {rq} on post · {ml.filter((x) => x.contracted > x.onPost).length} short{nm ? ` · ${nm} not marked` : ""}</span></div>
+                  <div className="flex justify-between text-xs text-muted-foreground"><span className="font-bold text-foreground">{region}</span><span className="font-ledger">{o} / {rq} on strength · {ml.filter((x) => x.contracted > x.onPost).length} short{nm ? ` · ${nm} not marked` : ""}</span></div>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(122px,1fr))] gap-2">
                     {list.map((s) => (
-                      <button key={s.clientId} type="button" onClick={() => openSite(s)} aria-label={`${s.name}, ${s.onPost} of ${s.contracted} on post`}
+                      <button key={s.clientId} type="button" onClick={() => openSite(s)} aria-label={`${s.name}, ${s.onPost} of ${s.contracted} on strength`}
                         className={`${tile(s)} rounded-[10px] px-2.5 py-2 min-h-16 flex flex-col justify-between gap-1.5 text-left transition-transform hover:-translate-y-0.5 hover:shadow-md`}>
                         <span className="text-xs font-semibold leading-tight line-clamp-2">{s.name}</span>
                         <span className="font-ledger text-[13px] font-semibold">{s.marked === 0 ? "not marked" : `${s.onPost} / ${s.contracted || "—"}`}</span>
@@ -417,7 +419,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                 <Hit key={r.regionId} onClick={() => setSheet({
                   kicker: "Region · last full month", title: r.name, big: fmt(r.net),
                   note: `Profit after regional overhead${r.charged ? " and its head-office share" : r.charged === false ? ". Head office is not charged to this region" : ""}.`,
-                  rows: [{ label: "Revenue", value: fmt(r.revenue) }, { label: "Margin", value: pct(r.net / Math.max(1, r.revenue)) }, { label: "Guards on post", value: rq ? `${o} / ${rq}` : "—" }, { label: "Invoices, last 6 months", value: r.trend.map(mil).join(" → ") }],
+                  rows: [{ label: "Revenue", value: fmt(r.revenue) }, { label: "Margin", value: pct(r.net / Math.max(1, r.revenue)) }, { label: "Guards on strength", value: rq ? `${o} / ${rq}` : "—" }, { label: "Invoices, last 6 months", value: r.trend.map(mil).join(" → ") }],
                   link: { to: "/super-admin/reports", label: "Open in Financial Reports" },
                 })} className="bg-card border border-border rounded-[18px] p-4 flex flex-col gap-2.5 hover:border-brand-500/60">
                   <span className="flex flex-col items-start gap-1 w-full min-w-0">

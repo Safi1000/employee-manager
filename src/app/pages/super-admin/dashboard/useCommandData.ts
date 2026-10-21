@@ -7,8 +7,11 @@ import { withRegion } from "../../../lib/region";
  * is READ from a table or a database function that already owns its
  * definition — nothing here invents a rule:
  *
- *   on post        attendance_records on the latest marked day, present or
- *                  double duty, grouped by the client worked for
+ *   on strength    attendance_records on the latest marked day, present,
+ *                  double duty or on leave, grouped by the client worked for.
+ *                  A guard on leave still fills a contracted head (DECIDED
+ *                  2026-10-21: "60 present, 10 on leave — that is the exact
+ *                  number contracted"); only absent leaves a post short.
  *   contracted     client_cover() for the month (committed heads on active
  *                  guard-deployment contracts)
  *   revenue        invoices raised, by invoice_date
@@ -20,7 +23,7 @@ import { withRegion } from "../../../lib/region";
  * post board, and a missing function hides one panel instead of the page.
  */
 
-export type SiteTile = { clientId: string; name: string; regionId: string | null; region: string; contracted: number; onPost: number; marked: number };
+export type SiteTile = { clientId: string; name: string; regionId: string | null; region: string; contracted: number; onPost: number; present: number; onLeave: number; absent: number; marked: number };
 export type AgeRow = { clientId: string; name: string; regionId: string | null; buckets: [number, number, number, number] };
 export type ClientDot = { clientId: string; name: string; regionId: string | null; region: string; revenue: number; net: number; guards: number };
 export type RegionCard = { regionId: string; name: string; revenue: number; net: number; trend: number[]; charged: boolean | null };
@@ -42,7 +45,8 @@ export type CommandData = {
 };
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const ON_POST = ["present", "double_duty"];
+// Counted against the contract: on duty, or away on leave in the roster.
+const ON_POST = ["present", "double_duty", "leave"];
 
 export function useCommandData(companyId: string | null | undefined, regionId: string | null, canReports: boolean) {
   const [data, setData] = useState<CommandData | null>(null);
@@ -128,10 +132,13 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
       const dayRows = ok<{ worked_for_client_id: string | null; status: string }[]>(0) ?? [];
       const onPost = new Map<string, number>();
       const marked = new Map<string, number>();
+      const presentBy = new Map<string, number>(), leaveBy = new Map<string, number>(), absentBy = new Map<string, number>();
       for (const r of dayRows) {
         if (!r.worked_for_client_id) continue;
         marked.set(r.worked_for_client_id, (marked.get(r.worked_for_client_id) ?? 0) + 1);
         if (ON_POST.includes(r.status)) onPost.set(r.worked_for_client_id, (onPost.get(r.worked_for_client_id) ?? 0) + 1);
+        const bucket = r.status === "leave" ? leaveBy : r.status === "absent" ? absentBy : r.status === "present" || r.status === "double_duty" ? presentBy : null;
+        if (bucket) bucket.set(r.worked_for_client_id, (bucket.get(r.worked_for_client_id) ?? 0) + 1);
       }
       const cover = ok<{ client_id: string; client_name: string; contracted: number }[]>(1);
       let sites: SiteTile[] | null = null;
@@ -141,7 +148,7 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
           .map((id) => {
             const info = clientInfo.get(id);
             const cv = cover.find((c) => c.client_id === id);
-            return info ? { clientId: id, name: info.name ?? cv?.client_name ?? "Client", regionId: info.branch, region: regionOf(info.branch), contracted: Number(cv?.contracted ?? 0), onPost: onPost.get(id) ?? 0, marked: marked.get(id) ?? 0 } : null;
+            return info ? { clientId: id, name: info.name ?? cv?.client_name ?? "Client", regionId: info.branch, region: regionOf(info.branch), contracted: Number(cv?.contracted ?? 0), onPost: onPost.get(id) ?? 0, present: presentBy.get(id) ?? 0, onLeave: leaveBy.get(id) ?? 0, absent: absentBy.get(id) ?? 0, marked: marked.get(id) ?? 0 } : null;
           })
           .filter((x): x is SiteTile => !!x && inScope(x.regionId))
           .sort((a, b) => a.region.localeCompare(b.region) || b.contracted - a.contracted);
