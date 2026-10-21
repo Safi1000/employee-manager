@@ -90,37 +90,44 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   ].filter(Boolean) as { n: number | string; text: string; to: string }[];
 
   // ---- run rate ----
-  const mtd = c?.revenueMtd ?? null;
-  const prevFull = c?.revenuePrevMonth ?? null;
+  // Billing is by SERVICE month: the month being billed now is last month.
+  const billLabel = c ? new Date(`${c.billMonth}T00:00:00`).toLocaleDateString(undefined, { month: "long" }) : "";
+  const prevLabel = c ? new Date(new Date(`${c.billMonth}T00:00:00`).getFullYear(), new Date(`${c.billMonth}T00:00:00`).getMonth() - 1, 1).toLocaleDateString(undefined, { month: "long" }) : "";
+  const billed = c?.billed ?? null;
+  const billedPrev = c?.billedPrev ?? null;
 
   // ---- payday ----
-  const payNeed = d.payrollPrev || d.payrollMtd;
+  // The next run needs about last month's payroll in full — every payslip,
+  // paid or not — not only the part already disbursed.
+  const payNeed = c?.payrollLastFull || d.payrollPrev || d.payrollMtd;
   const dueFirst = ar ? ar.buckets[0] : 0;
   const payScale = Math.max(cashTotal + dueFirst, payNeed, 1) * 1.05;
   const spare = cashTotal + dueFirst - payNeed;
 
   // ---- cash this month ----
-  const received = c?.receiptsMtd ?? 0;
-  const spent = c?.expensesPaidMtd ?? 0;
-  const salaries = d.payrollMtd;
-  const opening = cashTotal - received + spent + salaries;
+  // From the ledger (2026-10-21): every bank and cash account's opening and
+  // closing are its own rows, and each step is that month's postings by source
+  // — the same grouping as the Accountant's grid. The old version worked the
+  // opening backwards from today and three flows, so any transfer, advance or
+  // partner draw left it wrong.
+  const cm = c?.cashMonth ?? null;
   const fall = useMemo(() => {
+    if (!cm) return [];
     const steps: { label: string; v: number; kind?: "edge"; to: string }[] = [
-      { label: "Start of month", v: opening, kind: "edge", to: "/super-admin/accounting" },
-      { label: "Received from clients", v: received, to: "/super-admin/invoices" },
-      { label: "Guard salaries paid", v: -salaries, to: "/super-admin/payroll" },
-      { label: "Expenses", v: -spent, to: "/super-admin/expenses" },
-      { label: "Cash and bank today", v: cashTotal, kind: "edge", to: "/super-admin/accounting" },
+      { label: "Start of month", v: cm.opening, kind: "edge", to: "/super-admin/accounting" },
+      ...cm.flows.map((f) => ({ label: f.label, v: f.v, to: f.key === "clients" ? "/super-admin/invoices" : f.key === "salaries" ? "/super-admin/payroll" : f.key === "expenses" || f.key === "advances" ? "/super-admin/expenses" : "/super-admin/accounting" })),
+      { label: "Today", v: cm.closing, kind: "edge", to: "/super-admin/accounting" },
     ];
-    const top = Math.max(opening, opening + received, cashTotal, 1);
-    let run = 0;
-    return steps.map((s) => {
+    let run = 0, top = 1;
+    for (const st of steps) { run = st.kind ? st.v : run + st.v; top = Math.max(top, run, st.kind ? st.v : 0); }
+    run = 0;
+    return steps.map((st) => {
       let from: number, to: number;
-      if (s.kind === "edge") { from = 0; to = s.v; run = s.v; } else { from = run; to = run + s.v; run = to; }
+      if (st.kind === "edge") { from = 0; to = st.v; run = st.v; } else { from = run; to = run + st.v; run = to; }
       const lo = Math.max(0, Math.min(from, to)), hi = Math.max(from, to);
-      return { ...s, left: (lo / top) * 100, width: Math.max(0.6, ((hi - lo) / top) * 100) };
+      return { ...st, left: (lo / top) * 100, width: Math.max(0.6, ((hi - lo) / top) * 100) };
     });
-  }, [opening, received, salaries, spent, cashTotal]);
+  }, [cm]);
 
   // ---- client map ----
   const dots = (c?.clientMap?.rows ?? []).filter((r) => r.revenue > 0);
@@ -214,9 +221,10 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             </Hit>
           )}
           <div className="flex-[999_1_420px] grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
-            {mtd != null && (
-              <BandStat to="/super-admin/invoices" label="Invoiced this month" value={mil(mtd)}
-                sub={prevFull ? `${Math.round((mtd / Math.max(1, prevFull)) * 100)}% of last month's ${mil(prevFull)}` : "invoices raised"} />
+            {billed != null && (
+              <BandStat to="/super-admin/invoices" label={`Billed for ${billLabel}`} value={mil(billed)}
+                sub={c?.expectedClients ? `${c.billedClients} of ${c.expectedClients} contracted clients` : billedPrev ? `${prevLabel}: ${mil(billedPrev)}` : "by service month"}
+                tone={c?.notBilled && c.notBilled.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
             )}
             {c?.receiptsMtd != null && <BandStat to="/super-admin/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
             {d.can.accounting && <BandStat to="/super-admin/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
@@ -279,33 +287,45 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
         )}
 
         <div className="flex-[1_1_340px] min-w-0 flex flex-col gap-4 md:gap-5">
-          {d.show("month_landing") && mtd != null && prevFull != null && prevFull > 0 && (
-            <Card kicker="This month's invoicing">
-              <div className="flex items-baseline gap-2.5 flex-wrap -mt-1">
-                <span className="font-display text-4xl font-extrabold tracking-tight text-foreground">{mil(mtd)}</span>
-                <span className="text-[13px] text-muted-foreground">raised of last month's {mil(prevFull)}</span>
-              </div>
-              <div className="relative h-8 rounded-[10px] bg-muted overflow-hidden">
-                <div className="absolute inset-y-0 left-0 rounded-[10px] bg-foreground" style={{ width: `${Math.min(100, (mtd / prevFull) * 100)}%` }} />
-                <div className="absolute inset-y-0 rounded-r-[10px]" style={{ left: `${Math.min(100, (mtd / prevFull) * 100)}%`, right: 0, background: "repeating-linear-gradient(135deg,#e9a73c 0 6px,#f2c47a 6px 12px)", opacity: mtd >= prevFull ? 0 : 0.85 }} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <MiniFig label="Raised so far" value={mil(mtd)} />
-                <MiniFig label="Still to raise" value={mil(Math.max(0, prevFull - mtd))} />
-                <MiniFig label="Clients to invoice" value={c?.uninvoiced ? String(c.uninvoiced.length) : "—"} tone={c?.uninvoiced && c.uninvoiced.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
-              </div>
-              {c?.uninvoiced && c.uninvoiced.length > 0 && (
-                <Hit onClick={() => setSheet({
-                  kicker: "Invoiced last month, not yet this month", title: "Clients to invoice", big: mil(c.uninvoiced!.reduce((s, x) => s + x.lastMonth, 0)),
-                  note: "Last month's amount for each client with no invoice raised so far this month.",
-                  rows: c.uninvoiced!.slice(0, 20).map((x) => ({ label: x.name, value: fmt(x.lastMonth) })),
-                  link: { to: "/super-admin/invoices", label: "Open invoices" },
-                })} className="text-[13px] text-brand-700 dark:text-brand-500 inline-flex items-center gap-1.5">
-                  <span className="group-hover:underline">See the {c.uninvoiced.length} client{c.uninvoiced.length > 1 ? "s" : ""} not invoiced yet</span><ArrowRight className="w-3.5 h-3.5" />
-                </Hit>
-              )}
-            </Card>
-          )}
+          {d.show("month_landing") && billed != null && (() => {
+            const exp = c?.expectedClients ?? 0, done = c?.billedClients ?? 0;
+            const pctDone = exp ? done / exp : 1;
+            const change = billedPrev ? (billed - billedPrev) / billedPrev : null;
+            const missing = c?.notBilled ?? [];
+            return (
+              <Card kicker={`Billing for ${billLabel} · by service month`}>
+                <div className="flex items-baseline gap-2.5 flex-wrap -mt-1">
+                  <span className="font-display text-4xl font-extrabold tracking-tight text-foreground">{mil(billed)}</span>
+                  <span className="text-[13px] text-muted-foreground">
+                    {change == null ? "invoiced" : `${change >= 0 ? "+" : "−"}${Math.abs(Math.round(change * 100))}% on ${prevLabel}'s ${mil(billedPrev!)}`}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="relative h-3 rounded-full bg-muted overflow-hidden">
+                    <div className={`absolute inset-y-0 left-0 rounded-full ${pctDone >= 1 ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${Math.min(100, pctDone * 100)}%` }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">{done} of {exp}</span> clients with a contract in {billLabel} invoiced</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <MiniFig label={`${billLabel} billed`} value={mil(billed)} />
+                  <MiniFig label="Clients left" value={String(missing.length)} tone={missing.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
+                  <MiniFig label="Billed ahead" value={c?.billedAhead ? mil(c.billedAhead) : "—"} />
+                </div>
+                {missing.length > 0 ? (
+                  <Hit onClick={() => setSheet({
+                    kicker: `Live contract in ${billLabel}, no invoice for it`, title: "Clients to invoice", big: String(missing.length),
+                    note: `Each had a guard-deployment contract running in ${billLabel} and has no invoice for that service month yet. Contracts that began after ${billLabel} are left out.`,
+                    rows: missing.slice(0, 20).map((x) => ({ label: x.name, value: `${x.heads} heads` })),
+                    link: { to: "/super-admin/invoices?tab=generate", label: "Generate invoices" },
+                  })} className="text-[13px] text-brand-700 dark:text-brand-500 inline-flex items-center gap-1.5">
+                    <span className="group-hover:underline">See the {missing.length} client{missing.length > 1 ? "s" : ""} still to invoice for {billLabel}</span><ArrowRight className="w-3.5 h-3.5" />
+                  </Hit>
+                ) : (
+                  <p className="text-[13px] text-success-700 dark:text-success-500">Every client with a contract in {billLabel} has been invoiced for it.</p>
+                )}
+              </Card>
+            );
+          })()}
 
           {d.show("payday") && c && ar && d.can.accounting && d.can.payroll && payNeed > 0 && (
             <Card kicker={`Next salary run · in ${daysToPayday} day${daysToPayday === 1 ? "" : "s"}`} title={spare >= 0 ? `Covered, ${mil(spare)} to spare` : `Short by ${mil(-spare)}`}>
@@ -326,11 +346,11 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
 
       {/* CASH + CLIENT MAP */}
       <div className="flex flex-wrap gap-4 md:gap-5 items-stretch">
-        {d.show("cash_month") && d.can.accounting && c && (
-          <Card kicker="Cash this month" title={`From ${mil(opening)} to ${mil(cashTotal)}`} className="flex-[1_1_420px]"
+        {d.show("cash_month") && cm && (
+          <Card kicker="Cash this month · from the ledger" title={`From ${mil(cm.opening)} to ${mil(cm.closing)}`} className="flex-[1_1_420px]"
             aside={<Link to="/super-admin/accounting" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">By account</Link>}>
             {fall.map((f) => (
-              <Link key={f.label} to={f.to} className="grid grid-cols-[150px_minmax(0,1fr)_88px] gap-3 items-center min-h-8 text-[13px] group">
+              <Link key={f.label} to={f.to} className="grid grid-cols-[170px_minmax(0,1fr)_88px] gap-3 items-center min-h-8 text-[13px] group">
                 <span className={`group-hover:underline ${f.kind ? "font-bold" : ""}`}>{f.label}</span>
                 <span className="relative h-[18px] rounded bg-muted/70">
                   <span className="absolute inset-y-0 rounded" style={{ left: `${f.left}%`, width: `${f.width}%`, background: f.kind ? "var(--foreground)" : f.v >= 0 ? "#2f5d8a" : "#e9a73c" }} />
@@ -338,7 +358,12 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                 <span className={`font-ledger text-right ${f.kind ? "font-bold" : f.v < 0 ? "text-danger-700 dark:text-danger-500" : "text-info-700 dark:text-info-500"}`}>{f.kind ? "" : f.v >= 0 ? "+" : ""}{mil(f.v)}</span>
               </Link>
             ))}
-            <p className="text-xs text-muted-foreground">Start of month is worked back from today's balances and what Bastion recorded this month; transfers between our own accounts cancel out.</p>
+            <p className="text-xs text-muted-foreground">Every bank and cash account, read from the ledger. Moves between our own accounts net to nothing; tap a line for where it was recorded.</p>
+            {d.can.accounting && Math.abs(cm.closing - cashTotal) >= 1000 && (
+              <Link to="/super-admin/accounting-core" className="rounded-xl border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:text-warning-500 hover:underline">
+                The ledger holds {mil(cm.closing)} on these accounts; the recorded bank and cash balances say {mil(cashTotal)}. The {mil(Math.abs(cashTotal - cm.closing))} between them is mostly opening balances from before the ledger began that were never posted — post them in Opening Balances and the two will agree.
+              </Link>
+            )}
           </Card>
         )}
 
@@ -382,6 +407,53 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
 
       {/* RECEIVABLES + REGIONS */}
       <div className="flex flex-wrap gap-4 md:gap-5 items-stretch">
+        {d.show("payroll_last") && d.can.payroll && c?.payrollLast && (() => {
+          const p = c.payrollLast;
+          const left = Math.max(0, p.net - p.paid);
+          const slipPct = p.slips ? p.paidSlips / p.slips : 0;
+          return (
+            <Card kicker={`Payroll · ${new Date(`${c.billMonth}T00:00:00`).toLocaleDateString(undefined, { month: "long" })}`} title={left < 1 ? "Every salary is paid" : `${mil(left)} still to pay`} className="flex-[1_1_320px]"
+              aside={<Link to="/super-admin/payroll" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Open payroll</Link>}>
+              <div className="flex flex-col gap-1.5">
+                <div className="relative h-3 rounded-full bg-muted overflow-hidden">
+                  <div className={`absolute inset-y-0 left-0 rounded-full ${slipPct >= 1 ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${Math.min(100, slipPct * 100)}%` }} />
+                </div>
+                <span className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">{p.paidSlips} of {p.slips}</span> payslips settled</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <MiniFig label="Net payroll" value={mil(p.net)} />
+                <MiniFig label="Paid out" value={mil(p.paid)} tone={left < 1 ? "good" : undefined} />
+                <MiniFig label="Left to pay" value={mil(left)} tone={left >= 1 && dayOfMonth > 10 ? "bad" : undefined} />
+              </div>
+            </Card>
+          );
+        })()}
+
+        {d.show("workforce") && d.can.employees && c?.workforce && (() => {
+          const w = c.workforce;
+          const net = w.joined - w.left;
+          return (
+            <Card kicker="Workforce · this month" title={`${fmt(w.active)} on the books`} className="flex-[1_1_300px]"
+              aside={<Link to="/super-admin/employees" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Open employees</Link>}>
+              <div className="flex items-end gap-6">
+                <div className="flex flex-col">
+                  <span className="font-display text-3xl font-extrabold text-success-700 dark:text-success-500">+{w.joined}</span>
+                  <span className="text-xs text-muted-foreground">joined</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-display text-3xl font-extrabold text-danger-700 dark:text-danger-500">−{w.left}</span>
+                  <span className="text-xs text-muted-foreground">left</span>
+                </div>
+                <div className="flex flex-col ml-auto text-right">
+                  <span className={`font-ledger text-lg font-semibold ${net > 0 ? "text-success-700 dark:text-success-500" : net < 0 ? "text-danger-700 dark:text-danger-500" : "text-foreground"}`}>{net > 0 ? "+" : net < 0 ? "−" : ""}{Math.abs(net)}</span>
+                  <span className="text-xs text-muted-foreground">net change</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{w.left > w.joined ? "More leaving than joining this month — check the posts it leaves short on the board above." : "Joined by their joining date, left by their last working day."}</p>
+            </Card>
+          );
+        })()}
+
         {d.show("receivables_ladder") && ar && ar.byClient.length > 0 && (
           <Card kicker="Money owed to us" title={`${mil(ar.total)} outstanding`} className="flex-[1_1_460px]"
             aside={<div className="flex gap-2.5 text-[11px] text-muted-foreground flex-wrap">{AGE.map((a) => <Legend key={a.label} color={a.color}>{a.label}</Legend>)}</div>}>

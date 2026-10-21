@@ -3473,7 +3473,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     {/* One employee, one month. Deliberately not a contract or
                         client setting — those apply to everyone on them, and to
                         every month after. */}
-                    <div className="rounded border border-border bg-muted/50/60 px-2 py-2 space-y-1.5">
+                    <div className="rounded border border-border bg-muted/30 px-2 py-2 space-y-1.5">
                       <label className="block text-[11px] text-muted-foreground">
                         Override allowed leaves · {formatPeriod(selectedPeriod)} only
                       </label>
@@ -4342,7 +4342,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               <span className="text-foreground font-medium">{rowDisburseTarget.employee.full_name}</span>{" "}
               ({empDisplay(rowDisburseTarget.employee)})
             </p>
-            <div className="rounded-md border border-border bg-muted/50/60 px-3 py-2 text-sm space-y-1">
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">Net Salary</span><span className="text-foreground">PKR {Math.round(rowDisburseTarget.net_salary).toLocaleString()}</span></div>
               {already > 0 && (
                 <div className="flex justify-between"><span className="text-muted-foreground">Already paid</span><span className="text-foreground">PKR {already.toLocaleString()}</span></div>

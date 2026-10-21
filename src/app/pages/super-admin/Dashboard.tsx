@@ -635,7 +635,7 @@ export default function SuperAdminDashboard() {
   // The command dashboard (2026-10-20) replaces the classic layout and the
   // three alternate designs that sat behind a floating switcher: one home
   // screen, read the same way by everyone.
-  const command = useCommandData(company?.id, regionId, can.reports);
+  const command = useCommandData(company?.id, regionId, can.reports, can.reports || can.accounting);
   const data: DashData = {
     can, show, nothingToShow, branchScopeNote,
     companyName: profile?.display_company_name || company?.name || "Bastion",

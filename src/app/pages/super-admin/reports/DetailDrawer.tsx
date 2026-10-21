@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import { Link } from "react-router";
 import Modal from "../../../components/Modal";
 import Badge from "../../../components/Badge";
@@ -266,33 +266,103 @@ function SourceView({ table, id }: { table: string; id: string }) {
 type LedgerRow = { row_kind: "OPENING" | "LINE" | "CLOSING"; entry_date: string; journal_entry_id: string | null; source_table: string | null;
   description: string | null; account_code: string | null; debit: number | null; credit: number | null; balance: number };
 
-export function LedgerTable({ rows, onOpen }: { rows: LedgerRow[]; onOpen: (t: DrillTarget) => void }) {
+/** Posting sources that are one line per payslip; folded into one row per
+ *  client and pay month so a bank's ledger reads "EMAAR — 55 payslips"
+ *  instead of 55 lines (2026-10-21). */
+const SALARY_SOURCES = new Set(["payslips_disbursement", "payroll_adjustment_settlement"]);
+
+export function LedgerTable({ rows, onOpen, accountName }: { rows: LedgerRow[]; onOpen: (t: DrillTarget) => void; accountName?: string }) {
+  // Which client each salary entry paid: the client is on the entry's journal
+  // lines, not on the ledger row, so it is read once for the salary entries.
+  const salaryIds = rows.filter((r) => r.row_kind === "LINE" && SALARY_SOURCES.has(r.source_table ?? "") && r.journal_entry_id).map((r) => r.journal_entry_id!) ;
+  const idsKey = salaryIds.join(",");
+  const [clientOf, setClientOf] = useState<Map<string, string> | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (salaryIds.length === 0) { setClientOf(new Map()); return; }
+    let cancelled = false;
+    void (async () => {
+      const m = new Map<string, string>();
+      for (let i = 0; i < salaryIds.length; i += 150) {
+        const { data } = await supabase.from("journal_lines").select("journal_entry_id, client:client_id(name)")
+          .in("journal_entry_id", salaryIds.slice(i, i + 150)).not("client_id", "is", null);
+        for (const r of (data ?? []) as unknown as { journal_entry_id: string; client: { name: string } | null }[]) if (r.client?.name) m.set(r.journal_entry_id, r.client.name);
+      }
+      if (!cancelled) setClientOf(m);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
+
+  type Item = { kind: "row"; r: LedgerRow } | { kind: "group"; key: string; client: string; month: string; lines: LedgerRow[] };
+  const items: Item[] = [];
+  const groupAt = new Map<string, Extract<Item, { kind: "group" }>>();
+  for (const r of rows) {
+    if (r.row_kind === "LINE" && SALARY_SOURCES.has(r.source_table ?? "") && clientOf) {
+      const client = (r.journal_entry_id && clientOf.get(r.journal_entry_id)) || "No client on the payslip (office staff)";
+      const month = (r.description ?? "").match(/\d{4}-\d{2}/)?.[0] ?? r.entry_date.slice(0, 7);
+      const key = `${client}|${month}|${r.source_table}`;
+      let g = groupAt.get(key);
+      if (!g) { g = { kind: "group", key, client, month, lines: [] }; groupAt.set(key, g); items.push(g); }
+      g.lines.push(r);
+    } else items.push({ kind: "row", r });
+  }
+  const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const toggle = (k: string) => setOpen((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  const lineRow = (r: LedgerRow, i: number | string, nested = false) => {
+    const edge = r.row_kind !== "LINE";
+    return (
+      <tr key={i} className={`border-t border-border ${edge ? "bg-muted/30 font-semibold" : "hover:bg-muted/30 cursor-pointer"} ${nested ? "bg-muted/15" : ""}`}
+        onClick={() => !edge && r.journal_entry_id && onOpen({ type: "entry", id: r.journal_entry_id })}>
+        <td className={`px-3 py-2 whitespace-nowrap ${nested ? "pl-8" : ""}`}>{formatDate(r.entry_date)}</td>
+        <td className="px-3 py-2 min-w-0"><div className="truncate max-w-[24rem]">{r.description}</div>
+          {!edge && <div className="text-[11px] text-muted-foreground">{[r.account_code, r.source_table?.replace(/_/g, " ")].filter(Boolean).join(" · ")}</div>}</td>
+        <td className="px-3 py-2 text-right"><Amount v={r.debit} /></td>
+        <td className="px-3 py-2 text-right"><Amount v={r.credit} /></td>
+        <td className="px-3 py-2 text-right"><Amount v={r.balance} strong={edge} /></td>
+      </tr>
+    );
+  };
+
   return (
-    <div className="overflow-x-auto border border-border rounded-lg">
+    <div className="overflow-x-auto border border-border rounded-xl">
       <table className="w-full text-sm">
-        <thead className="bg-muted/40 text-xs text-muted-foreground">
+        <thead className="bg-muted/40 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           <tr>
-            <th className="text-left px-3 py-2 font-medium">Date</th>
-            <th className="text-left px-3 py-2 font-medium">Particulars</th>
-            <th className="text-right px-3 py-2 font-medium">Debit</th>
-            <th className="text-right px-3 py-2 font-medium">Credit</th>
-            <th className="text-right px-3 py-2 font-medium">Balance</th>
+            <th className="text-left px-3 py-2">Date</th>
+            <th className="text-left px-3 py-2">Particulars</th>
+            <th className="text-right px-3 py-2">Debit</th>
+            <th className="text-right px-3 py-2">Credit</th>
+            <th className="text-right px-3 py-2">Balance</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => {
-            const edge = r.row_kind !== "LINE";
-            return (
-              <tr key={i} className={`border-t border-border ${edge ? "bg-muted/30 font-semibold" : "hover:bg-muted/30 cursor-pointer"}`}
-                onClick={() => !edge && r.journal_entry_id && onOpen({ type: "entry", id: r.journal_entry_id })}>
-                <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.entry_date)}</td>
-                <td className="px-3 py-2 min-w-0"><div className="truncate max-w-[24rem]">{r.description}</div>
-                  {!edge && <div className="text-[11px] text-muted-foreground">{[r.account_code, r.source_table?.replace(/_/g, " ")].filter(Boolean).join(" · ")}</div>}</td>
-                <td className="px-3 py-2 text-right"><Amount v={r.debit} /></td>
-                <td className="px-3 py-2 text-right"><Amount v={r.credit} /></td>
-                <td className="px-3 py-2 text-right"><Amount v={r.balance} strong={edge} /></td>
-              </tr>
-            );
+          {items.map((it, i) => {
+            if (it.kind === "row") return lineRow(it.r, i);
+            const isOpen = open.has(it.key);
+            const dr = it.lines.reduce((n, l) => n + Number(l.debit ?? 0), 0);
+            const cr = it.lines.reduce((n, l) => n + Number(l.credit ?? 0), 0);
+            const first = it.lines[0].entry_date, last = it.lines[it.lines.length - 1].entry_date;
+            const isAdj = it.lines[0].source_table === "payroll_adjustment_settlement";
+            return [
+              <tr key={it.key} className="border-t border-border hover:bg-muted/30 cursor-pointer" onClick={() => toggle(it.key)} aria-expanded={isOpen}>
+                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                    {first === last ? formatDate(first) : `${formatDate(first)} – ${formatDate(last)}`}
+                  </span>
+                </td>
+                <td className="px-3 py-2 min-w-0">
+                  <div className="truncate max-w-[24rem] font-medium">{it.client} — {it.lines.length} {isAdj ? "payroll adjustment" : "payslip"}{it.lines.length === 1 ? "" : "s"} paid{accountName ? ` from ${accountName}` : ""}</div>
+                  <div className="text-[11px] text-muted-foreground">{isAdj ? "adjustments settled" : "salaries"} for {monthName(it.month)} · tap to {isOpen ? "fold" : "list each one"}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-semibold"><Amount v={dr || null} /></td>
+                <td className="px-3 py-2 text-right font-semibold"><Amount v={cr || null} /></td>
+                <td className="px-3 py-2 text-right text-muted-foreground"><Amount v={it.lines[it.lines.length - 1].balance} /></td>
+              </tr>,
+              ...(isOpen ? it.lines.map((l, j) => lineRow(l, `${it.key}-${j}`, true)) : []),
+            ];
           })}
         </tbody>
       </table>
@@ -319,5 +389,5 @@ function LedgerView({ t, onOpen }: { t: Extract<DrillTarget, { type: "ledger" }>
   if (state.missing) return <ProposedNotice fn="ledger_statement" what="This ledger" />;
   if (state.error) return <div className="text-sm text-danger-600">{state.error}</div>;
   if (!rows) return <Loading />;
-  return <LedgerTable rows={rows} onOpen={onOpen} />;
+  return <LedgerTable rows={rows} onOpen={onOpen} accountName={t.kind === "account" ? t.title.replace(/\s+—\s+.*$/, "") : undefined} />;
 }

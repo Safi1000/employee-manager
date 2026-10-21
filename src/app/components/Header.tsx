@@ -54,9 +54,20 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
     if (!el || !parent) return;
     const scrolls = (n: Element) => /(auto|scroll)/.test(getComputedStyle(n).overflowY);
     const targets = [parent, ...Array.from(parent.children).filter((c) => c !== el)].filter(scrolls) as HTMLElement[];
-    const onScroll = () => setFolded(targets.some((t) => t.scrollTop > 48));
+    // Two thresholds, not one (2026-10-21): folding shortens the page, which
+    // moves scrollTop, which at a single threshold flips it straight back —
+    // the band flickered on long lists. Read once per frame.
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const top = Math.max(...targets.map((t) => t.scrollTop));
+        setFolded((f) => (f ? top > 12 : top > 120));
+      });
+    };
     targets.forEach((t) => t.addEventListener("scroll", onScroll, { passive: true }));
-    return () => targets.forEach((t) => t.removeEventListener("scroll", onScroll));
+    return () => { if (frame) cancelAnimationFrame(frame); targets.forEach((t) => t.removeEventListener("scroll", onScroll)); };
   }, [children]);
 
   return (
@@ -85,7 +96,7 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
           {actions && <div className="flex items-center gap-2 md:gap-2.5 flex-wrap">{actions}</div>}
         </div>
         {children && (
-          <div className={`grid transition-[grid-template-rows,opacity] duration-200 ${folded ? "grid-rows-[0fr] opacity-0 -mt-3 md:-mt-4" : "grid-rows-[1fr] opacity-100"}`} aria-hidden={folded || undefined}>
+          <div className={`grid transition-opacity duration-200 ${folded ? "grid-rows-[0fr] opacity-0 -mt-3 md:-mt-4" : "grid-rows-[1fr] opacity-100"}`} aria-hidden={folded || undefined}>
             <div className="min-h-0 overflow-hidden">{children}</div>
           </div>
         )}

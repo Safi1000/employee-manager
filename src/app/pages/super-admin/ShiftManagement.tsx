@@ -47,6 +47,8 @@ export default function ShiftManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = usePageState("ShiftManagement.search", "");
+  // Find a guard by name or code (2026-10-21); clients with a match open on their own.
+  const [empSearch, setEmpSearch] = usePageState("ShiftManagement.empSearch", "");
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [shiftTarget, setShiftTarget] = useState<EmployeeRow | null>(null);
   // "Edit rules" opens the Day/Night split for the client's active guard-deployment
@@ -153,13 +155,23 @@ export default function ShiftManagement() {
   }, [employees]);
 
   // Client list: only those with people to manage, name-filtered by the search.
+  const eq = empSearch.trim().toLowerCase();
+  const matchesEmp = useCallback((e: EmployeeRow) => {
+    if (!eq) return true;
+    const code = guardDisplayCode(e, clientById.get(e.client_id ?? "")?.employee_id_prefix) ?? "";
+    return `${e.full_name} ${code} ${e.employee_code ?? ""} ${e.guard_code ?? ""}`.toLowerCase().includes(eq);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eq, clientById]);
+  const empMatches = useMemo(() => (eq ? [...rowsByClient.values()].flat().filter(matchesEmp).length : 0), [eq, rowsByClient, matchesEmp]);
+
   const visibleClients = useMemo(() => {
     const q = search.trim().toLowerCase();
     return clients
       .filter((c) => (rowsByClient.get(c.id)?.length ?? 0) > 0)
       .filter((c) => !q || c.name.toLowerCase().includes(q))
+      .filter((c) => !eq || (rowsByClient.get(c.id) ?? []).some(matchesEmp))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [clients, rowsByClient, search]);
+  }, [clients, rowsByClient, search, eq, matchesEmp]);
 
   const toggle = (id: string) =>
     setOpen((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -172,14 +184,28 @@ export default function ShiftManagement() {
           <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">{error}</div>
         )}
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search clients…"
-            className="w-full pl-9 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={empSearch}
+              onChange={(e) => setEmpSearch(e.target.value)}
+              placeholder="Find a guard by name or code…"
+              aria-label="Search employees"
+              className="w-full pl-9 pr-3 py-2 border border-border bg-card rounded-xl text-sm text-foreground"
+            />
+          </div>
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter clients…"
+              aria-label="Search clients"
+              className="w-full pl-9 pr-3 py-2 border border-border bg-card rounded-xl text-sm text-foreground"
+            />
+          </div>
+          {eq && <span className="text-xs text-muted-foreground">{empMatches} guard{empMatches === 1 ? "" : "s"} match across {visibleClients.length} client{visibleClients.length === 1 ? "" : "s"}</span>}
         </div>
 
         {loading ? (
@@ -187,14 +213,14 @@ export default function ShiftManagement() {
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         ) : visibleClients.length === 0 ? (
-          <div className="text-center text-muted-foreground text-sm py-8">No clients with posted guards.</div>
+          <div className="text-center text-muted-foreground text-sm py-8">{eq ? `No posted guard matches "${empSearch.trim()}".` : "No clients with posted guards."}</div>
         ) : (
           <div className="space-y-2">
             {visibleClients.map((c) => {
-              const rows = (rowsByClient.get(c.id) ?? []).slice().sort((a, b) => a.full_name.localeCompare(b.full_name));
-              const isOpen = open.has(c.id);
+              const rows = (rowsByClient.get(c.id) ?? []).filter(matchesEmp).sort((a, b) => a.full_name.localeCompare(b.full_name));
+              const isOpen = open.has(c.id) || !!eq;
               return (
-                <div key={c.id} className="bg-card border border-border rounded-lg overflow-hidden">
+                <div key={c.id} className="bg-card border border-border rounded-2xl overflow-hidden">
                   <div className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors">
                     <button
                       type="button"
@@ -204,7 +230,7 @@ export default function ShiftManagement() {
                       {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
                       <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
                       <span className="font-medium text-foreground truncate">{c.name}</span>
-                      <span className="text-xs text-muted-foreground">{rows.length} on roster</span>
+                      <span className="text-xs text-muted-foreground">{eq ? `${rows.length} matching` : `${rows.length} on roster`}</span>
                     </button>
                     {canHr && activeContractByClient.has(c.id) && (
                       <Button size="sm" variant="secondary" onClick={() => setRulesClient(c)}>

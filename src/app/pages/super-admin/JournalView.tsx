@@ -693,7 +693,7 @@ function EntryBlock({ entry }: { entry: Entry }) {
   const totalDebit = entry.lines.reduce((s, l) => s + Number(l.debit), 0);
 
   return (
-    <div className={`p-4 md:p-5 ${entry.is_reversed ? "bg-muted/50/60" : ""}`}>
+    <div className={`p-4 md:p-5 ${entry.is_reversed ? "bg-muted/30" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

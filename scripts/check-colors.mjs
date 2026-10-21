@@ -26,6 +26,7 @@ const RULES = [
   { what: "stock Tailwind colour", re: new RegExp(`(?<![\\w-])(?:[a-z-]+:)*(?:${UTIL})-(?:${STOCK})-\\d{2,3}\\b`, "g") },
   { what: "bg-white (use bg-card)", re: /(?<![\w-])(?:[a-z-]+:)*bg-white\b/g },
   { what: "raw hex in a class", re: /(?<![\w-])(?:[a-z-]+:)*[a-z-]+-\[#[0-9a-fA-F]{3,8}\]/g },
+  { what: "double opacity suffix", re: /(?<![\w-])(?:[a-z-]+:)*(?:bg|text|border|divide|ring)-[a-z-]+\/\d+\/\d+/g },
   { what: "undefined accent shade", re: /(?<![\w-])(?:[a-z-]+:)*[a-z-]+-(?:brand|success|danger|warning|info)-(?:300|400|800|900|950)\b/g },
 ];
 

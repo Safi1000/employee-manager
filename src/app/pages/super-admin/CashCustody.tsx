@@ -717,7 +717,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     <>
       <div>
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
@@ -734,7 +734,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         <div className="space-y-4">
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <div className="p-4 border-b border-border">
-              <h3 className="text-base text-foreground">Cash Holdings</h3>
+              <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Cash Holdings</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Where company cash sits right now. Each custodian's held cash is opening balance
                 plus what they have taken in, less what they have paid out — and the sum of them
@@ -743,7 +743,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             </div>
 
             {Math.round(custodyRecon.discrepancy) !== 0 && (
-              <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200 rounded-md text-sm">
+              <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200 rounded-xl text-sm">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
                 <div>
                   <span className="font-medium">Discrepancy: {fmt(Math.abs(custodyRecon.discrepancy))}</span> {custodyRecon.discrepancy > 0
@@ -757,18 +757,18 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Location</th>
-                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Type</th>
-                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Holder</th>
-                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Opening</th>
-                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Held Cash</th>
-                    <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
-                    <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Location</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Type</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Holder</th>
+                    <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Opening</th>
+                    <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Held Cash</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
+                    <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {/* Treasury total first — the figure every custodian row rolls up to. */}
-                  <tr className="bg-muted/50/60">
+                  <tr className="bg-muted/30">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         {typeIcon("PETTY_CASH")}
@@ -777,8 +777,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                     </td>
                     <td className="px-6 py-4 text-sm text-muted-foreground">Cash / Treasury</td>
                     <td className="px-6 py-4 text-sm text-muted-foreground">—</td>
-                    <td className="px-6 py-4 text-right text-sm font-mono text-muted-foreground/70">—</td>
-                    <td className={`px-6 py-4 text-right text-sm font-mono ${cashInHand < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(cashInHand)}</td>
+                    <td className="px-6 py-4 text-right text-sm font-ledger text-muted-foreground/70">—</td>
+                    <td className={`px-6 py-4 text-right text-sm font-ledger ${cashInHand < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(cashInHand)}</td>
                     <td className="px-6 py-4 text-sm text-muted-foreground/70">—</td>
                     <td className="px-6 py-4 text-right">
                       <span className="text-xs text-muted-foreground/70" title="The company treasury total — derived, not editable">Derived</span>
@@ -801,23 +801,23 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                       <td className="px-6 py-4 text-sm text-muted-foreground">
                         {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
                       </td>
-                      <td className="px-6 py-4 text-right text-sm font-mono text-muted-foreground">{fmt(loc.opening_balance)}</td>
+                      <td className="px-6 py-4 text-right text-sm font-ledger text-muted-foreground">{fmt(loc.opening_balance)}</td>
                       {(() => {
                         const shown = heldCash(loc);
-                        return <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(shown)}</td>;
+                        return <td className={`px-6 py-4 text-right text-sm font-ledger ${shown < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(shown)}</td>;
                       })()}
                       <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${loc.is_active ? "bg-success-50 text-success-700" : "bg-muted text-muted-foreground"}`}>
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${loc.is_active ? "bg-success-50 text-success-700 dark:text-success-500" : "bg-muted text-muted-foreground"}`}>
                           {loc.is_active ? "Active" : "Inactive"}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                          <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                             <Pencil className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                           {canDelete && (
-                            <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded hover:bg-danger-50 text-muted-foreground hover:text-danger-600 transition-colors">
+                            <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded-lg hover:bg-danger-50 text-muted-foreground hover:text-danger-600 transition-colors">
                               <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                             </button>
                           )}
@@ -830,17 +830,17 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 <tfoot>
                   <tr className="border-t border-border bg-muted/50">
                     <td className="px-6 py-3 text-sm font-medium text-foreground" colSpan={4}>Sum of custodians</td>
-                    <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-foreground">{fmt(custodyRecon.sumHeld)}</td>
+                    <td className="px-6 py-3 text-right text-sm font-ledger font-semibold text-foreground">{fmt(custodyRecon.sumHeld)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-muted/50">
                     <td className="px-6 py-2 text-sm text-muted-foreground" colSpan={4}>Total Cash in Hand</td>
-                    <td className="px-6 py-2 text-right text-sm font-mono text-foreground">{fmt(cashInHand)}</td>
+                    <td className="px-6 py-2 text-right text-sm font-ledger text-foreground">{fmt(cashInHand)}</td>
                     <td colSpan={2} />
                   </tr>
-                  <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
-                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700"}`} colSpan={4}>Unattributed (should be 0)</td>
-                    <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
+                  <tr className="bg-muted/50">
+                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700 dark:text-success-500"}`} colSpan={4}>{Math.round(custodyRecon.discrepancy) !== 0 ? "Unattributed — should be 0" : "✓ Every rupee is attributed to a custodian"}</td>
+                    <td className={`px-6 py-2 text-right text-sm font-ledger font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700 dark:text-success-500"}`}>{fmt(custodyRecon.discrepancy)}</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>
@@ -849,24 +849,24 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           </div>
 
           <div className="bg-card rounded-2xl border border-border p-6">
-            <h3 className="text-base text-foreground mb-1">Cash vs Liabilities</h3>
+            <h3 className="font-display text-lg font-bold tracking-tight text-foreground mb-1">Cash vs Liabilities</h3>
             <p className="text-xs text-muted-foreground mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
             <div className="space-y-2">
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-sm text-foreground">Total Cash in Hand</span>
-                <span className="text-sm font-mono font-semibold text-foreground">{fmt(totalCash)}</span>
+                <span className="text-sm font-ledger font-semibold text-foreground">{fmt(totalCash)}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-sm text-muted-foreground ml-4">− Undrawn partner entitlements (positive balances)</span>
-                <span className="text-sm font-mono text-warning-700">({fmt(totalPartnerOwed)})</span>
+                <span className="text-sm font-ledger text-warning-700">({fmt(totalPartnerOwed)})</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-sm text-muted-foreground ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
-                <span className="text-sm font-mono text-warning-700">({fmt(investorLiabilities)})</span>
+                <span className="text-sm font-ledger text-warning-700">({fmt(investorLiabilities)})</span>
               </div>
-              <div className={`flex items-center justify-between py-3 rounded-md px-3 ${freeCash >= 0 ? "bg-success-50" : "bg-danger-50"}`}>
-                <span className={`text-sm font-medium ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>= Free Company Cash</span>
-                <span className={`text-base font-mono font-bold ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>{fmt(freeCash)}</span>
+              <div className="band on-dark flex items-center justify-between py-3.5 rounded-xl px-4 mt-1">
+                <span className="text-sm font-semibold text-foreground">= Free company cash</span>
+                <span className={`font-ledger text-xl font-semibold ${freeCash >= 0 ? "text-up" : "text-down"}`}>{fmt(freeCash)}</span>
               </div>
             </div>
           </div>
@@ -876,7 +876,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               wording — that is the last column here instead. */}
           <div className="bg-card rounded-2xl border border-border overflow-x-auto">
             <div className="p-4 border-b border-border">
-              <h3 className="text-base text-foreground">Partners Summary</h3>
+              <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Partners Summary</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Running balance per partner. Positive = company owes the partner (cash tied up); negative (red) = overdrawn.
               </p>
@@ -884,12 +884,12 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Partner</th>
-                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Allocated</th>
-                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Contributed</th>
-                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Drawn</th>
-                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Net Balance</th>
-                  <th className="text-right px-6 py-3 text-sm text-muted-foreground">Cash Impact</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Partner</th>
+                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Allocated</th>
+                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Contributed</th>
+                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Drawn</th>
+                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Net Balance</th>
+                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Cash Impact</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -902,15 +902,15 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                     <tr key={p.id} className="hover:bg-muted/50 transition-colors">
                       <td className="px-6 py-4">
                         <p className="text-sm text-foreground font-medium">{p.name}</p>
-                        <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-warning-50 text-warning-700"}`}>
+                        <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded-full text-xs font-semibold ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700 dark:text-brand-500" : "bg-info-50 text-info-700 dark:text-info-500"}`}>
                           {p.scope === "COMPANY" ? "Owner" : (branches.find((b) => b.id === p.branch_id)?.name ?? "Branch")}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right text-sm font-mono text-success-600">{fmt(s.allocated)}</td>
-                      <td className="px-6 py-4 text-right text-sm font-mono text-brand-600">{fmt(s.contributed)}</td>
-                      <td className="px-6 py-4 text-right text-sm font-mono text-danger-600">{fmt(s.drawn)}</td>
-                      <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s.balance < 0 ? "text-danger-700" : "text-foreground"}`}>{fmt(s.balance)}</td>
-                      <td className={`px-6 py-4 text-right text-sm font-mono ${s.balance > 0 ? "text-warning-600" : "text-success-600"}`}>
+                      <td className="px-6 py-4 text-right text-sm font-ledger text-success-600">{fmt(s.allocated)}</td>
+                      <td className="px-6 py-4 text-right text-sm font-ledger text-brand-600">{fmt(s.contributed)}</td>
+                      <td className="px-6 py-4 text-right text-sm font-ledger text-danger-600">{fmt(s.drawn)}</td>
+                      <td className={`px-6 py-4 text-right text-sm font-ledger font-semibold ${s.balance < 0 ? "text-danger-700" : "text-foreground"}`}>{fmt(s.balance)}</td>
+                      <td className={`px-6 py-4 text-right text-sm font-ledger ${s.balance > 0 ? "text-warning-600" : "text-success-600"}`}>
                         {s.balance > 0 ? `(${fmt(s.balance)}) tied up` : s.balance < 0 ? "— overdrawn" : "—"}
                       </td>
                     </tr>
@@ -933,7 +933,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <div className="flex items-center gap-2">
               <label className="text-xs text-muted-foreground">Custodian</label>
               <ThemedSelect value={ledgerStaffFilter} onChange={(e) => setLedgerStaffFilter(e.target.value)}
-                className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+                className="px-3 py-1.5 border border-border rounded-xl bg-card text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="all">All custodians</option>
                 {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </ThemedSelect>
@@ -941,7 +941,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <div className="flex items-center gap-2">
               <label className="text-xs text-muted-foreground">Month</label>
               <ThemedSelect value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)}
-                className="px-3 py-1.5 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+                className="px-3 py-1.5 border border-border rounded-xl bg-card text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="all">All</option>
                 {ledgerMonthOptions.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
               </ThemedSelect>
@@ -978,8 +978,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                         <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{e.date}</td>
                         <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[e.kind]}</td>
                         <td className="px-3 py-2 text-xs text-foreground">{staffName(e.employeeId)}</td>
-                        <td className={`px-3 py-2 text-right text-xs font-mono ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-foreground whitespace-nowrap">
+                        <td className={`px-3 py-2 text-right text-xs font-ledger ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-xs font-ledger text-foreground whitespace-nowrap">
                           <span className="text-muted-foreground/70">Cash </span>{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}
                         </td>
                         <td className="px-3 py-2 text-xs text-muted-foreground">{e.detail}</td>
@@ -1006,7 +1006,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 people who already hold a custody are hidden so nobody gets a duplicate. */}
             <ThemedSelect value={locForm.custodian_employee_id}
               onChange={(e) => setLocForm({ ...locForm, custodian_employee_id: e.target.value, custodian_partner_id: e.target.value ? "" : locForm.custodian_partner_id })}
-              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               <option value="">Select office-staff member…</option>
               {(editLoc
                 // Editing keeps whoever this custody already names, even if they
@@ -1026,7 +1026,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <label className="block text-sm text-foreground mb-1">…or Partner</label>
             <ThemedSelect value={locForm.custodian_partner_id}
               onChange={(e) => setLocForm({ ...locForm, custodian_partner_id: e.target.value, custodian_employee_id: e.target.value ? "" : locForm.custodian_employee_id })}
-              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
               <option value="">Select partner…</option>
               {(editLoc
                 ? partners
@@ -1039,12 +1039,12 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <div>
               <label className="block text-sm text-foreground mb-1">Opening Balance (PKR)</label>
               <input type="number" value={locForm.opening_balance} onChange={(e) => setLocForm({ ...locForm, opening_balance: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+                className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
             </div>
             <div>
               <label className="block text-sm text-foreground mb-1">Branch (optional)</label>
               <ThemedSelect value={locForm.branch_id} onChange={(e) => setLocForm({ ...locForm, branch_id: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+                className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">All / Company-wide</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
@@ -1072,7 +1072,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               : "Move cash from one office-staff custodian to another. Cash in Hand is unchanged — only who holds it."}
           </p>
           {/* From-source toggle */}
-          <div className="flex gap-1 bg-muted rounded-md p-1 w-fit max-w-full overflow-x-auto">
+          <div className="flex gap-1 bg-muted rounded-xl p-1 w-fit max-w-full overflow-x-auto">
             {([["staff", "From Office Staff"], ["bank", "From Bank"]] as const).map(([k, l]) => (
               <button key={k} type="button"
                 onClick={() => setTransferForm({ ...transferForm, from_type: k, from_location_id: "", from_bank_id: "" })}
@@ -1084,14 +1084,14 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           <div>
             <label className="block text-sm text-foreground mb-1">Date *</label>
             <input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-foreground mb-1">{transferForm.from_type === "bank" ? "From (bank) *" : "From (office staff) *"}</label>
               {transferForm.from_type === "bank" ? (
                 <ThemedSelect value={transferForm.from_bank_id} onChange={(e) => setTransferForm({ ...transferForm, from_bank_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+                  className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                   <option value="">Select bank…</option>
                   {banks.filter((b) => b.active).map((b) => (
                     <option key={b.id} value={b.id}>{b.bank_name}{b.account_number ? ` ••${String(b.account_number).slice(-4)}` : ""} — {fmt(b.balance)}</option>
@@ -1099,7 +1099,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 </ThemedSelect>
               ) : (
                 <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+                  className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                   <option value="">Select…</option>
                   {/* Same list as To: every active custodian, staff or partner. */}
                   {locations.filter((l) => l.is_active && l.location_type !== "BANK" && (l.custodian_employee_id || l.custodian_partner_id)).map((l) => (
@@ -1111,7 +1111,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             <div>
               <label className="block text-sm text-foreground mb-1">To (office staff) *</label>
               <ThemedSelect value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+                className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select…</option>
                 {locations.filter((l) => l.is_active && l.location_type !== "BANK" && (l.custodian_employee_id || l.custodian_partner_id)).map((l) => (
                   <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id ?? l.custodian_partner_id)} — holds {fmt(heldCash(l))}</option>
@@ -1122,12 +1122,12 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           <div>
             <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
             <input type="number" min="0" placeholder="0" value={transferForm.amount} onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div>
             <label className="block text-sm text-foreground mb-1">Notes</label>
             <input type="text" placeholder="e.g. Cash handed to CEO for salaries" value={transferForm.notes} onChange={(e) => setTransferForm({ ...transferForm, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" onClick={saveTransfer} disabled={transferSaving}>

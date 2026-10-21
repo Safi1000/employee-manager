@@ -1075,7 +1075,7 @@ export default function EmployeeAssignments() {
                               {h}
                             </th>
                           ))}
-                          <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-muted/50 border-l border-border">
+                          <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 2xl:static bg-muted/50 border-l border-border">
                             Edit
                           </th>
                         </tr>
@@ -1145,7 +1145,7 @@ export default function EmployeeAssignments() {
                             </>)}
                             {/* Sticky column: opaque in every state, or the columns
                                 underneath show through while scrolling sideways. */}
-                            <td className="px-3 py-2 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
+                            <td className="px-3 py-2 sticky right-0 z-10 2xl:static border-l border-border bg-card group-hover:bg-accent">
                               <div className="flex gap-1">
                                 <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
                                   {canOpen ? "Edit" : "View"}
@@ -1421,7 +1421,9 @@ export default function EmployeeAssignments() {
               0,
             );
             return (
-              <div key={g.key} className="bg-card border border-border rounded-2xl overflow-hidden">
+              // A closed card off-screen is skipped by the browser until it
+              // scrolls near (2026-10-21) — dozens of them made scrolling stutter.
+              <div key={g.key} className={`bg-card border border-border rounded-2xl overflow-hidden ${open ? "" : "[content-visibility:auto] [contain-intrinsic-size:auto_104px]"}`}>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                   {/* The name and its warnings WRAP rather than squeeze: with
                       three warning chips and the reconciliation figures on one

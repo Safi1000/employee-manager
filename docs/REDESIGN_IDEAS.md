@@ -110,6 +110,58 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — A Checks tab that ties the grid to the trial balance, payroll to
   disbursements, and receipts to bank statements, each with a tick-off.
 
+## Round 2 (2026-10-21) — what was asked and what changed
+
+- **Built** — Scrolling on Employees and Assignments & Pay is smooth: the band
+  folds in one step (no height animation re-laying out 400 rows per frame),
+  folds and unfolds at two thresholds so it cannot flicker, the scroll memory
+  saves after scrolling stops, the sticky Actions column is only sticky on
+  narrower screens, and off-screen client cards are skipped until near.
+- **Built** — Banks & Ledgers, all four tabs:
+  - Receivables: no more red/green flooded rows. Status edge, initials,
+    a collected meter per client, All / Owing / Settled with counts, most
+    owed first. The band adds a collection meter and "who holds the
+    outstanding" (tap a client to filter).
+  - Payables: status tabs, paid meter per vendor, "due in N days / N days
+    late", a "Due in 7 days" tile; the duplicate totals strip is gone.
+  - Bank accounts: one card per account (balance, cheques in transit, share
+    of the company's bank money, actions); cheques and deposits as tabs.
+  - Cash custody: neutral reconciliation rows, free company cash on ink.
+  - Everywhere: rounder corners, pill statuses, the new column headings.
+- **Built** — Expenses & Advances: bands for Advances (amount, guards, repeat
+  takers, biggest client, by-client bar and by-mode split that filter),
+  Fixed (raised, waiting, approved, denied) and Deferred (still to release,
+  stuck, months released); the styling pass on the whole page.
+- **Built** — Client profit: summary strip (losing money, under 10%, best and
+  weakest margin among clients with payroll, net per contracted guard),
+  margin and change on last month per client, "where every 100 rupees went"
+  bar per client, filters and sorts, and a Cards view.
+- **Built** — Accountant: salary lines in any bank or cash ledger fold into
+  one row per client and pay month — "Emaar DHA ISB — 73 payslips paid from
+  Askari Bank" — that opens to the payslips.
+- **Built** — Dashboard: billing is by service month (September: 25 of 25
+  contracted clients invoiced, PKR 20.57M); a contract that starts later
+  (Regent 1) is not expected to have last month's invoice; guards on leave
+  count toward strength; the cash waterfall reads the ledger; payday cover
+  uses last month's full payroll; new Payroll and Workforce panels.
+- **Fixed** — 13 classes the colour sweep had broken (`bg-muted/50/60`);
+  the colour check now refuses that shape too.
+- **Needs data / your decision** — Bank and cash opening balances from before
+  the ledger began are not posted: the ledger holds PKR 0.6M on bank and cash
+  accounts against PKR 7.7M recorded (Bank of AJK 0 vs 2.37M, Askari 0.29M vs
+  3.82M). Client opening balances (PKR 37.9M) are likewise outside invoices,
+  so Banks & Ledgers shows PKR 25.0M owed while open invoices total 13.0M.
+- **Needs data** — `client_cover` counts a contract as live in months before
+  it started (Regent 1 in September); the Dashboard works round it.
+- **Needs data** — Nova Group shows PKR 52K payroll on PKR 1.9M revenue in
+  September (90.7% margin): its guards' payroll may sit on another client.
+- **Idea** — Receivables: an ageing column per client (0–30, 31–60, 61–90,
+  90+) and a "send statement" action.
+- **Idea** — Bank cards: a 30-day balance sparkline per account from the
+  ledger, once openings are posted.
+- **Idea** — Client profit: a 6-month net trend per client, and a "what if"
+  (rate +5%, one guard fewer) on a client card.
+
 ## Clients, Contracts, Invoices
 
 - **Built** — Clients: band with clients, guards, owed and largest client's

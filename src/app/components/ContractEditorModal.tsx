@@ -1655,7 +1655,7 @@ export default function ContractEditorModal({
             )}
 
             {/* Add-addendum form — the line fields mirror the contract lines table. */}
-            <div className="p-3 border-t border-border bg-muted/50/50 grid grid-cols-2 gap-2">
+            <div className="p-3 border-t border-border bg-muted/25 grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[11px] text-muted-foreground mb-1">Change type</label>
                 <ThemedSelect

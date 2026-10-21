@@ -111,19 +111,27 @@ export function ScrollMemory({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
+    // Recorded once scrolling settles, not per event: finding the container's
+    // index walks the whole page, which on a 400-row list made every scroll
+    // event expensive and the scroll itself stutter (2026-10-21).
     let pending: number | null = null;
+    let last: HTMLElement | null = null;
     const onScroll = (e: Event) => {
       if (restoring.current) return;
-      const el = e.target as HTMLElement;
-      if (!(el instanceof HTMLElement) || !el.matches(SCROLLABLE)) return;
-      const all = Array.from(root.querySelectorAll<HTMLElement>(SCROLLABLE));
-      const index = all.indexOf(el);
-      if (index < 0) return;
-      if (pending) cancelAnimationFrame(pending);
-      pending = requestAnimationFrame(() => write(routeKey, { index, top: el.scrollTop }));
+      const el = e.target;
+      if (!(el instanceof HTMLElement)) return;
+      last = el;
+      if (pending) window.clearTimeout(pending);
+      pending = window.setTimeout(() => {
+        pending = null;
+        const t = last;
+        if (!t || !t.matches(SCROLLABLE)) return;
+        const index = Array.from(root.querySelectorAll<HTMLElement>(SCROLLABLE)).indexOf(t);
+        if (index >= 0) write(routeKey, { index, top: t.scrollTop });
+      }, 150);
     };
-    root.addEventListener("scroll", onScroll, true);
-    return () => root.removeEventListener("scroll", onScroll, true);
+    root.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => { if (pending) window.clearTimeout(pending); root.removeEventListener("scroll", onScroll, true); };
   }, [routeKey]);
 
   useLayoutEffect(() => {

@@ -174,6 +174,8 @@ export const DASHBOARD_WIDGET_KEYS = [
   "post_board",
   "month_landing",
   "payday",
+  "payroll_last",
+  "workforce",
   "cash_month",
   "client_map",
   "receivables_ladder",
@@ -192,9 +194,11 @@ export const DASHBOARD_WIDGET_KEYS = [
 export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number];
 
 export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
-  post_board: "Post board — guards on post per client",
-  month_landing: "Where the month will land",
+  post_board: "Post board — guards on strength per client",
+  month_landing: "Billing for last month, by service month",
   payday: "Next salary run — is it covered",
+  payroll_last: "Last month's payroll — how much is paid out",
+  workforce: "Workforce — active, joined and left this month",
   cash_month: "Cash this month (waterfall)",
   client_map: "Client map — revenue against margin",
   receivables_ladder: "Money owed to us, by age",

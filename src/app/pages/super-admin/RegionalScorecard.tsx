@@ -620,7 +620,7 @@ function RegionCard({ row, fin, period }: { row: ScorecardRow; fin: RegionFinanc
       </div>
 
       {/* Footer — the view's YTD profit vs last year, kept but de-emphasised */}
-      <div className="px-5 py-2.5 border-t border-border bg-muted/50/60 flex items-center justify-between gap-3">
+      <div className="px-5 py-2.5 border-t border-border bg-muted/30 flex items-center justify-between gap-3">
         <span className="text-[11px] text-muted-foreground">Profit YTD {pkr(row.profit_ytd)}</span>
         <span className={`text-[11px] tabular-nums ${ytdDelta >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
           {ytdDelta >= 0 ? "▲" : "▼"} {pkr(Math.abs(ytdDelta))} vs last yr
@@ -873,7 +873,7 @@ function OperatingExpensesTab({
                   </button>
 
                   {open && (
-                    <div className="bg-muted/50/60 overflow-x-auto">
+                    <div className="bg-muted/30 overflow-x-auto">
                       <table className="w-full text-sm min-w-[620px]">
                         <thead>
                           <tr className="text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-y border-border">

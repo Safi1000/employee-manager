@@ -547,7 +547,7 @@ export default function AuditLog() {
                         <td className="px-4 py-3 text-xs text-foreground">{summary(e.changes)}</td>
                       </tr>
                       {isOpen && (
-                        <tr className="bg-muted/50/60">
+                        <tr className="bg-muted/30">
                           <td colSpan={7} className="px-4 py-3">
                             <ChangesDiff changes={e.changes} action={e.action} />
                           </td>

@@ -2303,7 +2303,7 @@ export default function EmployeeManagement() {
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">File</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-muted/50 border-l border-border">Actions</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 2xl:static bg-muted/50 border-l border-border">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2421,7 +2421,7 @@ export default function EmployeeManagement() {
                         {/* Sticky column: the background MUST be fully opaque in
                             every state — a translucent tint (bg-accent/50) lets the
                             columns underneath show through while scrolling sideways. */}
-                        <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
+                        <td className="px-6 py-3.5 sticky right-0 z-10 2xl:static border-l border-border bg-card group-hover:bg-accent">
                           <div className="flex gap-1">
                             <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
                               View
@@ -4416,7 +4416,7 @@ export function SalaryHistoryPanel({
   };
 
   return (
-    <div className="md:col-span-2 border border-border rounded-md p-3 bg-muted/50/50">
+    <div className="md:col-span-2 border border-border rounded-md p-3 bg-muted/25">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium text-foreground">Salary increments &amp; history</h4>
         <button

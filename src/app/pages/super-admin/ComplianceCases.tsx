@@ -267,7 +267,7 @@ function CaseVisits({ companyId, caseId }: { companyId: string; caseId: string }
   };
 
   return (
-    <div className="border border-border rounded-md p-3 space-y-3 bg-muted/50/50">
+    <div className="border border-border rounded-md p-3 space-y-3 bg-muted/25">
       <h4 className="text-sm text-foreground">Government visits</h4>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
         <div><label className="text-xs text-muted-foreground block mb-1">Date</label>

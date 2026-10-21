@@ -2424,6 +2424,115 @@ export default function Expenses() {
               { value: "deferred", label: "Deferred", count: deferred.filter((d) => d.remaining !== 0).length || undefined },
             ]}
           />
+          {activeTab === "advances" && (() => {
+            // From the advances in view (the filters below narrow it).
+            const total = advTotals.total;
+            const byEmp = new Map<string, number>();
+            const byClient = new Map<string, { id: string; name: string; v: number }>();
+            const byMode = new Map<string, number>();
+            for (const a of filteredAdvances) {
+              byEmp.set(a.employee_id, (byEmp.get(a.employee_id) ?? 0) + 1);
+              const ck = a.client_id ?? "none";
+              const cur = byClient.get(ck) ?? { id: ck, name: a.client_name ?? "No client", v: 0 };
+              cur.v += Number(a.amount); byClient.set(ck, cur);
+              byMode.set(a.payment_mode, (byMode.get(a.payment_mode) ?? 0) + Number(a.amount));
+            }
+            const repeat = [...byEmp.values()].filter((n) => n > 1).length;
+            const clientsSorted = [...byClient.values()].sort((a, b) => b.v - a.v);
+            const top = clientsSorted.slice(0, 6), rest = clientsSorted.slice(6).reduce((n, c) => n + c.v, 0);
+            const shades = ["bg-brand-500", "bg-calm", "bg-up", "bg-heed", "bg-down", "bg-settled"];
+            const modes = (["Cash", "Bank", "Cheque"] as const).map((m) => ({ m, v: byMode.get(m) ?? 0 }));
+            return (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {[
+                    { label: "Advanced", v: <><span className="cur">PKR</span>{Math.round(total).toLocaleString()}</>, sub: "in the current filter" },
+                    { label: "Advances", v: advTotals.count.toLocaleString(), sub: `to ${byEmp.size} guard${byEmp.size === 1 ? "" : "s"} · average ${advTotals.count ? Math.round(total / advTotals.count).toLocaleString() : 0}` },
+                    { label: "Took more than one", v: repeat.toLocaleString(), sub: repeat ? "guards with repeat advances in view" : "nobody twice in this view" },
+                    { label: "Biggest client", v: clientsSorted[0] ? `${Math.round((clientsSorted[0].v / Math.max(1, total)) * 100)}%` : "—", sub: clientsSorted[0]?.name ?? "no advances" },
+                  ].map((t) => (
+                    <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                      <span className="lbl">{t.label}</span>
+                      <span className="font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap">{t.v}</span>
+                      <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
+                    </div>
+                  ))}
+                </div>
+                {total > 0 && (
+                  <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-2.5">
+                    <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2 min-w-0">
+                      <div className="flex justify-between gap-2"><span className="lbl">By client · tap to filter</span>{advClientFilter !== "all" && <button type="button" onClick={() => setAdvClientFilter("all")} className="text-xs text-brand-500 hover:underline">Every client</button>}</div>
+                      <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+                        {top.map((c, i) => <span key={c.id} className={shades[i % shades.length]} style={{ width: `${(c.v / total) * 100}%` }} title={`${c.name}: PKR ${Math.round(c.v).toLocaleString()}`} />)}
+                        {rest > 0 && <span className="bg-rest" style={{ width: `${(rest / total) * 100}%` }} />}
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                        {top.map((c, i) => (
+                          <button key={c.id} type="button" onClick={() => setAdvClientFilter(advClientFilter === c.id ? "all" : c.id)}
+                            className={`inline-flex items-center gap-1.5 ${advClientFilter === c.id ? "text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
+                            <span className={`w-2 h-2 rounded-full ${shades[i % shades.length]}`} />{c.name} <span className="font-ledger">{Math.round(c.v).toLocaleString()}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                      <span className="lbl">Paid out as · tap to filter</span>
+                      {modes.map(({ m, v }) => (
+                        <button key={m} type="button" onClick={() => setAdvModeFilter(advModeFilter === m ? "all" : m)} className="grid grid-cols-[56px_1fr_80px] items-center gap-2 text-xs text-left">
+                          <span className={advModeFilter === m ? "text-foreground font-semibold" : "text-muted-foreground"}>{m}</span>
+                          <span className="h-2 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${(v / total) * 100}%` }} /></span>
+                          <span className="font-ledger text-right text-foreground">{Math.round(v).toLocaleString()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          {activeTab === "fixed" && (() => {
+            const by = (st: FixedInstance["status"]) => fixedInstances.filter((i) => i.status === st);
+            const amt = (xs: FixedInstance[]) => xs.reduce((n, i) => n + Number(i.amount), 0);
+            const pend = by("pending"), appr = by("approved"), den = by("denied");
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {[
+                  { label: `Raised · ${monthLabel(fixedMonth)}`, v: fixedInstances.length.toLocaleString(), sub: `PKR ${Math.round(amt(fixedInstances)).toLocaleString()} in all`, tone: "" },
+                  { label: "Waiting for a decision", v: pend.length.toLocaleString(), sub: `PKR ${Math.round(amt(pend)).toLocaleString()}`, tone: pend.length ? "text-heed" : "" },
+                  { label: "Approved", v: appr.length.toLocaleString(), sub: `PKR ${Math.round(amt(appr)).toLocaleString()} — now real expenses`, tone: "text-up" },
+                  { label: "Denied", v: den.length.toLocaleString(), sub: `PKR ${Math.round(amt(den)).toLocaleString()}`, tone: den.length ? "text-down" : "" },
+                ].map((t) => (
+                  <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                    <span className="lbl truncate">{t.label}</span>
+                    <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none ${t.tone}`}>{t.v}</span>
+                    <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+          {activeTab === "deferred" && (() => {
+            const live = deferred.filter((d) => d.remaining !== 0);
+            const stuck = live.filter((d) => d.is_stale);
+            const left = live.reduce((n, d) => n + Number(d.remaining), 0);
+            const done = deferred.reduce((n, d) => n + d.months_released, 0), all = deferred.reduce((n, d) => n + d.months_total, 0);
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {[
+                  { label: "Still to release", v: <><span className="cur">PKR</span>{Math.round(left).toLocaleString()}</>, sub: `across ${live.length} schedule${live.length === 1 ? "" : "s"}`, tone: "" },
+                  { label: "Stuck", v: stuck.length.toLocaleString(), sub: stuck.length ? "a month that should have released has not" : "every schedule is on time", tone: stuck.length ? "text-down" : "text-up" },
+                  { label: "Months released", v: `${done} / ${all}`, sub: "across every schedule", tone: "" },
+                  { label: "Prepaid vs service", v: `${deferred.filter((d) => d.shape === "prepaid").length} · ${deferred.filter((d) => d.shape !== "prepaid").length}`, sub: "prepaid · service period", tone: "" },
+                ].map((t) => (
+                  <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+                    <span className="lbl truncate">{t.label}</span>
+                    <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span>
+                    <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           {activeTab === "expenses" && (() => {
             const office = filtered.filter((e) => !e.client_name).reduce((n, e) => n + Number(e.amount), 0);
             const total = expenseMetrics.total;
@@ -2476,7 +2585,7 @@ export default function Expenses() {
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -2509,13 +2618,13 @@ export default function Expenses() {
                   placeholder="Search description, category, client, vendor…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 />
               </div>
               <ThemedSelect
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 title="Filter by month"
               >
                 <option value="all">All Months</option>
@@ -2526,7 +2635,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
               >
                 <option value="all">All Categories</option>
                 {categories.map((c) => (
@@ -2545,7 +2654,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value as "all" | ExpensePaymentMode)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
               >
                 <option value="all">All Modes</option>
                 <option value="Cash">Cash</option>
@@ -2556,7 +2665,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={expenseByFilter}
                 onChange={(e) => setExpenseByFilter(e.target.value)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
+                className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 title="Filter by who the expense was incurred by"
               >
                 <option value="all">All Expense By</option>
@@ -2570,7 +2679,7 @@ export default function Expenses() {
 
           {/* Signed Off / Pending / Requests. Signed Off opens first, on the left (asked 2026-10-05). */}
           <div className="px-6 pt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/50">
+            <div className="inline-flex rounded-xl border border-border p-0.5 bg-muted/50">
               {([
                 { key: "approved", label: "Signed Off", rows: approvedRows },
                 { key: "pending", label: "Pending", rows: pendingRows },
@@ -2608,7 +2717,7 @@ export default function Expenses() {
           </div>
 
           {approvalView === "pending" && canApproveExpenses && selectedRows.length > 0 && (
-            <div className="mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand-200 bg-brand-50 px-4 py-2">
+            <div className="mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2">
               <span className="text-sm text-brand-700 dark:text-brand-500">
                 {selectedRows.length} selected · PKR{" "}
                 {selectedRows.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()}
@@ -2678,7 +2787,7 @@ export default function Expenses() {
             subtitle={(exp) => `${formatDate(exp.expense_date)} · ${exp.client_name ?? "Office"}`}
             badge={(exp) => (
               <span
-                className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs ${
                   exp.payment_mode === "Cash"
                     ? "bg-success-50 text-success-700"
                     : exp.payment_mode === "Bank"
@@ -2751,18 +2860,18 @@ export default function Expenses() {
                       />
                     </th>
                   )}
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Date</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Category</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Client</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Description</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Mode</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Expense By</th>
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Paid By</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Date</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Description</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Amount</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mode</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expense By</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Paid By</th>
                   {approvalView === "approved" && (
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Signed Off By</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Signed Off By</th>
                   )}
-                  <th className="text-left px-4 py-3 text-xs text-muted-foreground">Actions</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -2816,7 +2925,7 @@ export default function Expenses() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs ${
                             exp.payment_mode === "Cash"
                               ? "bg-success-50 text-success-700"
                               : exp.payment_mode === "Bank"
@@ -2830,13 +2939,13 @@ export default function Expenses() {
                         {/* Approval is a REVIEW state, separate from payable_status,
                             which answers payment. Both can show at once. */}
                         {exp.approved_at && (
-                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700" title={`Signed off by ${exp.approved_by_name ?? "unknown"} on ${formatDateTime(exp.approved_at)} — locked against edits`}>
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-success-50 text-success-700" title={`Signed off by ${exp.approved_by_name ?? "unknown"} on ${formatDateTime(exp.approved_at)} — locked against edits`}>
                             Signed Off
                           </span>
                         )}
                         {exp.service_start && exp.service_end && (
                           <span
-                            className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700"
+                            className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-brand-50 text-brand-700"
                             title={`Split across ${serviceSplit(exp.service_start.slice(0, 10), exp.service_end.slice(0, 10), Number(exp.amount))
                               .map((x) => `${monthLabel(x.key)} ${x.days}d`)
                               .join(", ")}`}
@@ -2845,7 +2954,7 @@ export default function Expenses() {
                           </span>
                         )}
                         {exp.coverage_start && exp.coverage_end && (
-                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700" title={`Spread over ${prepaidMonths(exp.coverage_start.slice(0, 7), exp.coverage_end.slice(0, 7))} months`}>
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-brand-50 text-brand-700" title={`Spread over ${prepaidMonths(exp.coverage_start.slice(0, 7), exp.coverage_end.slice(0, 7))} months`}>
                             Prepaid
                           </span>
                         )}
@@ -2880,7 +2989,7 @@ export default function Expenses() {
                             <button
                               type="button"
                               onClick={() => handleDelete(exp)}
-                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-xl text-danger-700 hover:bg-danger-50"
                               title="Delete expense"
                             >
                               <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -2950,7 +3059,7 @@ export default function Expenses() {
                           <button
                             type="button"
                             onClick={() => handleDeleteCategory(category)}
-                            className="inline-flex items-center justify-center px-2 py-1 rounded-md text-danger-700 hover:bg-danger-50"
+                            className="inline-flex items-center justify-center px-2 py-1 rounded-xl text-danger-700 hover:bg-danger-50"
                             title="Delete category"
                           >
                             <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -2967,7 +3076,7 @@ export default function Expenses() {
         )}
 
         {activeTab === "deferred" && (
-          <div className="bg-card border border-border rounded-md overflow-hidden">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <h3 className="text-sm font-medium text-foreground">Deferred expenses</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -3025,7 +3134,7 @@ export default function Expenses() {
                               goes red for the company; this says WHICH expense,
                               because "something is stuck" is not an instruction. */}
                           {d.is_stale && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger-100 text-danger-700"
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-danger-100 text-danger-700"
                                   title="Its period has fully passed and it still carries a balance on 1160 — the monthly release run has not finished it.">
                               Stuck
                             </span>
@@ -3069,7 +3178,7 @@ export default function Expenses() {
                   <ThemedSelect
                     value={fixedMonth}
                     onChange={(e) => setFixedMonth(e.target.value)}
-                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                    className="px-3 py-2 border border-border rounded-xl bg-card text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     {fixedMonthOptions.map((m) => (
                       <option key={m} value={m}>{monthLabel(m)}</option>
@@ -3078,7 +3187,7 @@ export default function Expenses() {
                   <ThemedSelect
                     value={fixedPaidByFilter}
                     onChange={(e) => setFixedPaidByFilter(e.target.value)}
-                    className="px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                    className="px-3 py-2 border border-border rounded-xl bg-card text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                     title="Filter templates by their default payer"
                   >
                     <option value="all">All Paid By</option>
@@ -3113,13 +3222,13 @@ export default function Expenses() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Description</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client / Vendor</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Mode</th>
-                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Amount</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
-                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Description</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Vendor</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mode</th>
+                      <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Amount</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
+                      <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -3150,7 +3259,7 @@ export default function Expenses() {
                         </td>
                         <td className="px-6 py-4">
                           <span
-                            className={`inline-block px-2 py-0.5 rounded-md border text-xs ${
+                            className={`inline-block px-2 py-0.5 rounded-xl border text-xs ${
                               row.status === "approved"
                                 ? "bg-success-50 text-success-700 border-success-200"
                                 : row.status === "denied"
@@ -3213,14 +3322,14 @@ export default function Expenses() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Description</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Category</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Client / Vendor</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Mode</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Paid By</th>
-                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Amount</th>
-                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Runs</th>
-                      <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Description</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Vendor</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mode</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Paid By</th>
+                      <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Amount</th>
+                      <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Runs</th>
+                      <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -3300,13 +3409,13 @@ export default function Expenses() {
                     placeholder="Search employee, code, client, notes…"
                     value={advSearch}
                     onChange={(e) => setAdvSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                   />
                 </div>
                 <ThemedSelect
                   value={advMonthFilter}
                   onChange={(e) => setAdvMonthFilter(e.target.value)}
-                  className="px-3 py-2 border border-border rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                   title="Filter by month"
                 >
                   <option value="all">All Months</option>
@@ -3317,7 +3426,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advClientFilter}
                   onChange={(e) => setAdvClientFilter(e.target.value)}
-                  className="px-3 py-2 border border-border rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 >
                   <option value="all">All Clients</option>
                   <option value="none">No Client</option>
@@ -3330,7 +3439,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advBranchFilter}
                   onChange={(e) => setAdvBranchFilter(e.target.value)}
-                  className="px-3 py-2 border border-border rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 >
                   <option value="all">All Branches</option>
                   {branches.map((b) => (
@@ -3340,7 +3449,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advModeFilter}
                   onChange={(e) => setAdvModeFilter(e.target.value as "all" | "Cash" | "Bank" | "Cheque")}
-                  className="px-3 py-2 border border-border rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 >
                   <option value="all">All Modes</option>
                   <option value="Cash">Cash</option>
@@ -3350,7 +3459,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={advPaidByFilter}
                   onChange={(e) => setAdvPaidByFilter(e.target.value)}
-                  className="px-3 py-2 border border-border rounded-md text-sm"
+                  className="px-3 py-2 border border-border rounded-xl bg-card text-sm"
                   title="Filter by who paid the cash"
                 >
                   <option value="all">All Paid By</option>
@@ -3375,8 +3484,8 @@ export default function Expenses() {
               subtitle={(adv) => `${adv.employee_code} · ${adv.advance_date}`}
               badge={(adv) => (
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
-                    adv.payment_mode === "Cash" ? "bg-success-50 text-success-700" : "bg-brand-50 text-brand-700"
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs ${
+                    adv.payment_mode === "Cash" ? "bg-success-50 text-success-700 dark:text-success-500" : "bg-brand-50 text-brand-700 dark:text-brand-500"
                   }`}
                 >
                   {adv.payment_mode}
@@ -3426,14 +3535,14 @@ export default function Expenses() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Date</th>
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Employee</th>
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Client</th>
-                    <th className="text-right px-4 py-3 text-xs text-muted-foreground">Amount</th>
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Mode</th>
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Paid By</th>
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Notes</th>
-                    <th className="text-left px-4 py-3 text-xs text-muted-foreground">Actions</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Date</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Employee</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Amount</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mode</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Paid By</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Notes</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -3474,10 +3583,10 @@ export default function Expenses() {
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs ${
                               adv.payment_mode === "Cash"
                                 ? "bg-success-50 text-success-700"
-                                : "bg-brand-50 text-brand-700"
+                                : "bg-brand-50 text-brand-700 dark:text-brand-500"
                             }`}
                           >
                             {adv.payment_mode}
@@ -3498,7 +3607,7 @@ export default function Expenses() {
                               href={adv.drive_view_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-brand-600 hover:bg-brand-50"
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-xl text-brand-600 hover:bg-brand-50"
                               title={`Receipt: ${adv.attachment_file_name ?? "attachment"}`}
                             >
                               <Paperclip className="w-4 h-4" strokeWidth={1.5} />
@@ -3511,7 +3620,7 @@ export default function Expenses() {
                           <button
                             type="button"
                             onClick={() => handleDeleteAdvance(adv)}
-                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-xl text-danger-700 hover:bg-danger-50"
                             title="Delete advance"
                           >
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -3540,7 +3649,7 @@ export default function Expenses() {
               type="file"
               accept="image/*,application/pdf"
               onChange={(e) => setAdvFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-muted"
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-muted"
             />
           </div>
           <div className="flex items-center gap-3 pt-4">
@@ -3584,7 +3693,7 @@ export default function Expenses() {
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={(e) => setAdvEditFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-muted"
+                className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-muted"
               />
             </div>
             <div className="flex items-center gap-3 pt-4">
@@ -3717,13 +3826,13 @@ export default function Expenses() {
           {(() => {
             const noReceipt = selectedRows.filter((e) => !(e.drive_view_url || (e as { receipt_path?: string | null }).receipt_path)).length;
             return noReceipt > 0 ? (
-              <p className="flex items-start gap-2 text-xs text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
+              <p className="flex items-start gap-2 text-xs text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded-xl px-3 py-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {noReceipt} of these {noReceipt === 1 ? "has" : "have"} no receipt attached.
               </p>
             ) : null;
           })()}
-          <div className="max-h-[320px] overflow-auto border border-border rounded-md">
+          <div className="max-h-[320px] overflow-auto border border-border rounded-xl">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted/50">
                 <tr className="text-xs text-muted-foreground">
@@ -3757,7 +3866,7 @@ export default function Expenses() {
       >
         <form onSubmit={handleSaveFixed} className="space-y-4">
           {fixedError && (
-            <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+            <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
               {fixedError}
             </div>
           )}
@@ -3780,7 +3889,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={fixedForm.pl_category}
                 disabled
-                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-muted/50 text-muted-foreground cursor-not-allowed"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm bg-muted/50 text-muted-foreground cursor-not-allowed"
               >
                 <option value="operating_expense">Operating Expense</option>
                 <option value="cost_of_services">Cost of Services</option>
@@ -3798,7 +3907,7 @@ export default function Expenses() {
               value={fixedForm.description}
               onChange={(e) => setFixedForm({ ...fixedForm, description: e.target.value })}
               placeholder="Head office rent"
-              className="w-full px-3 py-2 border border-border rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
             />
           </div>
 
@@ -3811,7 +3920,7 @@ export default function Expenses() {
                 step="0.01"
                 value={fixedForm.amount}
                 onChange={(e) => setFixedForm({ ...fixedForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 required
               />
               <AmountInWords value={fixedForm.amount} />
@@ -3826,7 +3935,7 @@ export default function Expenses() {
                 onChange={(e) =>
                   setFixedForm({ ...fixedForm, payment_mode: e.target.value as FixedPaymentMode })
                 }
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               >
                 <option value="Bank">Bank</option>
                 <option value="Cash">Cash</option>
@@ -3845,7 +3954,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={fixedForm.paid_by_employee_id}
                 onChange={(e) => setFixedForm({ ...fixedForm, paid_by_employee_id: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               >
                 <option value="">No default — choose at approval</option>
                 {custodians.map((c) => (
@@ -3867,7 +3976,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={fixedForm.bank_account_id}
                 onChange={(e) => setFixedForm({ ...fixedForm, bank_account_id: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               >
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
@@ -3886,7 +3995,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={fixedForm.vendor_id}
                   onChange={(e) => setFixedForm({ ...fixedForm, vendor_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 >
                   <option value="">Select vendor</option>
                   {vendors.map((v) => (
@@ -3902,7 +4011,7 @@ export default function Expenses() {
                   max="28"
                   value={fixedForm.due_day}
                   onChange={(e) => setFixedForm({ ...fixedForm, due_day: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">1–28, so every month has the day.</p>
               </div>
@@ -3935,7 +4044,7 @@ export default function Expenses() {
               <ThemedSelect
                 value={fixedForm.branch_id}
                 onChange={(e) => setFixedForm({ ...fixedForm, branch_id: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               >
                 <option value="">Auto (client's region, else head office)</option>
                 {branches.map((b) => (
@@ -3952,7 +4061,7 @@ export default function Expenses() {
                 type="month"
                 value={fixedForm.start_month}
                 onChange={(e) => setFixedForm({ ...fixedForm, start_month: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 required
               />
               <p className="text-[11px] text-muted-foreground mt-1">
@@ -3965,7 +4074,7 @@ export default function Expenses() {
                 type="month"
                 value={fixedForm.end_month}
                 onChange={(e) => setFixedForm({ ...fixedForm, end_month: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               />
               <p className="text-[11px] text-muted-foreground mt-1">Leave blank to run indefinitely.</p>
             </div>
@@ -3977,7 +4086,7 @@ export default function Expenses() {
               value={fixedForm.notes}
               onChange={(e) => setFixedForm({ ...fixedForm, notes: e.target.value })}
               rows={2}
-              className="w-full px-3 py-2 border border-border rounded-md text-sm"
+              className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
             />
           </div>
 
@@ -4013,7 +4122,7 @@ export default function Expenses() {
                 step="0.01"
                 value={instanceForm.amount}
                 onChange={(e) => setInstanceForm({ ...instanceForm, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 required
               />
               <AmountInWords value={instanceForm.amount} />
@@ -4024,7 +4133,7 @@ export default function Expenses() {
                 type="text"
                 value={instanceForm.description}
                 onChange={(e) => setInstanceForm({ ...instanceForm, description: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               />
             </div>
             {instanceEditing.payment_mode === "Payable" && (
@@ -4034,7 +4143,7 @@ export default function Expenses() {
                   type="date"
                   value={instanceForm.due_date}
                   onChange={(e) => setInstanceForm({ ...instanceForm, due_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 />
               </div>
             )}
@@ -4044,7 +4153,7 @@ export default function Expenses() {
                 value={instanceForm.notes}
                 onChange={(e) => setInstanceForm({ ...instanceForm, notes: e.target.value })}
                 rows={2}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               />
             </div>
             <div className="flex items-center gap-3 pt-4 border-t border-border">
@@ -4069,7 +4178,7 @@ export default function Expenses() {
         {decisionTarget && (
           <div className="space-y-4">
             {fixedError && (
-              <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+              <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
                 {fixedError}
               </div>
             )}
@@ -4098,7 +4207,7 @@ export default function Expenses() {
                 <ThemedSelect
                   value={decisionCustodianId}
                   onChange={(e) => setDecisionCustodianId(e.target.value)}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                 >
                   <option value="">Select who paid</option>
                   {custodians.map((c) => (
@@ -4118,7 +4227,7 @@ export default function Expenses() {
                 value={decisionNote}
                 onChange={(e) => setDecisionNote(e.target.value)}
                 rows={2}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
               />
             </div>
 
@@ -4331,7 +4440,7 @@ export default function Expenses() {
                 type="text"
                 value={vendorName}
                 onChange={(e) => setVendorName(e.target.value)}
-                className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                 placeholder="e.g., Acme Supplies"
               />
             </div>
@@ -4342,7 +4451,7 @@ export default function Expenses() {
                   type="text"
                   value={vendorBankName}
                   onChange={(e) => setVendorBankName(e.target.value)}
-                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                   placeholder="e.g., Meezan Bank"
                 />
               </div>
@@ -4352,7 +4461,7 @@ export default function Expenses() {
                   type="text"
                   value={vendorBranchCode}
                   onChange={(e) => setVendorBranchCode(e.target.value)}
-                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                   placeholder="e.g., 0214"
                 />
               </div>
@@ -4362,7 +4471,7 @@ export default function Expenses() {
                   type="text"
                   value={vendorAccountTitle}
                   onChange={(e) => setVendorAccountTitle(e.target.value)}
-                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                   placeholder="Name on the account"
                 />
               </div>
@@ -4372,7 +4481,7 @@ export default function Expenses() {
                   type="text"
                   value={vendorAccountNumber}
                   onChange={(e) => setVendorAccountNumber(e.target.value)}
-                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                   placeholder="Account number / IBAN"
                 />
               </div>
@@ -4401,7 +4510,7 @@ export default function Expenses() {
                 {vendors.map((v) => (
                   <div
                     key={v.id}
-                    className="flex items-center justify-between p-2.5 border border-border rounded-md"
+                    className="flex items-center justify-between p-2.5 border border-border rounded-xl"
                   >
                     <div className="min-w-0">
                       <p className="text-sm text-foreground truncate">{v.name}</p>
@@ -4420,7 +4529,7 @@ export default function Expenses() {
                       <button
                         type="button"
                         onClick={() => handleDeleteVendor(v)}
-                        className="inline-flex items-center justify-center px-2 py-1 rounded-md text-danger-700 hover:bg-danger-50"
+                        className="inline-flex items-center justify-center px-2 py-1 rounded-xl text-danger-700 hover:bg-danger-50"
                         title="Delete vendor"
                       >
                         <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -4450,7 +4559,7 @@ export default function Expenses() {
               autoFocus
               value={catInput}
               onChange={(e) => setCatInput(e.target.value)}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             />
           </div>
           <div className="flex items-center gap-3 pt-4">
@@ -4477,7 +4586,7 @@ export default function Expenses() {
     return (
       <>
         {formError && (
-          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
             <div className="flex-1">{formError}</div>
             <button type="button" onClick={() => setFormError(null)}>
@@ -4500,7 +4609,7 @@ export default function Expenses() {
               });
               if (!keep) setEmpQuery("");
             }}
-            className="w-full px-4 py-2 border border-border rounded-md text-sm"
+            className="w-full px-4 py-2 border border-border rounded-xl text-sm"
           >
             <option value="">No client (direct)</option>
             {clients.map((c) => (
@@ -4516,7 +4625,7 @@ export default function Expenses() {
         <div>
           <label className="block text-sm text-foreground mb-1">Employee *</label>
           {selectedEmp ? (
-            <div className="flex items-center justify-between px-3 py-2 border border-border rounded-md bg-muted/50">
+            <div className="flex items-center justify-between px-3 py-2 border border-border rounded-xl bg-muted/50">
               <div className="text-sm">
                 <div className="text-foreground">{selectedEmp.full_name}</div>
                 <div className="text-xs text-muted-foreground font-mono">
@@ -4541,10 +4650,10 @@ export default function Expenses() {
                   placeholder="Search by name, code, or phone…"
                   value={empQuery}
                   onChange={(e) => setEmpQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
                 />
               </div>
-              <div className="mt-2 max-h-40 overflow-y-auto border border-border rounded-md">
+              <div className="mt-2 max-h-40 overflow-y-auto border border-border rounded-xl">
                 {empOptions.length === 0 ? (
                   <div className="px-3 py-2 text-xs text-muted-foreground">No employees match.</div>
                 ) : (
@@ -4584,7 +4693,7 @@ export default function Expenses() {
               step="0.01"
               value={state.amount}
               onChange={(e) => setState({ ...state, amount: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             />
             <AmountInWords value={state.amount} />
           </div>
@@ -4595,7 +4704,7 @@ export default function Expenses() {
               type="date"
               value={state.advance_date}
               onChange={(e) => setState({ ...state, advance_date: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             />
           </div>
         </div>
@@ -4605,7 +4714,7 @@ export default function Expenses() {
             {(["Cash", "Bank", "Cheque"] as const).map((m) => (
               <label
                 key={m}
-                className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-xl cursor-pointer text-sm ${
                   state.payment_mode === m
                     ? "border-foreground bg-muted/50"
                     : "border-border hover:border-border"
@@ -4638,7 +4747,7 @@ export default function Expenses() {
               required
               value={state.paid_by_employee_id}
               onChange={(e) => setState({ ...state, paid_by_employee_id: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             >
               <option value="">Select who paid the cash…</option>
               {custodians.map((c) => (
@@ -4665,7 +4774,7 @@ export default function Expenses() {
               required
               value={state.bank_account_id}
               onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             >
               <option value="">Select bank account</option>
               {banks.map((b) => (
@@ -4683,7 +4792,7 @@ export default function Expenses() {
               required
               value={state.cheque_id}
               onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             >
               <option value="">Select a pending cheque</option>
               {cheques
@@ -4709,7 +4818,7 @@ export default function Expenses() {
             value={state.notes}
             onChange={(e) => setState({ ...state, notes: e.target.value })}
             rows={2}
-            className="w-full px-4 py-2 border border-border rounded-md text-sm"
+            className="w-full px-4 py-2 border border-border rounded-xl text-sm"
           />
         </div>
       </>
@@ -4732,7 +4841,7 @@ export default function Expenses() {
     return (
       <form className="space-y-4" onSubmit={onSubmit}>
         {formError && (
-          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
             <div className="flex-1">{formError}</div>
             <button type="button" onClick={() => setFormError(null)}>
@@ -4786,7 +4895,7 @@ export default function Expenses() {
                   pl_category: keepClient ? state.pl_category : "operating_expense",
                 });
               }}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             >
               <option value="">Head Office (default)</option>
               {branches.map((b) => (
@@ -4817,7 +4926,7 @@ export default function Expenses() {
                   <div
                     key={opt.value}
                     aria-disabled="true"
-                    className={`flex flex-col items-start gap-1 px-3 py-2 border rounded-md text-sm cursor-not-allowed ${
+                    className={`flex flex-col items-start gap-1 px-3 py-2 border rounded-xl text-sm cursor-not-allowed ${
                       active ? "border-foreground bg-muted/50" : "border-border opacity-60"
                     }`}
                   >
@@ -4849,7 +4958,7 @@ export default function Expenses() {
               step="0.01"
               value={state.amount}
               onChange={(e) => setState({ ...state, amount: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             />
             <AmountInWords value={state.amount} />
           </div>
@@ -4860,7 +4969,7 @@ export default function Expenses() {
               type="date"
               value={state.expense_date}
               onChange={(e) => setState({ ...state, expense_date: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             />
           </div>
 
@@ -4887,7 +4996,7 @@ export default function Expenses() {
               IESSI pay a liability; the database refuses a period on them
               (refuse_statutory_period), so the choice is not offered. */}
           {statutorySchemeOf(state.category_id) ? (
-            <div className="col-span-2 border border-brand-200 rounded-md p-3 bg-brand-50 text-sm text-foreground">
+            <div className="col-span-2 border border-brand-200 rounded-xl p-3 bg-brand-50 text-sm text-foreground">
               <div className="font-medium text-foreground">
                 {STATUTORY_SCHEME_LABEL[statutorySchemeOf(state.category_id)!]} is paid against what payroll owes, not added as an expense.
               </div>
@@ -4920,7 +5029,7 @@ export default function Expenses() {
               )}
             </div>
           ) : (
-          <div className="col-span-2 border border-border rounded-md p-3 bg-muted/50">
+          <div className="col-span-2 border border-border rounded-xl p-3 bg-muted/50">
             <div className="text-sm font-medium text-foreground">Which months does this cost belong to?</div>
             <p className="text-[11px] text-muted-foreground mt-0.5 mb-2">
               Almost every expense belongs entirely to the month it was paid. Two do not: a bill
@@ -4968,7 +5077,7 @@ export default function Expenses() {
                   {opts.map((o) => (
                     <label
                       key={o.key}
-                      className={`block border rounded-md px-3 py-2 ${
+                      className={`block border rounded-xl px-3 py-2 ${
                         mode === o.key ? "border-foreground bg-card" : "border-border"
                       } ${o.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                     >
@@ -5005,7 +5114,7 @@ export default function Expenses() {
                           required
                           value={state.service_start}
                           onChange={(e) => setState({ ...state, service_start: e.target.value })}
-                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                         />
                       </div>
                       <div>
@@ -5016,7 +5125,7 @@ export default function Expenses() {
                           min={state.service_start}
                           value={state.service_end}
                           onChange={(e) => setState({ ...state, service_end: e.target.value })}
-                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                         />
                       </div>
                       <div className="col-span-2 text-[11px] text-muted-foreground">
@@ -5043,7 +5152,7 @@ export default function Expenses() {
                           required
                           value={state.coverage_start}
                           onChange={(e) => setState({ ...state, coverage_start: e.target.value })}
-                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                         />
                       </div>
                       <div>
@@ -5054,7 +5163,7 @@ export default function Expenses() {
                           min={state.coverage_start}
                           value={state.coverage_end}
                           onChange={(e) => setState({ ...state, coverage_end: e.target.value })}
-                          className="w-full px-3 py-2 border border-border rounded-md text-sm"
+                          className="w-full px-3 py-2 border border-border rounded-xl bg-card text-sm"
                         />
                       </div>
                       {state.coverage_end >= state.coverage_start && (
@@ -5084,7 +5193,7 @@ export default function Expenses() {
               {(["Cash", "Bank", "Cheque", "Payable"] as const).map((m) => (
                 <label
                   key={m}
-                  className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                  className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-xl cursor-pointer text-sm ${
                     state.payment_mode === m
                       ? "border-foreground bg-muted/50"
                       : "border-border hover:border-border"
@@ -5108,7 +5217,7 @@ export default function Expenses() {
                 required
                 value={expenseCustodianId}
                 onChange={(e) => setExpenseCustodianId(e.target.value)}
-                className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-xl text-sm"
               >
                 <option value="">Select who paid the cash…</option>
                 {custodians.map((c) => (
@@ -5133,7 +5242,7 @@ export default function Expenses() {
             <ThemedSelect
               value={state.expense_by}
               onChange={(e) => setState({ ...state, expense_by: e.target.value })}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             >
               <option value="">Select who the expense is by…</option>
               {/* Editing an older expense keeps whoever it already names, even if
@@ -5159,7 +5268,7 @@ export default function Expenses() {
                 required
                 value={state.bank_account_id}
                 onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
-                className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-xl text-sm"
               >
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
@@ -5177,7 +5286,7 @@ export default function Expenses() {
                 required
                 value={state.cheque_id}
                 onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
-                className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                className="w-full px-4 py-2 border border-border rounded-xl text-sm"
               >
                 <option value="">Select a pending cheque</option>
                 {cheques
@@ -5204,7 +5313,7 @@ export default function Expenses() {
                   required
                   value={state.vendor_id}
                   onChange={(e) => setState({ ...state, vendor_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                 >
                   <option value="">Select vendor</option>
                   {vendors.map((v) => (
@@ -5226,7 +5335,7 @@ export default function Expenses() {
                   type="date"
                   value={state.due_date}
                   onChange={(e) => setState({ ...state, due_date: e.target.value })}
-                  className="w-full px-4 py-2 border border-border rounded-md text-sm"
+                  className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   This expense will appear in Accounting → Accounts Payable until it is marked Paid.
@@ -5240,7 +5349,7 @@ export default function Expenses() {
               value={state.description}
               onChange={(e) => setState({ ...state, description: e.target.value })}
               rows={2}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             />
           </div>
           <div className="col-span-2">
@@ -5249,13 +5358,13 @@ export default function Expenses() {
               value={state.notes}
               onChange={(e) => setState({ ...state, notes: e.target.value })}
               rows={2}
-              className="w-full px-4 py-2 border border-border rounded-md text-sm"
+              className="w-full px-4 py-2 border border-border rounded-xl text-sm"
             />
           </div>
           <div className="col-span-2">
             <label className="block text-sm text-foreground mb-1">Receipt(s)</label>
             {edit?.existingReceipt && !edit.replaceReceipt ? (
-              <div className="flex items-center justify-between p-3 border border-border rounded-md">
+              <div className="flex items-center justify-between p-3 border border-border rounded-xl">
                 <span className="text-sm text-foreground truncate">
                   {edit.existingReceipt.split("/").pop()}
                 </span>
@@ -5272,7 +5381,7 @@ export default function Expenses() {
               </div>
             ) : (
               <div className="space-y-2">
-                <label className="flex items-center gap-3 cursor-pointer px-4 py-2 border border-border border-dashed rounded-md hover:bg-muted/50 transition-colors">
+                <label className="flex items-center gap-3 cursor-pointer px-4 py-2 border border-border border-dashed rounded-xl hover:bg-muted/50 transition-colors">
                   <Upload className="w-4 h-4 text-muted-foreground/70 shrink-0" strokeWidth={1.5} />
                   <span className="text-sm text-muted-foreground flex-1">
                     {state.receipts?.length

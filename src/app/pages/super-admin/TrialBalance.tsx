@@ -312,7 +312,7 @@ export default function TrialBalance() {
                   if (group.length === 0) return null;
                   return (
                     <tbody key={type} className="divide-y divide-border">
-                      <tr className="bg-muted/50/60">
+                      <tr className="bg-muted/30">
                         <td colSpan={4} className="px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground">
                           {ACCOUNT_TYPE_LABEL[type]}
                         </td>

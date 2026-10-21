@@ -22,7 +22,7 @@ type Loc = { id: string; name: string; location_type: string; coa_account_id: st
 type Row = { row_kind: string; source_table: string | null; debit: number | null; credit: number | null; balance: number | null };
 
 /** Which grid row a posting source belongs to, by direction. */
-const GROUPS: { key: string; label: string; sources: string[] | null; dir: "in" | "out" | "net" }[] = [
+export const GROUPS: { key: string; label: string; sources: string[] | null; dir: "in" | "out" | "net" }[] = [
   { key: "clients", label: "Received from clients", sources: ["invoice_payments"], dir: "net" },
   { key: "transfer", label: "Moved between our accounts", sources: ["bank_transfers", "cash_deposits", "custody_transfers", "cash_withdrawals", "custodian_transfers"], dir: "net" },
   { key: "salaries", label: "Guard salaries paid", sources: ["payslips_disbursement", "payroll_adjustment_settlement"], dir: "net" },
@@ -31,7 +31,7 @@ const GROUPS: { key: string; label: string; sources: string[] | null; dir: "in" 
   { key: "partners", label: "Partners", sources: ["partner_account_entries"], dir: "net" },
   { key: "other", label: "Everything else", sources: null, dir: "net" },
 ];
-const KNOWN = new Set(GROUPS.flatMap((g) => g.sources ?? []));
+export const KNOWN = new Set(GROUPS.flatMap((g) => g.sources ?? []));
 
 export default function AccountsGrid({ period }: { period: string }) {
   const companyId = useCompanyId();
