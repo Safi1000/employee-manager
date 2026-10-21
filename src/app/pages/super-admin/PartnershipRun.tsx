@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import PartnershipRegions from "../../components/PartnershipRegions";
 import {
   AlertTriangle, CalendarClock, CheckCircle2, FileText, Loader2, RotateCcw, Send,
 } from "lucide-react";
@@ -278,7 +279,9 @@ export default function PartnershipRun() {
   // is the defect the Partners Summary tab already had once.
   const outputs = run?.outputs ?? [];
   const partnerRows = outputs.filter((r) => r.row_kind === "REGIONAL_PARTNER" || r.row_kind === "EQUITY_PARTNER");
-  const otherRows = outputs.filter((r) => !partnerRows.includes(r));
+  // 0537: EQUITY_REGION rows are the equity share split by region; the By
+  // region section shows them, so they are not "further rows" here.
+  const otherRows = outputs.filter((r) => !partnerRows.includes(r) && r.row_kind !== "EQUITY_REGION");
   const reviewByKind = useMemo(() => {
     const m = new Map<string, ReviewRow[]>();
     for (const r of review) {
@@ -487,6 +490,12 @@ export default function PartnershipRun() {
               </div>
             )}
           </section>
+        )}
+
+        {run && companyId && (
+          <PartnershipRegions companyId={companyId} month={firstOfMonth(period)} outputs={outputs}
+            status={run.status} canDeclare={hasPermission(profile, "accounting.edit")}
+            onDeclared={() => setNotice("Declared. Re-draft the month to include it.")} />
         )}
 
         {/* ── Review ──────────────────────────────────────────────────────── */}
