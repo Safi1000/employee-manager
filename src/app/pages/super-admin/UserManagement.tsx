@@ -1,7 +1,9 @@
 import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useState } from "react";
-import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
+import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound, ShieldCheck } from "lucide-react";
+import ExportButton from "../../components/ExportButton";
+import { exportTable } from "../../lib/excel";
 import Header from "../../components/Header";
 import MobileCardList from "../../components/MobileCardList";
 import Button from "../../components/Button";
@@ -115,6 +117,7 @@ export default function UserManagement() {
   const isSSA = profile?.role === "super_super_admin";
 
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
   // Partners in the company, for the Partner-scope multi-select (0314).
   const [partnersList, setPartnersList] = useState<{ id: string; name: string }[]>([]);
   // Employees in the company, for the single-employee link (0424).
@@ -447,10 +450,16 @@ export default function UserManagement() {
         title="Users & Permissions"
         subtitle="Access control, permissions and branch scope"
         actions={
-          <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
-            <UserPlus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-            Create User
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="md" onClick={() => setReviewOpen(true)}>
+              <ShieldCheck className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Review access
+            </Button>
+            <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
+              <UserPlus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Create User
+            </Button>
+          </div>
         }
       >
         {users.length > 0 && (() => {
@@ -920,6 +929,51 @@ export default function UserManagement() {
           </form>
         )}
       </Modal>
+      {reviewOpen && (() => {
+        // ACCESS REVIEW (2026-10-21): who can do what that matters, for a
+        // quarterly look. Super admins hold every key implicitly. Nothing is
+        // saved; export it to keep the sign-off.
+        const SENSITIVE: [string, string][] = [
+          ["accounting.edit", "Edit banks & ledgers"], ["banks.view", "See bank balances"], ["payroll.edit", "Edit payroll"],
+          ["payroll.approve", "Approve payroll"], ["expenses.approve", "Approve expenses"], ["invoices.edit", "Edit invoices"],
+          ["reversals.execute", "Reverse actions"], ["users.manage", "Manage users"], ["accountant.view", "Accountant page"],
+          ["planning.edit", "Edit plan & budget"], ["partnership.post", "Post partnership"], ["period_close.manage", "Close months"],
+        ];
+        const isSuperU = (u: Profile) => u.role === "super_admin" || u.role === "super_super_admin";
+        const rows = [...users].sort((a, b) => Number(isSuperU(b)) - Number(isSuperU(a)) || (a.full_name ?? a.email ?? "").localeCompare(b.full_name ?? b.email ?? ""))
+          .map((u) => {
+            const held = isSuperU(u) ? SENSITIVE.map(([, l]) => l) : SENSITIVE.filter(([k]) => (u.permissions ?? []).includes(k)).map(([, l]) => l);
+            return { u, held, region: branches.find((b) => b.id === u.branch_id)?.name ?? "Every region", total: isSuperU(u) ? "all" : String(u.permissions?.length ?? 0) };
+          });
+        return (
+          <Modal isOpen onClose={() => setReviewOpen(false)} title="Access review" size="lg">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <p className="text-sm text-muted-foreground">Everyone who can sign in, and the sensitive things they can do. Untick anything that is no longer needed from each user's Edit.</p>
+              <ExportButton onExport={() => exportTable({
+                fileName: `Access review ${new Date().toISOString().slice(0, 10)}.xlsx`, sheetName: "Access",
+                title: `Access review — ${new Date().toLocaleDateString()}`,
+                headers: ["Name", "Email", "Role", "Region", "Permissions", "Sensitive access", "Reviewed by", "Keep / change"],
+                rows: rows.map((r) => [r.u.full_name ?? "", r.u.email ?? "", ROLE_LABEL[r.u.role as UserRole] ?? r.u.role, r.region, r.total, r.held.join(", "), "", ""]),
+              })} />
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto divide-y divide-border border border-border rounded-xl">
+              {rows.map((r) => (
+                <div key={r.u.id} className="px-4 py-3 flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium text-foreground">{r.u.full_name ?? r.u.email}</span>
+                    <span className="text-xs text-muted-foreground">{ROLE_LABEL[r.u.role as UserRole] ?? r.u.role} · {r.region} · {r.total} permission{r.total === "1" ? "" : "s"}</span>
+                  </div>
+                  {r.held.length === 0 ? <span className="text-xs text-muted-foreground">No sensitive access</span> : (
+                    <div className="flex flex-wrap gap-1">
+                      {r.held.map((h) => <span key={h} className="text-[11px] px-2 py-0.5 rounded-full border border-warning-200 bg-warning-50 text-warning-700 dark:text-warning-500">{h}</span>)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Modal>
+        );
+      })()}
     </>
   );
 }

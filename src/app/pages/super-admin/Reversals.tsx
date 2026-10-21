@@ -6,6 +6,7 @@
 // that performs the reversal. "History" lists every reversal made, with who,
 // when, why and what it did.
 
+import { useSearchParams } from "react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { History, Loader2, RotateCcw, ShieldAlert, Undo2 } from "lucide-react";
 import Header from "../../components/Header";
@@ -62,6 +63,11 @@ export default function Reversals() {
   const [notice, setNotice] = useState<string | null>(null);
   const [open, setOpen] = useState<{ kind: string; id: string } | null>(null);
   const [viewing, setViewing] = useState<ReversalRow | null>(null);
+  // ?reverse=<source id> — from the Audit Log's "Reverse" link (2026-10-21).
+  // The window widens so an older action is found, then that action opens.
+  const [urlParams, setUrlParams] = useSearchParams();
+  const wanted = urlParams.get("reverse");
+  useEffect(() => { if (wanted) setFrom(""); }, [wanted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,9 +82,15 @@ export default function Reversals() {
     if (a.error) setErr(friendlyDbError(a.error));
     if (h.error) setErr(friendlyDbError(h.error));
     setActions((a.data ?? []) as Action[]);
+    if (wanted) {
+      const hit = ((a.data ?? []) as Action[]).find((x) => x.source_id === wanted);
+      if (hit) setOpen({ kind: hit.kind, id: hit.source_id });
+      else setNotice("That record has no reversible action — it may already be reversed, or it is not something Reversals can undo.");
+      const next = new URLSearchParams(urlParams); next.delete("reverse"); setUrlParams(next, { replace: true });
+    }
     setHistory((h.data ?? []) as ReversalRow[]);
     setLoading(false);
-  }, [kind, from, q]);
+  }, [kind, from, q, wanted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search is typed, so wait for a pause before asking the database.
   useEffect(() => {

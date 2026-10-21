@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchAllRows, supabase } from "../../../lib/supabase";
+import { effectiveContractLinesValue, fetchAllRows, supabase, type ContractAddendum, type ContractLine } from "../../../lib/supabase";
 import { withRegion } from "../../../lib/region";
 import { GROUPS, KNOWN } from "../accountant/AccountsGrid";
 
@@ -35,6 +35,8 @@ export type ClientDot = { clientId: string; name: string; regionId: string | nul
 export type RegionCard = { regionId: string; name: string; revenue: number; net: number; trend: number[]; charged: boolean | null };
 
 export type CommandData = {
+  /** Relievers on the books with no attendance row on the latest marked day — free to send. */
+  freeRelievers: { id: string; name: string; regionId: string | null }[] | null;
   asOf: string | null;
   sites: SiteTile[] | null;
   /** Every bank and cash account this month, from the ledger: opening, each
@@ -58,6 +60,10 @@ export type CommandData = {
   /** Clients with a live contract this month, and how many have their invoice. */
   expectedClients: number | null;
   billedClients: number | null;
+  /** The billing month's contract value at line rates (the Contracts screens'
+   *  own effectiveContractLinesValue), and clients billed more than 10% off it. */
+  contractValue: number | null;
+  offContract: { clientId: string; name: string; value: number; billed: number }[] | null;
   /** Live-contract clients with no invoice for the billing month, by contracted heads. */
   notBilled: { clientId: string; name: string; heads: number }[] | null;
   receiptsMtd: number | null;
@@ -180,6 +186,21 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
         !can.employees ? skip : fetchAllRows<{ lifecycle_state: string | null; join_date: string | null; last_working_day: string | null }>(() =>
           withRegion(supabase.from("employees").select("lifecycle_state, join_date, last_working_day").eq("company_id", companyId), regionId) as never,
         ),
+        // 15 — contract lines and addendums for the billing month's contract value
+        seesBilling
+          ? Promise.all([
+              supabase.from("contracts").select("id, client_id, start_date").eq("status", "active").eq("contract_type", "guard_deployment"),
+              supabase.from("contract_lines").select("*"),
+              supabase.from("contract_addendums").select("*"),
+            ]).then(([k, l, a]) => ({ data: { contracts: (k.data ?? []) as { id: string; client_id: string; start_date: string | null }[], lines: (l.data ?? []) as ContractLine[], adds: (a.data ?? []) as ContractAddendum[] }, error: k.error ?? l.error ?? a.error }))
+          : skip,
+        // 16 — relievers, and who among them is marked on the latest day
+        seesPosts && asOf
+          ? Promise.all([
+              withRegion(supabase.from("employees").select("id, full_name, branch_id, lifecycle_state").eq("company_id", companyId).eq("category", "reliever"), regionId),
+              withRegion(supabase.from("attendance_records").select("employee_id").eq("attendance_date", asOf), regionId),
+            ]).then(([e, a]) => ({ data: { emps: (e.data ?? []) as { id: string; full_name: string; branch_id: string | null; lifecycle_state: string | null }[], marked: new Set(((a.data ?? []) as { employee_id: string }[]).map((r) => r.employee_id)) }, error: e.error ?? a.error }))
+          : skip,
       ]);
       if (cancelled) return;
       const ok = <T,>(i: number): T | null => {
@@ -329,6 +350,27 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
         }
         cashMonth = { opening, closing, flows: GROUPS.map((g) => ({ key: g.key, label: g.label, v: by.get(g.key) ?? 0 })).filter((f) => Math.abs(f.v) >= 1) };
       }
+      // The billing month's contract value, client by client, at the line rates
+      // in effect on its last day — the same definition Contracts shows.
+      let contractValue: number | null = null, offContract: CommandData["offContract"] = null;
+      const cdef = ok<{ contracts: { id: string; client_id: string; start_date: string | null }[]; lines: ContractLine[]; adds: ContractAddendum[] }>(15);
+      if (cdef && inv) {
+        const byClient = new Map<string, number>();
+        for (const k of cdef.contracts) {
+          if (k.start_date && k.start_date > pEnd) continue;
+          const info = clientInfo.get(k.client_id);
+          if (!info || !inScope(info.branch)) continue;
+          const v = effectiveContractLinesValue(cdef.lines.filter((l) => l.contract_id === k.id), cdef.adds.filter((a) => a.contract_id === k.id), pEnd);
+          byClient.set(k.client_id, (byClient.get(k.client_id) ?? 0) + v);
+        }
+        const billedBy = new Map<string, number>();
+        for (const r of inv) if (svc(r) >= pStart && svc(r) <= pEnd) billedBy.set(r.client_id, (billedBy.get(r.client_id) ?? 0) + Number(r.invoice_amount ?? 0));
+        contractValue = [...byClient.values()].reduce((n, v) => n + v, 0);
+        offContract = [...byClient.entries()]
+          .filter(([id, v]) => v > 0 && billedBy.has(id) && Math.abs((billedBy.get(id)! - v) / v) > 0.1)
+          .map(([id, v]) => ({ clientId: id, name: clientInfo.get(id)!.name, value: v, billed: billedBy.get(id)! }))
+          .sort((a, b) => Math.abs(b.billed - b.value) - Math.abs(a.billed - a.value));
+      }
       const cash = ok<{ cash_balance: number }[]>(5);
       setData({
         asOf,
@@ -357,6 +399,13 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
           };
         })(),
         salariesPaidMtd: ok<{ amount_paid: number }[]>(13)?.reduce((n, r) => n + Number(r.amount_paid ?? 0), 0) ?? null,
+        contractValue,
+        offContract,
+        freeRelievers: (() => {
+          const r = ok<{ emps: { id: string; full_name: string; branch_id: string | null; lifecycle_state: string | null }[]; marked: Set<string> }>(16);
+          if (!r) return null;
+          return r.emps.filter((e) => (e.lifecycle_state === "active") && !r.marked.has(e.id)).map((e) => ({ id: e.id, name: e.full_name, regionId: e.branch_id }));
+        })(),
         billMonth: pStart,
         billed: inv ? sumSvc(pStart, pEnd) : null,
         billedPrev: inv ? sumSvc(iso(new Date(now.getFullYear(), now.getMonth() - 2, 1)), ppEnd) : null,

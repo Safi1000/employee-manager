@@ -162,6 +162,19 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
     link: { to: "/super-admin/attendance", label: "Open attendance" },
   });
 
+  // A short client's sheet also names the relievers free in its region on the
+  // day the board reads (no attendance row anywhere) — who could be sent.
+  const openSiteWithRelievers = (s: SiteTile) => {
+    openSite(s);
+    const short = s.marked > 0 && s.contracted > s.onPost;
+    const free = (c?.freeRelievers ?? []).filter((r) => !s.regionId || r.regionId === s.regionId);
+    if (!short || free.length === 0) return;
+    setSheet((cur) => cur && ({
+      ...cur,
+      rows: [...(cur.rows ?? []), { label: "Relievers free that day", value: String(free.length), hint: free.slice(0, 8).map((r) => r.name).join(", ") + (free.length > 8 ? "…" : "") }],
+    }));
+  };
+
   const groups = useMemo(() => {
     const m = new Map<string, SiteTile[]>();
     for (const s of sites ?? []) m.set(s.region, [...(m.get(s.region) ?? []), s]);
@@ -276,7 +289,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   <div className="flex justify-between text-xs text-muted-foreground"><span className="font-bold text-foreground">{region}</span><span className="font-ledger">{o} / {rq} on strength · {ml.filter((x) => x.contracted > x.onPost).length} short{nm ? ` · ${nm} not marked` : ""}</span></div>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(122px,1fr))] gap-2">
                     {list.map((s) => (
-                      <button key={s.clientId} type="button" onClick={() => openSite(s)} aria-label={`${s.name}, ${s.onPost} of ${s.contracted} on strength`}
+                      <button key={s.clientId} type="button" onClick={() => openSiteWithRelievers(s)} aria-label={`${s.name}, ${s.onPost} of ${s.contracted} on strength`}
                         className={`${tile(s)} rounded-[10px] px-2.5 py-2 min-h-16 flex flex-col justify-between gap-1.5 text-left transition-transform hover:-translate-y-0.5 hover:shadow-md`}>
                         <span className="text-xs font-semibold leading-tight line-clamp-2">{s.name}</span>
                         <span className="font-ledger text-[13px] font-semibold">{s.marked === 0 ? "not marked" : `${s.onPost} / ${s.contracted || "—"}`}</span>
@@ -309,11 +322,27 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   </div>
                   <span className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">{done} of {exp}</span> clients with a contract in {billLabel} invoiced</span>
                 </div>
+                {c?.contractValue ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex justify-between text-xs"><span className="text-muted-foreground">Against contract value</span><span className="font-ledger text-foreground">{mil(billed)} of {mil(c.contractValue)} · {Math.round((billed / c.contractValue) * 100)}%</span></div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden"><div className="absolute inset-y-0 left-0 rounded-full bg-calm" style={{ width: `${Math.min(100, (billed / c.contractValue) * 100)}%` }} /></div>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <MiniFig label={`${billLabel} billed`} value={mil(billed)} />
                   <MiniFig label="Clients left" value={String(missing.length)} tone={missing.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
                   <MiniFig label="Billed ahead" value={c?.billedAhead ? mil(c.billedAhead) : "—"} />
                 </div>
+                {c?.offContract && c.offContract.length > 0 && (
+                  <Hit onClick={() => setSheet({
+                    kicker: `Billed for ${billLabel} more than 10% off the contract`, title: "Billed off contract", big: String(c.offContract!.length),
+                    note: "Each client's invoices for the month against its contract value at the line rates in force on the month's last day. Over can be extra posts or a second invoice for the month; under can be missing posts or a short invoice.",
+                    rows: c.offContract!.slice(0, 20).map((x) => ({ label: x.name, value: `${Math.round((x.billed / x.value) * 100)}%`, hint: `${fmt(x.billed)} billed · ${fmt(x.value)} contract` })),
+                    link: { to: "/super-admin/invoices", label: "Open invoices" },
+                  })} className="text-[13px] text-warning-700 dark:text-warning-500 inline-flex items-center gap-1.5">
+                    <span className="group-hover:underline">{c.offContract.length} client{c.offContract.length > 1 ? "s" : ""} billed more than 10% off contract</span><ArrowRight className="w-3.5 h-3.5" />
+                  </Hit>
+                )}
                 {missing.length > 0 ? (
                   <Hit onClick={() => setSheet({
                     kicker: `Live contract in ${billLabel}, no invoice for it`, title: "Clients to invoice", big: String(missing.length),

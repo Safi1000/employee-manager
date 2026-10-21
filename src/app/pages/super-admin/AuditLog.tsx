@@ -15,6 +15,7 @@ import {
   ShieldOff,
 } from "lucide-react";
 import Header from "../../components/Header";
+import { Link } from "react-router";
 import Button from "../../components/Button";
 import { formatDateTime } from "../../lib/date";
 import { useAuth } from "../../lib/auth";
@@ -199,6 +200,14 @@ const TABLE_LABEL: Record<string, string> = {
 };
 
 type ProfileLite = { id: string; full_name: string | null; email: string | null };
+
+/** Audited tables whose rows Reversals can undo (ReversalDialog's kinds). */
+const REVERSIBLE_TABLES = new Set([
+  "payslips", "advances", "payroll_adjustments", "invoice_payments", "invoices", "expenses",
+  "payable_payments", "bank_transfers", "custody_transfers", "cash_deposits", "cheques",
+  "partner_account_entries", "journal_entries", "inventory_purchases", "kit_events",
+  "fixed_assets", "depreciation_entries", "expense_requests", "employees",
+]);
 
 export default function AuditLog() {
   const { profile } = useAuth();
@@ -544,7 +553,18 @@ export default function AuditLog() {
                         <td className="px-4 py-3 text-xs font-mono text-muted-foreground max-w-[180px] truncate">
                           {e.record_id ?? "—"}
                         </td>
-                        <td className="px-4 py-3 text-xs text-foreground">{summary(e.changes)}</td>
+                        <td className="px-4 py-3 text-xs text-foreground">
+                          <span className="flex items-center justify-between gap-3">
+                            <span>{summary(e.changes)}</span>
+                            {e.record_id && e.action !== "delete" && REVERSIBLE_TABLES.has(e.table_name) && (
+                              <Link to={`/super-admin/reversals?reverse=${e.record_id}`} onClick={(ev) => ev.stopPropagation()}
+                                className="flex-shrink-0 rounded-lg border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-brand-500/60"
+                                title="Open this record in Reversals">
+                                Reverse →
+                              </Link>
+                            )}
+                          </span>
+                        </td>
                       </tr>
                       {isOpen && (
                         <tr className="bg-muted/30">
