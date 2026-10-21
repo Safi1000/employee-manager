@@ -1,6 +1,7 @@
 import ReversalDialog from "../../components/ReversalDialog";
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   Plus,
   AlertCircle,
@@ -21,6 +22,9 @@ import {
   Percent,
 } from "lucide-react";
 import Header from "../../components/Header";
+// Client receivables, moved here from Banks & Ledgers (2026-10-21): that page's
+// own receivables tab, embedded, so statements, receipts and WHT stay one implementation.
+const ClientReceivables = lazy(() => import("./Accounting"));
 import Tabs from "../../components/Tabs";
 import StatCard from "../../components/StatCard";
 import Button from "../../components/Button";
@@ -179,7 +183,15 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = usePageState<"ledger" | "generate">("Invoices.tab", "ledger");
+  const [tab, setTab] = usePageState<"ledger" | "generate" | "receivables">("Invoices.tab", "ledger");
+  const canViewReceivables = hasPermission(profile, "receivables.view") || hasPermission(profile, "accounting.edit");
+  // ?tab=receivables (old Banks & Ledgers links, ledger drills) opens that tab.
+  const [urlParams] = useSearchParams();
+  useEffect(() => {
+    const t = urlParams.get("tab");
+    if (t === "receivables" || t === "ledger" || t === "generate") setTab(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlParams]);
   // Generate ▸ Invoice (the receivable, total only) | Detailed record (own record, 0499).
   const [genMode, setGenMode] = usePageState<"invoice" | "record">("Invoices.generateMode", "invoice");
   const [clientFilter, setClientFilter] = usePageState<string>("Invoices.clientFilter", "");
@@ -919,7 +931,7 @@ export default function Invoices() {
     <>
       <Header
         title="Invoices"
-        subtitle="Invoice ledger, payment tracking and PDF export"
+        subtitle="Invoices, what each client owes, and generating the month"
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" size="md" onClick={() => setStructureOpen(true)}>
@@ -948,12 +960,12 @@ export default function Invoices() {
       >
         {/* Generate creates invoices — hidden without invoices.edit (backend
             RLS also blocks the writes). */}
-        <Tabs<"ledger" | "generate">
+        <Tabs<"ledger" | "generate" | "receivables">
           value={tab}
           onChange={setTab}
-          items={(["ledger", "generate"] as const)
-            .filter((t) => t !== "generate" || canEditInvoices)
-            .map((t) => ({ value: t, label: t === "ledger" ? "Invoices" : "Generate" }))}
+          items={(["ledger", "receivables", "generate"] as const)
+            .filter((t) => (t !== "generate" || canEditInvoices) && (t !== "receivables" || canViewReceivables))
+            .map((t) => ({ value: t, label: t === "ledger" ? "Invoices" : t === "receivables" ? "Receivables" : "Generate" }))}
         />
         {tab === "ledger" && (
           <div className="mt-3">
@@ -999,6 +1011,12 @@ export default function Invoices() {
           </>
         )}
 
+
+        {tab === "receivables" && canViewReceivables && (
+          <Suspense fallback={<div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading receivables…</div>}>
+            <ClientReceivables embed="receivables" />
+          </Suspense>
+        )}
 
         {tab === "ledger" && (
         <>

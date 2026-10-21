@@ -207,11 +207,11 @@ export const router = createBrowserRouter([
       { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
       // Everyone (0496): requesting is open; ExpensesEntry shows the ledger only to expenses.view/edit.
       { path: "expenses", element: <ExpensesEntry /> },
-      { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
+      { path: "invoices", element: guard(["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
       { path: "treasury", element: guard(["banks.view", "reports.view", "cashflow.view"], <Treasury />) },
       // Receivables folded into Bank & Ledgers (Accounting has a Receivables tab).
-      { path: "receivables", element: <Navigate to="/super-admin/accounting?tab=receivables" replace /> },
+      { path: "receivables", element: <Navigate to="/super-admin/invoices?tab=receivables" replace /> },
       { path: "opening-balances", element: <Navigate to="/super-admin/accounting-core?tab=opening" replace /> },
       { path: "regional-scorecard", element: guard(["reports.view", "banks.view"], <RegionalScorecard />) },
       // Client Relationships dissolved: complaints → Incidents, renewals → Compliance,

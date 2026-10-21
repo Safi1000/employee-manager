@@ -1,9 +1,13 @@
 import { guardDisplayCode } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import CategoryPicker from "../../components/CategoryPicker";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
+// Accounts payable, moved here from Banks & Ledgers (2026-10-21): that page's
+// own payables tab, embedded, so its figures and actions stay one implementation.
+const AccountsPayable = lazy(() => import("./Accounting"));
 import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -385,6 +389,7 @@ export default function Expenses() {
   // Basis leak fixed on Financial Reports). loadCustodianOptions is told to skip
   // fetching held entirely; these helpers hide bank balances in the labels.
   const canViewBanking = hasPermission(profile, "banks.view");
+  const canViewPayables = hasPermission(profile, "payables.view") || hasPermission(profile, "accounting.edit");
   const custodianLabel = (c: CustodianOption) =>
     canViewBanking ? `${c.fullName} — holds PKR ${Math.round(c.held).toLocaleString()}` : c.fullName;
   const bankLabel = (b: { bank_name: string; account_number: string; balance: number | string }) =>
@@ -409,7 +414,14 @@ export default function Expenses() {
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const { regionId } = useRegion();
-  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred">("Expenses.activeTab", "expenses");
+  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred" | "payables">("Expenses.activeTab", "expenses");
+  // ?tab=payables (old Banks & Ledgers links, ledger drills) opens that tab.
+  const [urlParams] = useSearchParams();
+  useEffect(() => {
+    const t = urlParams.get("tab");
+    if (t === "payables" || t === "advances" || t === "fixed" || t === "deferred" || t === "expenses") setActiveTab(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlParams]);
   // 0401. "What is sitting in prepaid and when does it clear" is a LIST
   // question, not a fact about one expense, so it gets a tab rather than a
   // section on a detail screen. The 1160 balance belongs in the financial
@@ -2310,10 +2322,10 @@ export default function Expenses() {
     <>
       <Header
         title="Expenses"
-        subtitle="Operating expenses and employee advances ledger"
+        subtitle="Operating expenses, advances to guards, and the bills we owe"
         actions={
           <>
-            <ExportButton
+            {activeTab !== "payables" && <ExportButton
               onExport={() => {
                 if (activeTab === "fixed") {
                   // The month's raised entries, decision included — an approved
@@ -2374,7 +2386,7 @@ export default function Expenses() {
                   );
                 }
               }}
-            />
+            />}
             {activeTab === "expenses" && canEditExpenses && (
               <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
                 Manage Vendors
@@ -2414,7 +2426,7 @@ export default function Expenses() {
         }
       >
         <div className="flex flex-col gap-3">
-          <Tabs<"expenses" | "fixed" | "advances" | "deferred">
+          <Tabs<"expenses" | "fixed" | "advances" | "deferred" | "payables">
             value={activeTab}
             onChange={setActiveTab}
             items={[
@@ -2422,6 +2434,7 @@ export default function Expenses() {
               { value: "fixed", label: "Fixed expenses", count: fixedInstances.filter((i) => i.status === "pending").length || undefined },
               { value: "advances", label: "Advances" },
               { value: "deferred", label: "Deferred", count: deferred.filter((d) => d.remaining !== 0).length || undefined },
+              ...(canViewPayables ? [{ value: "payables" as const, label: "Payables" }] : []),
             ]}
           />
           {activeTab === "advances" && (() => {
@@ -3393,6 +3406,12 @@ export default function Expenses() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === "payables" && canViewPayables && (
+          <Suspense fallback={<div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading payables…</div>}>
+            <AccountsPayable embed="payables" />
+          </Suspense>
         )}
 
         {activeTab === "advances" && (

@@ -228,7 +228,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             )}
             {c?.receiptsMtd != null && <BandStat to="/super-admin/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
             {d.can.accounting && <BandStat to="/super-admin/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
-            {ar && <BandStat to="/super-admin/accounting?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
+            {ar && <BandStat to="/super-admin/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
         </div>
 
@@ -466,7 +466,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   <Hit key={r.clientId} onClick={() => setSheet({
                     kicker: "Receivables", title: r.name, big: `${fmt(t)} owed`, note: "Open invoices by age. Chase the oldest first.",
                     rows: AGE.map((a, i) => ({ label: `${a.label}${i === 0 ? "" : " days"}`, value: fmt(r.buckets[i]) })),
-                    link: { to: "/super-admin/accounting?tab=receivables", label: "Open receivables" },
+                    link: { to: "/super-admin/invoices?tab=receivables", label: "Open receivables" },
                   })} className="grid grid-cols-[150px_minmax(0,1fr)_76px] gap-3 items-center min-h-[34px] text-[13px]">
                     <span className="truncate group-hover:underline">{r.name}</span>
                     <span className="flex h-3.5 rounded-full overflow-hidden bg-muted/70">

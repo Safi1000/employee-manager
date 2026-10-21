@@ -89,7 +89,7 @@ const SOURCE_ROUTE: Record<string, { path: string; label: string }> = {
   payslips_disbursement: { path: "/super-admin/payroll", label: "Payslip disbursement" },
   expenses: { path: "/super-admin/expenses", label: "Expense" },
   advances: { path: "/super-admin/expenses", label: "Advance" },
-  cheques: { path: "/super-admin/accounting?tab=payables", label: "Cheque" },
+  cheques: { path: "/super-admin/accounting?tab=banks", label: "Cheque" },
   custody_transfers: {
     path: "/super-admin/accounting?tab=cash-custody",
     label: "Custody transfer",

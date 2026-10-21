@@ -91,7 +91,7 @@ export default function SuperAdminLayout() {
   const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
   const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
   const SITES_STRENGTH: LinkDef = { to: "/super-admin/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
-  const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
+  const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ASSIGNMENTS: LinkDef = { to: "/super-admin/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["assignments.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
@@ -104,7 +104,7 @@ export default function SuperAdminLayout() {
   const INVENTORY: LinkDef = { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
   const ROSTER: LinkDef = { to: "/super-admin/roster", label: "Deployment Roster", icon: CalendarRange, perms: ["roster.view", "roster.edit"] };
   const INCIDENTS: LinkDef = { to: "/super-admin/incidents", label: "Incidents", icon: Siren, perms: ["incidents.view", "incidents.edit"] };
-  const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["banks.view", "accounting.edit"] };
   // Open to everyone (0496): anyone may request an expense. Without expenses.view
   // or .edit the page shows only their own requests (ExpensesEntry).
   const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses & Advances", icon: Receipt };

@@ -117,10 +117,10 @@ export const useDrill = () => useContext(DrillCtx);
 /** Where a source document lives in the app. */
 export const SOURCE_ROUTES: Record<string, { label: string; href: string }> = {
   invoices: { label: "Invoices", href: "/super-admin/invoices" },
-  invoice_payments: { label: "Receivables", href: "/super-admin/accounting?tab=receivables" },
+  invoice_payments: { label: "Receivables", href: "/super-admin/invoices?tab=receivables" },
   expenses: { label: "Expenses", href: "/super-admin/expenses" },
   expenses_prepaid_release: { label: "Expenses", href: "/super-admin/expenses" },
-  payable_payments: { label: "Payables", href: "/super-admin/accounting?tab=payables" },
+  payable_payments: { label: "Payables", href: "/super-admin/expenses?tab=payables" },
   payslips: { label: "Payroll", href: "/super-admin/payroll" },
   payslips_disbursement: { label: "Payroll", href: "/super-admin/payroll" },
   payroll_adjustments: { label: "Payroll", href: "/super-admin/payroll" },

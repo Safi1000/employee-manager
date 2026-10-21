@@ -2,7 +2,7 @@ import { loadEmployeeCodeIndex, useEmployeeCodeIndex } from "../../lib/employeeC
 import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy } from "lucide-react";
 import Header from "../../components/Header";
 import { useRegion } from "../../lib/region";
@@ -100,7 +100,27 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
   return "Pending";
 };
 
-export default function Accounting() {
+/** The frame around the page's band: the page Header on its own route, a
+ *  dark sub-band inside Expenses or Invoices when one tab is embedded there. */
+function BandFrame({ embed, actions, children, ...rest }: { embed?: string; title: string; subtitle: string; actions: React.ReactNode; children: React.ReactNode }) {
+  if (!embed) return <Header title={rest.title} subtitle={rest.subtitle} actions={actions}>{children}</Header>;
+  return (
+    <div className="band on-dark rounded-[22px] px-4 md:px-6 py-4 mb-4 flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * BANKS & LEDGERS. 2026-10-21: Client receivables moved to Invoices and
+ * Accounts payable to Expenses & Advances, where each is worked from — this
+ * page keeps the bank accounts and cash custody. The two moved tabs are THIS
+ * component rendered with `embed`, so their figures, actions and modals stay
+ * one implementation; a stale ?tab=receivables / ?tab=payables link here is
+ * forwarded to the new home with its focus intact.
+ */
+export default function Accounting({ embed }: { embed?: "receivables" | "payables" } = {}) {
   const codeIndex = useEmployeeCodeIndex();
   // The region bar narrows what is owed to us and what we owe (both carry a
   // region). Banks and custodian cash are the company's and stay whole.
@@ -124,10 +144,21 @@ export default function Accounting() {
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks" | "cash-custody">(() => {
+    if (embed) return embed;
     const t = searchParams.get("tab");
-    return t === "cash-custody" || t === "banks" || t === "payables" ? t : "receivables";
+    return t === "cash-custody" || t === "receivables" || t === "payables" ? t : "banks";
   });
+  // On its own route this page no longer shows receivables or payables: any
+  // request for them (a URL, a focus link, a ledger drill) goes to their home.
+  useEffect(() => {
+    if (embed || (activeTab !== "receivables" && activeTab !== "payables")) return;
+    const q = new URLSearchParams(searchParams);
+    q.set("tab", activeTab);
+    navigate(`${activeTab === "receivables" ? "/super-admin/invoices" : "/super-admin/expenses"}?${q.toString()}`, { replace: true });
+  }, [embed, activeTab, searchParams, navigate]);
+  useEffect(() => { if (embed && activeTab !== embed) setActiveTab(embed); }, [embed, activeTab]);
 
   // Which tabs this user may see. banks.view / receivables.view /
   // payables.view were split out of a single accounting.view, so each tab is
@@ -135,20 +166,28 @@ export default function Accounting() {
   // who may edit banks and reconciliation can already see everything here.
   const canEditAccounting = hasPermission(profile, "accounting.edit");
   const visibleTabs = useMemo(() => {
-    const all = ["receivables", "payables", "banks", "cash-custody"] as const;
+    const all = (embed ? [embed] : ["banks", "cash-custody"]) as readonly ("receivables" | "payables" | "banks" | "cash-custody")[];
     return all.filter((t) => {
       if (canEditAccounting) return true;
       if (t === "receivables") return hasPermission(profile, "receivables.view");
       if (t === "payables") return hasPermission(profile, "payables.view");
       return hasPermission(profile, "banks.view"); // banks + cash custody
     });
-  }, [profile, canEditAccounting]);
+  }, [profile, canEditAccounting, embed]);
 
   // A tab in the URL the user cannot see must not be honoured, and the default
   // must be a tab that exists for them — otherwise the screen renders its
   // chrome around nothing and looks broken rather than restricted.
+  // Someone who could only ever see receivables or payables here is sent to
+  // where those live now, rather than shown an empty page.
+  useEffect(() => {
+    if (embed || visibleTabs.length > 0) return;
+    if (hasPermission(profile, "receivables.view")) navigate("/super-admin/invoices?tab=receivables", { replace: true });
+    else if (hasPermission(profile, "payables.view")) navigate("/super-admin/expenses?tab=payables", { replace: true });
+  }, [embed, visibleTabs, profile, navigate]);
   useEffect(() => {
     if (visibleTabs.length === 0) return;
+    if (activeTab === "receivables" || activeTab === "payables") return; // forwarded above
     if (!visibleTabs.includes(activeTab)) setActiveTab(visibleTabs[0]);
   }, [visibleTabs, activeTab]);
 
@@ -210,7 +249,7 @@ export default function Accounting() {
   const focusChequeRow = useFocusRow(focusCheque);
   useEffect(() => {
     if (!focusCheque) return;
-    setActiveTab("payables");
+    setActiveTab("banks");
     setChequeSectionView("cheques");
     setChequeBankFilter("all");
     setChequeFilter("all");
@@ -2098,9 +2137,10 @@ export default function Accounting() {
 
   return (
     <>
-      <Header
+      <BandFrame
+        embed={embed}
         title="Banks & Ledgers"
-        subtitle="Bank accounts, cheques and reconciliation"
+        subtitle="Bank accounts, cheques, deposits and the cash each custodian holds"
         actions={
           <>
             <ExportButton
@@ -2284,6 +2324,7 @@ export default function Accounting() {
         }
       >
         <div className="flex flex-col gap-3">
+          {!embed && <>
           {/* Net position (2026-10-20): the four ledgers on one line — what we
               hold, what we are owed, what we owe — read from the same totals
               each tab shows below. */}
@@ -2310,6 +2351,7 @@ export default function Accounting() {
             onChange={setActiveTab}
             items={visibleTabs.map((t) => ({ value: t, label: ({ receivables: "Client receivables", payables: "Accounts payable", banks: "Bank accounts", "cash-custody": "Cash custody" } as Record<string, string>)[t] }))}
           />
+          </>}
         {activeTab === "banks" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
@@ -2484,9 +2526,9 @@ export default function Accounting() {
         )}
 
         </div>
-      </Header>
+      </BandFrame>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+      <div className={embed ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
