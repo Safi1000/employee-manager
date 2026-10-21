@@ -22,8 +22,12 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   screen; run common actions ("new expense", "mark attendance").
 - **Idea** — Every figure clickable by default: a table cell that is a sum
   opens the rows behind it in a DetailSheet, the way Financial Reports does.
-- **Idea** — Saved views per user: remember filters, columns and sort per
-  table, and let a view be shared with a link.
+- **Built 2026-10-22** — Saved views: a "Views" chip on every page band saves
+  the page's tabs, filters, searches and sorts under a name (per person, this
+  browser) and copies a link that opens the same view for anyone who follows
+  it. One mechanism over `usePageState`, so every page that remembers its state
+  (51) has it without page changes. **Deferred:** views across devices need a
+  `saved_views` table.
 - **Idea** — "What changed since you last looked" chip on each page (new
   invoices, new incidents, edits by others) using the audit log.
 - **Idea** — Plain-language errors: every database error mapped to a sentence

@@ -5,6 +5,7 @@ import { sectionOf } from "../lib/navMeta";
 import { HubStrip, useHubTabs } from "../lib/hubTabs";
 import { Link } from "react-router";
 import { supabase } from "../lib/supabase";
+import ViewsMenu from "./ViewsMenu";
 
 /** Pages whose records the audit log covers, by the route's first segment. */
 const CHANGE_TABLES: Record<string, string[]> = {
@@ -160,6 +161,7 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
               <div className="flex items-center gap-2 mb-1 md:mb-1.5 min-w-0">
                 {live && <span className="live-dot w-2 h-2 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />}
                 <span className="lbl truncate">{line}</span>
+                <ViewsMenu />
                 {changed && (
                   <Link to="/super-admin/audit-log" title={`Changes others made since ${new Date(changed.since).toLocaleString()}`}
                     className="ml-1 flex-shrink-0 rounded-full border border-brand-500/50 px-2 py-0.5 text-[10px] font-semibold text-brand-500 hover:bg-brand-500/10">
