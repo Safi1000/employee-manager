@@ -18,7 +18,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   panel, one modal, pill badges, `ink` button variant for the final action.
 - **Built** — `DetailSheet`: the right-hand sheet any figure can open into
   (figure, how it is made up, a link through to the record).
-- **Idea** — Command palette (⌘K): jump to any client, guard, invoice or
+- **Built** — Command palette (⌘K): jump to any client, guard, invoice or
   screen; run common actions ("new expense", "mark attendance").
 - **Idea** — Every figure clickable by default: a table cell that is a sum
   opens the rows behind it in a DetailSheet, the way Financial Reports does.
@@ -60,7 +60,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — A monthly invoicing target per client (from the contract value) so
   "where the month will land" can compare against what was agreed, not just
   last month.
-- **Idea** — Payday alert a week before the salary run when cash plus
+- **Built** — Payday alert a week before the salary run when cash plus
   receivables under 30 days will not cover it.
 - **Idea** — Post board drill-down by site (not just client) once posts are
   recorded — the `posts` table exists and is empty.
@@ -78,7 +78,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   About 35 pages never read the region at all; each is being sorted into
   "should follow the region" (fixed) or "company-level by nature" (labelled
   on the band, so it does not look broken).
-- **Idea** — When a page is company-level, the band says so ("Company-wide —
+- **Built** — When a page is company-level, the band says so ("Company-wide —
   the region does not apply here") instead of silently ignoring the switch.
 
 ## Financial Reports
@@ -155,11 +155,11 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   it started (Regent 1 in September); the Dashboard works round it.
 - **Needs data** — Nova Group shows PKR 52K payroll on PKR 1.9M revenue in
   September (90.7% margin): its guards' payroll may sit on another client.
-- **Idea** — Receivables: an ageing column per client (0–30, 31–60, 61–90,
+- **Built** — Receivables: an ageing column per client (0–30, 31–60, 61–90,
   90+) and a "send statement" action.
 - **Idea** — Bank cards: a 30-day balance sparkline per account from the
   ledger, once openings are posted.
-- **Idea** — Client profit: a 6-month net trend per client, and a "what if"
+- **Built** — Client profit: a 6-month net trend per client, and a "what if"
   (rate +5%, one guard fewer) on a client card.
 
 ## Round 3 (2026-10-21) — the ideas, built
@@ -257,7 +257,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   runway), Partnership Report (equity pool bar and partner cards).
 - **Needs data** — August has no GL (cutover was September), so comparisons
   against August read empty.
-- **Idea** — Recurring expense detector: flag a payee paid every month that is
+- **Built** — Recurring expense detector: flag a payee paid every month that is
   not set up as a fixed expense.
 
 ## Contract Renewals
@@ -268,7 +268,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Built** — "Ending in 90 days, not in the pipeline": live contracts close
   to their end that nobody has started on, one tap to add them with the
   contract's end date as the close date. Follows the region.
-- **Idea** — Owner and next step on each card (who is calling, what was
+- **Built** — Owner and next step on each card (who is calling, what was
   agreed), and a reminder when a card has not moved in 14 days.
 - **Idea** — On "Renewed", offer to draft the new contract from the old one
   with the agreed increase.
@@ -293,7 +293,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Built** — Opening Balances: the batch's debit, credit and balance on the
   band (from `opening_batch_totals`), and the four steps a batch passes
   (create, add lines, balance, post) with the current one lit.
-- **Idea** — Chart of Accounts: show unused accounts older than a year as
+- **Built** — Chart of Accounts: show unused accounts older than a year as
   candidates to switch off.
 - **Idea** — Opening Balances: import a trial balance from Excel straight into
   a draft batch.
@@ -304,7 +304,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   month shows as four gates (ready to draft, drafted, reviewed, posted), each
   answered by the database (the blocker, the run, the review, the deadline),
   with the run's own totals: profit to divide, regional and equity shares.
-- **Idea** — A month-by-month strip of the year: which months are posted,
+- **Built** — A month-by-month strip of the year: which months are posted,
   drafted, late or not started.
 
 ## Sign-up
@@ -322,7 +322,7 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Built** — Company Detail: status, users by role, super admins (amber when
   there are none), and subscription days left, with back and Add Super Admin
   on the band.
-- **Idea** — A renewal list on Companies: tenants whose subscription ends this
+- **Built** — A renewal list on Companies: tenants whose subscription ends this
   month, with "record payment" one tap away.
 
 ## Compliance and Admin
@@ -350,9 +350,9 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   rail; the last pages opened show at the foot of every flyout and at the top
   of the empty palette. Stored per browser.
 - **Built** — Phones keep the drawer, now with search and pinned at the top.
-- **Idea** — Palette actions that start work: "New expense", "Record receipt",
+- **Built** — Palette actions that start work: "New expense", "Record receipt",
   "Mark attendance", opening the right form directly.
-- **Idea** — Badges on rail icons (open alerts on Overview, payslips waiting on
+- **Built** — Badges on rail icons (open alerts on Overview, payslips waiting on
   Workforce, red controls on Finance).
 
 ## One colour system everywhere

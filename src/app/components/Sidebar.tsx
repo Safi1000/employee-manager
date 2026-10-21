@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { NavLink, useLocation } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import {
   LucideIcon, LogOut, X, KeyRound, ChevronDown, Search, Pin, Clock, UserRound, LayoutDashboard,
   Building2, Users, Siren, Landmark, ShieldCheck, Settings as SettingsIcon, Folder,
@@ -106,6 +106,7 @@ function currentLink(links: SidebarLink[], path: string): SidebarLink | null {
 export default function Sidebar({ title, links, badges = {} }: SidebarProps) {
   const { profile, signOut } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -212,7 +213,16 @@ export default function Sidebar({ title, links, badges = {} }: SidebarProps) {
             <NavLink key={l.to} to={l.to} end={home} title={badges[l.label]?.title ?? (home ? "Dashboard" : l.label)}
               className={({ isActive }) => `relative ${railBtn} ${isActive ? railOn : railIdle}`}>
               {badges[l.label] && (
-                <span className="absolute top-1 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-down text-ink text-[10px] font-bold leading-[18px] text-center">
+                // The Home icon's count is the open alerts; tapping the count
+                // (not the icon) opens them, since Alerts is not in the menu.
+                <span
+                  role="link"
+                  tabIndex={0}
+                  title={`${badges[l.label].title} — open them`}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate("/super-admin/alerts"); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); navigate("/super-admin/alerts"); } }}
+                  className="absolute top-1 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-down text-ink text-[10px] font-bold leading-[18px] text-center hover:ring-2 hover:ring-brand-500"
+                >
                   {badges[l.label].n > 99 ? "99+" : badges[l.label].n}
                 </span>
               )}
