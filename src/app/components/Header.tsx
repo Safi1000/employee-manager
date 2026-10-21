@@ -40,41 +40,79 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
   const claim = hub?.claim;
   useLayoutEffect(() => (claim ? claim() : undefined), [claim]);
 
-  // A band carrying figures (children) folds to its title row once the page
-  // scrolls, so the figures greet you at the top without holding a third of
-  // the screen over a long table. The scroller is whichever element around the
-  // band actually scrolls: the band's parent (Header inside the scroller) or a
-  // sibling (Header above it).
+  // THE FOLD, tied to the scroll (2026-10-21). A band carrying figures shrinks
+  // pixel for pixel as the page scrolls — 50px of scroll, 50px less band — until
+  // only its title row is left, and grows back the same way. Nothing in the page
+  // moves to make room: the band keeps its full height in the layout and is
+  // CLIPPED from the bottom, and the list slides up underneath it. So there is
+  // no jump (the old fold waited ~120px, then dropped the band's height out from
+  // under the list) and no re-layout per frame (clip-path is paint only).
+  //
+  // The scroller is whichever element around the band scrolls:
+  //   inside   the band's parent — the band is sticky in it, content passes under
+  //   beside   a sibling below it — the sibling is slid up under the band (negative
+  //            margin) and keeps its content clear of it (padding of the same height)
   const wrapRef = useRef<HTMLDivElement>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
+  const figRef = useRef<HTMLDivElement>(null);
   const [folded, setFolded] = useState(false);
   useEffect(() => {
     if (!children) return;
-    const el = wrapRef.current;
+    const el = wrapRef.current, band = bandRef.current, fig = figRef.current;
     const parent = el?.parentElement;
-    if (!el || !parent) return;
+    if (!el || !band || !fig || !parent) return;
     const scrolls = (n: Element) => /(auto|scroll)/.test(getComputedStyle(n).overflowY);
-    const targets = [parent, ...Array.from(parent.children).filter((c) => c !== el)].filter(scrolls) as HTMLElement[];
-    // Two thresholds, not one (2026-10-21): folding shortens the page, which
-    // moves scrollTop, which at a single threshold flips it straight back —
-    // the band flickered on long lists. Read once per frame.
+    const inside = scrolls(parent);
+    const targets = (inside ? [parent] : Array.from(parent.children).filter((c) => c !== el && scrolls(c))) as HTMLElement[];
+    if (targets.length === 0) return;
+    const beside = inside ? null : targets[0];
+    const saved = beside ? { marginTop: beside.style.marginTop, paddingTop: beside.style.paddingTop } : null;
+    const basePad = beside ? parseFloat(getComputedStyle(beside).paddingTop) || 0 : 0;
+
+    let collapsible = 0;
     let frame = 0;
+    const apply = () => {
+      const top = Math.max(...targets.map((t) => t.scrollTop));
+      const x = Math.min(collapsible, Math.max(0, top));
+      el.style.setProperty("--fold", `${x}px`);
+      el.style.setProperty("--fold-p", String(collapsible ? x / collapsible : 0));
+      setFolded(collapsible > 0 && x >= collapsible - 1);
+    };
+    const measure = () => {
+      const gap = parseFloat(getComputedStyle(band).rowGap) || 0;
+      collapsible = fig.offsetHeight + gap;
+      el.style.setProperty("--band-r", getComputedStyle(band).borderBottomLeftRadius || "22px");
+      if (beside) {
+        const h = el.offsetHeight;
+        beside.style.marginTop = `-${h}px`;
+        beside.style.paddingTop = `${basePad + h}px`;
+      }
+      apply();
+    };
     const onScroll = () => {
       if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const top = Math.max(...targets.map((t) => t.scrollTop));
-        setFolded((f) => (f ? top > 12 : top > 120));
-      });
+      frame = requestAnimationFrame(() => { frame = 0; apply(); });
     };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el); ro.observe(fig);
     targets.forEach((t) => t.addEventListener("scroll", onScroll, { passive: true }));
-    return () => { if (frame) cancelAnimationFrame(frame); targets.forEach((t) => t.removeEventListener("scroll", onScroll)); };
-  }, [children]);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      ro.disconnect();
+      targets.forEach((t) => t.removeEventListener("scroll", onScroll));
+      if (beside && saved) { beside.style.marginTop = saved.marginTop; beside.style.paddingTop = saved.paddingTop; }
+      el.style.removeProperty("--fold");
+    };
+  }, [children ? 1 : 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     // Fully opaque wrapper: the page scroller sits below the band, and in an
     // Android WebView a translucent sticky layer lets the table show through.
-    <div ref={wrapRef} className="page-band sticky top-0 z-20 bg-background px-3 md:px-8 pt-3 md:pt-5 pb-1 md:pb-2 flex-shrink-0">
-      <div className="band on-dark rounded-2xl md:rounded-[22px] px-4 md:px-7 py-3.5 md:py-5 flex flex-col gap-3 md:gap-4 overflow-hidden">
+    <div ref={wrapRef} className="page-band sticky top-0 z-20 bg-background px-3 md:px-8 pt-3 md:pt-5 pb-1 md:pb-2 flex-shrink-0"
+      style={children ? { clipPath: "inset(0 0 var(--fold, 0px) 0)" } : undefined}>
+      <div ref={bandRef} className="band on-dark rounded-2xl md:rounded-[22px] px-4 md:px-7 py-3.5 md:py-5 flex flex-col gap-3 md:gap-4 overflow-hidden"
+        style={children ? { clipPath: "inset(0 0 var(--fold, 0px) 0 round var(--band-r, 22px))" } : undefined}>
         {hub && hub.tabs.length > 1 && (
           <div className="-mx-1 overflow-x-auto">
             <HubStrip tabs={hub.tabs} active={hub.active} onSelect={hub.select} />
@@ -96,17 +134,13 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
           {actions && <div className="flex items-center gap-2 md:gap-2.5 flex-wrap">{actions}</div>}
         </div>
         {children && (
-          // The fold animates (2026-10-21, asked for back): the row height eases
-          // on a soft curve while the figures fade and lift a little, so the
-          // motion reads as one gesture. What made it stutter was the fold
-          // flipping at a single threshold and the scroll memory walking the
-          // page per event — both fixed above and in pageState — not the
-          // animation itself.
+          // The figures fade and lift slightly as the band closes over them.
           <div
-            className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${folded ? "grid-rows-[0fr] opacity-0 -mt-3 md:-mt-4" : "grid-rows-[1fr] opacity-100"}`}
+            ref={figRef}
             aria-hidden={folded || undefined}
+            style={{ opacity: "calc(1 - var(--fold-p, 0) * 1.15)", transform: "translateY(calc(var(--fold-p, 0) * -6px))" }}
           >
-            <div className={`min-h-0 overflow-hidden transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${folded ? "-translate-y-1.5" : "translate-y-0"}`}>{children}</div>
+            {children}
           </div>
         )}
       </div>
