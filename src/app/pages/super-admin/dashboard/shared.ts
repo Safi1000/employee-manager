@@ -46,6 +46,8 @@ export type DashCan = {
 
 export type DashData = {
   can: DashCan;
+  /** Per bank: last reconciliation and entries since (0534). Empty without banks.view. */
+  recon: Map<string, import("../../../lib/reconStatus").ReconStatus>;
   /** false when the company has hidden that widget in Settings. */
   show: (key: string) => boolean;
   nothingToShow: boolean;

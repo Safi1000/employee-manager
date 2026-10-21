@@ -3,7 +3,7 @@ import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy, Scale } from "lucide-react";
 import Header from "../../components/Header";
 import { useRegion } from "../../lib/region";
 import Tabs from "../../components/Tabs";
@@ -45,6 +45,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { bankCovers, canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import SecurityDeposits from "../../components/SecurityDeposits";
 import BankReconciliation from "../../components/BankReconciliation";
+import { tallyDate, useReconStatus } from "../../lib/reconStatus";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
@@ -196,6 +197,8 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   }, [visibleTabs, activeTab]);
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  // Each bank's last reconciliation (0534); re-read whenever the banks reload.
+  const reconStatus = useReconStatus(treasuryCompanyId, canReadBanks, banks);
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
   const [isChequeAddOpen, setIsChequeAddOpen] = useState(false);
@@ -2939,6 +2942,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                   {[...banks].sort((x, y) => Number(y.active) - Number(x.active) || Number(y.balance ?? 0) - Number(x.balance ?? 0)).map((bank) => {
                     const acct = Number(bank.balance ?? 0);
+                    const tally = reconStatus.get(bank.id);
                     const pendChq = pendingChequesByBank.get(bank.id) ?? 0;
                     const totalBal = acct + pendChq;
                     const share = totalAccountBalance > 0 ? Math.max(0, acct) / totalAccountBalance : 0;
@@ -2967,6 +2971,14 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                             {pendChq > 0 ? <>+ <span className="font-ledger text-warning-700 dark:text-warning-500">{pendChq.toLocaleString()}</span> in pending cheques = <span className="font-ledger text-foreground">{totalBal.toLocaleString()}</span></> : "no cheques in transit"}
                           </p>
                         </div>
+                        {bank.owner_type === "company" && (
+                          <p className={`text-[11px] font-medium inline-flex items-center gap-1 ${!tally ? "text-muted-foreground" : tally.parked ? "text-warning-700 dark:text-warning-500" : tally.enteredSince ? "text-foreground" : "text-success-700 dark:text-success-500"}`}
+                            title={tally ? `Statement ${tally.statementBalance.toLocaleString()} on ${tallyDate(tally.statementDate)}, confirmed ${new Date(tally.reconciledAt).toLocaleString()}` : "No reconciliation recorded"}>
+                            <Scale className="w-3.5 h-3.5" strokeWidth={1.6} />
+                            {!tally ? "Never reconciled"
+                              : `Tallied to ${tallyDate(tally.statementDate)}${tally.parked ? ` · ${Math.abs(tally.difference).toLocaleString()} in suspense` : ""}${tally.enteredSince ? ` · ${tally.enteredSince} entered since` : ""}`}
+                          </p>
+                        )}
                         <div className="flex flex-col gap-1">
                           <span className="h-1.5 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${share * 100}%` }} /></span>
                           <span className="text-[11px] text-muted-foreground">{Math.round(share * 100)}% of the company's bank money</span>

@@ -51,6 +51,7 @@ export default function BankReconciliation({
   companyId: string | null;
   banks: BankAccount[];
   canEdit: boolean;
+  /** A balance or a tally changed: the page reloads its bank cards. */
   onMoved: () => void;
 }) {
   const [recons, setRecons] = useState<Recon[]>([]);
@@ -115,10 +116,10 @@ export default function BankReconciliation({
     });
     setBusy(false);
     if (error) return setErr(friendlyDbError(error));
-    const moved = form.post && formDiff != null && Math.abs(formDiff) >= 0.005;
     setForm(null);
     await load();
-    if (moved) onMoved();
+    // Always: the bank cards show "Tallied to …", which changes even when no money moved.
+    onMoved();
   };
 
   const submitClear = async () => {

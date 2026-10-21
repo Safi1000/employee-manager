@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useReconStatus } from "../../lib/reconStatus";
 import { Loader2 } from "lucide-react";
 import { formatDate } from "../../lib/date";
 import { type FeedItem } from "../../components/ActivityFeed";
@@ -642,8 +643,9 @@ export default function SuperAdminDashboard() {
   // three alternate designs that sat behind a floating switcher: one home
   // screen, read the same way by everyone.
   const command = useCommandData(company?.id, regionId, can);
+  const recon = useReconStatus(profile?.view_as_company ?? profile?.company_id ?? company?.id, can.accounting);
   const data: DashData = {
-    can, show, nothingToShow, branchScopeNote,
+    can, recon, show, nothingToShow, branchScopeNote,
     companyName: profile?.display_company_name || company?.name || "Bastion",
     userName: profile?.full_name ?? "",
     employeeCount, attendanceTodayPct, attendanceYesterdayPct,

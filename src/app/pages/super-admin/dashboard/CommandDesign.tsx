@@ -5,6 +5,7 @@ import DetailSheet, { type DetailContent } from "../../../components/DetailSheet
 import DashboardAttachments from "../../../components/DashboardAttachments";
 import { formatDate } from "../../../lib/date";
 import type { DashData } from "./shared";
+import { tallyDate } from "../../../lib/reconStatus";
 import type { CommandData, SiteTile } from "./useCommandData";
 
 /**
@@ -78,6 +79,26 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const C = 2 * Math.PI * 54;
 
   const cashTotal = d.totalBankBalance + (c?.cashInHand ?? 0);
+  // Banks tallied (0534): how many banks agree with a statement, the oldest
+  // tally among them, and whatever has been entered since. Hover lists each.
+  const tally = (() => {
+    if (!d.can.accounting || d.banks.length === 0) return null;
+    const rows = d.banks.map((b) => ({ name: b.bank_name, r: d.recon.get(b.id) }));
+    const done = rows.filter((x) => x.r);
+    const since = done.reduce((n, x) => n + (x.r?.enteredSince ?? 0), 0);
+    const parked = done.some((x) => x.r?.parked);
+    const oldest = done.map((x) => x.r!.statementDate).sort()[0];
+    const tip = rows.map((x) => x.r
+      ? `${x.name}: tallied to ${tallyDate(x.r.statementDate)}${x.r.parked ? `, ${Math.abs(x.r.difference).toLocaleString()} in suspense` : ""}${x.r.enteredSince ? ` · ${x.r.enteredSince} entered since` : ""}`
+      : `${x.name}: never reconciled`).join("\n");
+    return {
+      value: `${done.length} of ${rows.length}`,
+      sub: done.length === 0 ? "never reconciled"
+        : `${done.length === rows.length ? "all" : "oldest"} to ${tallyDate(oldest)}${since ? ` · ${since} entered since` : ""}${parked ? " · suspense open" : ""}`,
+      tone: (done.length < rows.length || parked ? "bad" : since === 0 ? "good" : undefined) as "good" | "bad" | undefined,
+      tip,
+    };
+  })();
   const ar = c?.receivables ?? null;
   const ar90 = ar && ar.total > 0 ? ar.buckets[3] / ar.total : 0;
 
@@ -244,6 +265,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             )}
             {d.can.receivables && c?.receiptsMtd != null && <BandStat to="/super-admin/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
             {d.can.accounting && <BandStat to="/super-admin/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
+            {tally && <BandStat to="/super-admin/accounting" label="Banks tallied" value={tally.value} sub={tally.sub} tone={tally.tone} title={tally.tip} />}
             {d.can.receivables && ar && <BandStat to="/super-admin/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
         </div>
@@ -604,9 +626,9 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   );
 }
 
-function BandStat({ to, label, value, sub, tone }: { to: string; label: string; value: string; sub: string; tone?: "good" | "bad" }) {
+function BandStat({ to, label, value, sub, tone, title }: { to: string; label: string; value: string; sub: string; tone?: "good" | "bad"; title?: string }) {
   return (
-    <Link to={to} className="bg-card border border-border rounded-[14px] px-4 py-3.5 flex flex-col gap-1.5 text-foreground hover:border-brand-500/80 transition-colors">
+    <Link to={to} title={title} className="bg-card border border-border rounded-[14px] px-4 py-3.5 flex flex-col gap-1.5 text-foreground hover:border-brand-500/80 transition-colors">
       <span className="lbl">{label}</span>
       <span className="font-ledger text-[26px] font-semibold tracking-tight leading-none">{value}</span>
       <span className={`text-xs ${tone === "good" ? "text-up" : tone === "bad" ? "text-down" : "text-muted-foreground"}`}>{sub}</span>
