@@ -372,10 +372,12 @@ export default function Clients() {
   // Read from the invoices and counts this page already loads — nothing new is
   // fetched and nothing is redefined.
   const owedByClient = useMemo(() => {
-    const m = new Map<string, { owed: number; last: string | null; lastAmount: number }>();
+    const m = new Map<string, { owed: number; last: string | null; lastAmount: number; oldestOpen: string | null }>();
     for (const i of invoices as unknown as { client_id: string; invoice_date: string; invoice_amount: number; amount_received: number; outstanding?: number | null }[]) {
-      const cur = m.get(i.client_id) ?? { owed: 0, last: null, lastAmount: 0 };
-      cur.owed += Number(i.outstanding ?? Math.max(0, Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0)));
+      const cur = m.get(i.client_id) ?? { owed: 0, last: null, lastAmount: 0, oldestOpen: null };
+      const open = Number(i.outstanding ?? Math.max(0, Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0)));
+      cur.owed += open;
+      if (open > 0.5 && (!cur.oldestOpen || i.invoice_date < cur.oldestOpen)) cur.oldestOpen = i.invoice_date;
       if (!cur.last || i.invoice_date > cur.last) { cur.last = i.invoice_date; cur.lastAmount = Number(i.invoice_amount ?? 0); }
       m.set(i.client_id, cur);
     }
@@ -389,6 +391,57 @@ export default function Clients() {
     return { total: rows.length, active: active.length, guards, owed, top, topShare: top && guards ? Number(top.employees_count ?? 0) / guards : 0 };
   }, [rows, activeClientIds, owedByClient]);
   const [clientView, setClientView] = usePageState<"cards" | "table">("Clients.view", "cards");
+
+  // HEALTH (2026-10-21): four signals, a quarter each — pays on time (age of
+  // the oldest unpaid invoice), staffed to contract (enrolled against
+  // committed heads), complaints (open ones), margin (last month, from the
+  // client statement Client profit reads). A signal with no data is left out
+  // rather than counted against the client; the score is out of what is known.
+  const [openComplaints, setOpenComplaints] = useState<Map<string, number>>(new Map());
+  const [lastMargin, setLastMargin] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+    if (!cid) return;
+    let cancelled = false;
+    const now = new Date();
+    const ps = new Date(now.getFullYear(), now.getMonth() - 1, 1), pe = new Date(now.getFullYear(), now.getMonth(), 0);
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    void Promise.all([
+      supabase.from("client_complaints").select("client_id, status").eq("company_id", cid).not("status", "in", "(resolved,closed)"),
+      supabase.rpc("client_statement_loaded", { p_start: iso(ps), p_end: iso(pe), p_basis: "revenue", p_company_id: cid }),
+    ]).then(([cc, st]) => {
+      if (cancelled) return;
+      const m = new Map<string, number>();
+      for (const r of (cc.data ?? []) as { client_id: string | null }[]) if (r.client_id) m.set(r.client_id, (m.get(r.client_id) ?? 0) + 1);
+      setOpenComplaints(m);
+      const mm = new Map<string, number>();
+      for (const r of (st.data ?? []) as { client_id: string | null; revenue: number; net: number; direct_payroll: number }[])
+        if (r.client_id && Number(r.revenue) > 0 && Number(r.direct_payroll) > 0) mm.set(r.client_id, Number(r.net) / Number(r.revenue));
+      setLastMargin(mm);
+    });
+    return () => { cancelled = true; };
+  }, [profile?.view_as_company, profile?.company_id, company?.id, regionId]);
+  const healthOf = (row: ClientRow) => {
+    const parts: { k: string; got: number; note: string }[] = [];
+    const o = owedByClient.get(row.id);
+    if (o) {
+      const age = o.oldestOpen ? Math.floor((Date.now() - new Date(`${o.oldestOpen.slice(0, 10)}T00:00:00`).getTime()) / 86400000) : 0;
+      const got = !o.oldestOpen ? 25 : age <= 30 ? 20 : age <= 60 ? 12 : age <= 90 ? 6 : 0;
+      parts.push({ k: "Pays on time", got, note: o.oldestOpen ? `oldest unpaid invoice ${age} days` : "nothing unpaid" });
+    }
+    const committed = committedByClientId.get(row.id) ?? 0;
+    if (committed > 0) {
+      const ratio = Math.min(1, Number(row.employees_count ?? 0) / committed);
+      parts.push({ k: "Staffed to contract", got: Math.round(25 * ratio), note: `${row.employees_count} of ${committed} heads` });
+    }
+    const cmp = openComplaints.get(row.id) ?? 0;
+    parts.push({ k: "Complaints", got: cmp === 0 ? 25 : cmp === 1 ? 12 : 0, note: cmp ? `${cmp} open` : "none open" });
+    const mg = lastMargin.get(row.id);
+    if (mg != null) parts.push({ k: "Margin", got: mg >= 0.2 ? 25 : mg >= 0.1 ? 18 : mg >= 0 ? 8 : 0, note: `${(mg * 100).toFixed(1)}% last month` });
+    const max = parts.length * 25;
+    const score = max ? Math.round((parts.reduce((n, x) => n + x.got, 0) / max) * 100) : null;
+    return { score, parts };
+  };
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -1279,7 +1332,20 @@ export default function Clients() {
                       <div className="font-display text-[17px] font-bold tracking-tight text-foreground group-hover:underline truncate">{row.name}</div>
                       <div className="text-xs text-muted-foreground mt-0.5 truncate"><span className="font-ledger">{row.client_code}</span> · {row.industry ?? "No industry"} · {branchName}</div>
                     </button>
-                    <span className={`flex-shrink-0 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${isActive ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200" : "bg-muted text-muted-foreground border-border"}`}>{isActive ? "Active" : "Inactive"}</span>
+                    <span className="flex items-center gap-1.5 flex-shrink-0">
+                      {(() => {
+                        const h = healthOf(row);
+                        if (h.score == null) return null;
+                        const tone = h.score >= 75 ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200" : h.score >= 50 ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200" : "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200";
+                        return (
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border font-ledger ${tone}`}
+                            title={`Health ${h.score}/100\n${h.parts.map((x) => `${x.k}: ${x.got}/25 — ${x.note}`).join("\n")}`}>
+                            ♥ {h.score}
+                          </span>
+                        );
+                      })()}
+                      <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${isActive ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200" : "bg-muted text-muted-foreground border-border"}`}>{isActive ? "Active" : "Inactive"}</span>
+                    </span>
                   </div>
                   <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-5 gap-y-2">
                     <div><div className="lbl">Guards</div><div className="font-ledger text-lg font-semibold">{row.employees_count}</div></div>

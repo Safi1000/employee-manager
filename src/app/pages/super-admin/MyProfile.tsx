@@ -17,6 +17,8 @@ import { loadCustodianOptions } from "../../lib/custodian";
 import { formatDate } from "../../lib/date";
 import { lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { usePageState } from "../../lib/pageState";
+import { generatePayslipPdf } from "../../lib/payslipPdf";
+import { brandingFromCompany } from "../../lib/pdfBranding";
 
 /**
  * My Profile — the self-view a user gets by being LINKED to one employee
@@ -173,6 +175,20 @@ export default function MyProfile() {
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
   const [heldCash, setHeldCash] = useState<number | null>(null);
+  // Leave, from leave_ledger (the same function Leave Balances reads): the
+  // latest period's banked balance and what was taken in it.
+  const [leave, setLeave] = useState<{ closing: number; taken: number; unpaid: number; period_end: string } | null>(null);
+  useEffect(() => {
+    if (!employeeId) return;
+    let cancelled = false;
+    void supabase.rpc("leave_ledger", { p_employee_id: employeeId }).then(({ data, error }) => {
+      if (cancelled || error) return;
+      const rows = (data ?? []) as { period_end: string; closing: number; taken: number; unpaid: number }[];
+      const last = rows[rows.length - 1];
+      setLeave(last ? { closing: Number(last.closing), taken: Number(last.taken), unpaid: Number(last.unpaid), period_end: last.period_end } : null);
+    });
+    return () => { cancelled = true; };
+  }, [employeeId]);
 
   const monthStart = `${month}-01`;
   const monthEnd = (() => {
@@ -224,9 +240,11 @@ export default function MyProfile() {
           .order("created_at", { ascending: false }),
         supabase
           .from("disciplinary_warnings")
-          .select("id, warning_type, reason, issued_date")
+          // The table's columns are warning_number / issued_on (the old select
+          // named columns that do not exist, so every guard read "a clean record").
+          .select("id, warning_number, reason, issued_on, rescinded")
           .eq("employee_id", employeeId)
-          .order("issued_date", { ascending: false }),
+          .order("issued_on", { ascending: false }),
       ]);
       if (cancelled) return;
       // Only the employee record failing is worth stopping for — it is the page.
@@ -238,7 +256,8 @@ export default function MyProfile() {
       setAdvances((advRes.data ?? []) as AdvanceRow[]);
       setAttendance((attRes.data ?? []) as AttendanceRow[]);
       setDocs((docRes.data ?? []) as DocRow[]);
-      setWarnings((warnRes.data ?? []) as WarningRow[]);
+      setWarnings(((warnRes.data ?? []) as { id: string; warning_number: number | null; reason: string | null; issued_on: string | null; rescinded: boolean | null }[])
+        .map((w) => ({ id: w.id, warning_type: `Warning${w.warning_number ? ` ${w.warning_number}` : ""}${w.rescinded ? " (rescinded)" : ""}`, reason: w.reason, issued_date: w.issued_on })) as WarningRow[]);
       setLoading(false);
     })();
     return () => {
@@ -462,6 +481,15 @@ export default function MyProfile() {
                   <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-warning-50 border border-warning-200" /> Leave</span>
                   <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-muted/40" /> Not marked</span>
                 </div>
+                {leave && (
+                  <div className="mt-4 rounded-xl bg-muted/50 px-4 py-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+                    <span className="lbl">Leave</span>
+                    <span><span className="font-ledger font-semibold text-foreground">{leave.closing}</span> <span className="text-muted-foreground">days banked</span></span>
+                    <span><span className="font-ledger font-semibold text-foreground">{leave.taken}</span> <span className="text-muted-foreground">taken this period</span></span>
+                    {leave.unpaid > 0 && <span><span className="font-ledger font-semibold text-danger-700 dark:text-danger-500">{leave.unpaid}</span> <span className="text-muted-foreground">unpaid</span></span>}
+                    <span className="text-xs text-muted-foreground ml-auto">period to {formatDate(leave.period_end)}</span>
+                  </div>
+                )}
               </div>
             </Section>
 
@@ -483,6 +511,7 @@ export default function MyProfile() {
                         <th className="text-right px-4 py-2 text-xs text-muted-foreground">Net</th>
                         <th className="text-right px-4 py-2 text-xs text-muted-foreground">Paid</th>
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">Status</th>
+                        <th className="px-4 py-2" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -512,6 +541,27 @@ export default function MyProfile() {
                               ) : (
                                 <span className="text-warning-700">{pkr(owed)} owed</span>
                               )}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => generatePayslipPdf({
+                                  branding: brandingFromCompany(company),
+                                  monthLabel: fmtMonth((p.period_month ?? "").slice(0, 7)),
+                                  employee: {
+                                    full_name: emp.full_name,
+                                    code: codeIndex.byId.get(emp.id) ?? emp.employee_code ?? emp.guard_code ?? "",
+                                    posted_at: emp.client?.name ?? null,
+                                    region: emp.branch?.name ?? null,
+                                    bank: emp.bank_name ? `${emp.bank_name}${emp.account_title ? ` · ${emp.account_title}` : ""}` : null,
+                                  },
+                                  slip: p,
+                                })}
+                                className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                                title="Download this payslip as a PDF"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> PDF
+                              </button>
                             </td>
                           </tr>
                         );

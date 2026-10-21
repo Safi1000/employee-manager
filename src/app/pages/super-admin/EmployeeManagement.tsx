@@ -11,6 +11,7 @@ import type { FormApprovals } from "../../lib/employeeFormPdf";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import EmployeeVettingFields from "../../components/EmployeeVettingFields";
 import Header from "../../components/Header";
+import GuardTimeline from "../../components/GuardTimeline";
 import PayrollAdjustmentHistory from "../../components/PayrollAdjustmentHistory";
 import GuardCapBanner from "../../components/GuardCapBanner";
 import { formatDate } from "../../lib/date";
@@ -924,7 +925,7 @@ export default function EmployeeManagement() {
   // Phase 3: tabbed record. The guard_completeness tiers that used to sit above
   // the tabs are gone — completeness is now the required-field set shown in the
   // list (missingRequiredFields).
-  const [viewTab, setViewTab] = useState<"profile" | "history">("profile");
+  const [viewTab, setViewTab] = useState<"profile" | "timeline" | "history">("profile");
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
@@ -3080,6 +3081,7 @@ export default function EmployeeManagement() {
                 onChange={setViewTab}
                 items={[
                   { value: "profile", label: "Profile" },
+                  { value: "timeline", label: "Timeline" },
                   { value: "history", label: "History" },
                 ]}
               />
@@ -3212,6 +3214,8 @@ export default function EmployeeManagement() {
               )}
             </div>
             )}
+
+            {viewTab === "timeline" && <GuardTimeline employeeId={selectedEmployee.id} joinDate={selectedEmployee.join_date} />}
 
             {viewTab === "history" && (
               <div className="space-y-3">

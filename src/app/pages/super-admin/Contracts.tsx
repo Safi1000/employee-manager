@@ -1,5 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   Plus,
   Search,
@@ -86,6 +87,18 @@ export default function Contracts() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [renewingRow, setRenewingRow] = useState<ContractRow | null>(null);
+  // ?renew=<contract id> (from a renewal card marked Renewed) opens that
+  // contract's own renew form once the list has loaded; the parameter is dropped.
+  const [urlParams, setUrlParams] = useSearchParams();
+  const renewHandled = useRef(false);
+  useEffect(() => {
+    const id = urlParams.get("renew");
+    if (!id || renewHandled.current || rows.length === 0) return;
+    const row = rows.find((r) => r.id === id);
+    renewHandled.current = true;
+    if (row) setRenewingRow(row);
+    const next = new URLSearchParams(urlParams); next.delete("renew"); setUrlParams(next, { replace: true });
+  }, [urlParams, setUrlParams, rows]);
   const [cyclesRow, setCyclesRow] = useState<ContractRow | null>(null);
 
   const loadAll = async () => {

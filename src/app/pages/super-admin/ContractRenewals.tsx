@@ -1,5 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { ArrowLeft, ArrowRight, CalendarClock, Plus } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -50,23 +51,29 @@ export default function ContractRenewals() {
   const [renewals, setRenewals] = useState<Renewal[]>([]);
   const [ending, setEnding] = useState<Ending[]>([]);
   const [stageFilter, setStageFilter] = useState<Stage | "all">("all");
+  const [liveContract, setLiveContract] = useState<Map<string, string>>(new Map());
   const [people, setPeople] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
 
   const load = useCallback(async () => {
     if (!companyId) return;
     const horizon = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
-    const [cl, rn, ct] = await Promise.all([
+    const [cl, rn, ct, live] = await Promise.all([
       withRegionOrUnassigned(supabase.from("clients").select("id,name").eq("company_id", companyId), regionId).order("name"),
       supabase.from("renewal_pipeline").select("id, client_id, stage, expected_close_date, owner_id, notes, updated_at, created_at").eq("company_id", companyId).order("expected_close_date"),
       supabase.from("contracts").select("id, client_id, contract_code, end_date")
         .eq("company_id", companyId).eq("status", "active").eq("is_infinite", false)
         .not("end_date", "is", null).lte("end_date", horizon).order("end_date"),
+      // Each client's live contract, for "Renew the contract" on a Renewed card.
+      supabase.from("contracts").select("id, client_id, end_date").eq("company_id", companyId).eq("status", "active").order("end_date", { ascending: false }),
     ]);
     const err0 = cl.error ?? rn.error ?? ct.error;
     if (err0) setErr(err0.message);
     setClients((cl.data ?? []) as { id: string; name: string }[]);
     setRenewals((rn.data ?? []) as Renewal[]);
     setEnding((ct.data ?? []) as Ending[]);
+    const lc = new Map<string, string>();
+    for (const k of ((live.data ?? []) as { id: string; client_id: string }[])) if (!lc.has(k.client_id)) lc.set(k.client_id, k.id);
+    setLiveContract(lc);
     const { data: pr } = await supabase.from("profiles").select("id, full_name, email").eq("company_id", companyId).order("full_name");
     setPeople((pr ?? []) as { id: string; full_name: string | null; email: string | null }[]);
     setLoaded(true);
@@ -218,6 +225,12 @@ export default function ContractRenewals() {
                         onBlur={(e) => { const v = e.target.value.trim(); if (v !== (r.notes ?? "")) void run(supabase.from("renewal_pipeline").update({ notes: v || null, updated_at: new Date().toISOString() }).eq("id", r.id)); }}
                         className="w-full px-2 py-1 border border-border rounded-lg bg-card text-xs text-foreground placeholder:text-muted-foreground"
                       />
+                      {r.stage === "renewed" && liveContract.get(r.client_id) && (
+                        <Link to={`/super-admin/contracts?renew=${liveContract.get(r.client_id)}`}
+                          className="rounded-lg bg-brand-500/15 text-brand-700 dark:text-brand-500 px-2.5 py-1.5 text-xs font-semibold text-center hover:bg-brand-500/25">
+                          Renew the contract → carries its lines over
+                        </Link>
+                      )}
                       <div className="flex items-center gap-1 pt-0.5">
                         <button type="button" disabled={busy || i === 0} onClick={() => move(r, -1)} aria-label="Back a stage" className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowLeft className="w-3.5 h-3.5" /></button>
                         <ThemedSelect className={FIELD + " py-1 text-xs flex-1"} value={r.stage}
