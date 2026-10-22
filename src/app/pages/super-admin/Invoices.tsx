@@ -22,6 +22,7 @@ import {
   Percent,
 } from "lucide-react";
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import { useOpenParam } from "../../lib/openParam";
 // Client receivables, moved here from Banks & Ledgers (2026-10-21): that page's
 // own receivables tab, embedded, so statements, receipts and WHT stay one implementation.
@@ -187,6 +188,8 @@ export default function Invoices() {
   const [error, setError] = useState<string | null>(null);
 
   const [tab, setTab] = usePageState<"ledger" | "generate" | "receivables" | "wht">("Invoices.tab", "ledger");
+  // Each band figure opens its make-up by client (2026-10-22: "every figure clickable").
+  const [sheet, setSheet] = useState<DetailContent | null>(null);
   const canViewReceivables = hasPermission(profile, "receivables.view") || hasPermission(profile, "accounting.edit");
   // ?tab=receivables (old Banks & Ledgers links, ledger drills) opens that tab.
   const [urlParams] = useSearchParams();
@@ -333,6 +336,33 @@ export default function Invoices() {
     }
     return { invoiced, received, outstanding: invoiced - received };
   }, [filteredInvoices]);
+
+  // The band's figures, client by client, from the same invoices they total.
+  const openSummary = (kind: "invoiced" | "received" | "outstanding" | "collected") => {
+    const by = new Map<string, { name: string; invoiced: number; received: number; n: number }>();
+    for (const i of filteredInvoices) {
+      const k = i.client_id ?? "none";
+      const c = by.get(k) ?? { name: i.client?.name ?? "No client", invoiced: 0, received: 0, n: 0 };
+      c.invoiced += Number(i.invoice_amount); c.received += Number(i.amount_received); c.n += 1;
+      by.set(k, c);
+    }
+    const money = (n: number) => Math.round(n).toLocaleString();
+    const all = [...by.values()];
+    const kicker = "Invoices · in the current filter";
+    if (kind === "collected") {
+      const rows = all.filter((c) => c.invoiced > 0).sort((a, b) => a.received / a.invoiced - b.received / b.invoiced);
+      setSheet({ kicker, title: "Collected, by client", big: summary.invoiced > 0 ? `${Math.round((summary.received / summary.invoiced) * 100)}%` : "—",
+        note: "Least collected first: what each client has paid of what it was invoiced.",
+        rows: rows.map((c) => ({ label: c.name, value: `${Math.round((c.received / c.invoiced) * 100)}%`, hint: `${money(c.received)} of ${money(c.invoiced)}` })) });
+      return;
+    }
+    const pick = (c: { invoiced: number; received: number }) => kind === "invoiced" ? c.invoiced : kind === "received" ? c.received : c.invoiced - c.received;
+    const rows = all.filter((c) => Math.round(pick(c)) !== 0).sort((a, b) => pick(b) - pick(a));
+    setSheet({ kicker,
+      title: kind === "invoiced" ? "Invoiced, by client" : kind === "received" ? "Received, by client" : "Outstanding, by client",
+      big: `PKR ${money(kind === "invoiced" ? summary.invoiced : kind === "received" ? summary.received : summary.outstanding)}`,
+      rows: rows.map((c) => ({ label: c.name, value: money(pick(c)), hint: `${c.n} invoice${c.n === 1 ? "" : "s"}` })) });
+  };
 
   // Upload to Google Drive under <Company>/Invoices/<year>/.
   // Returns the triple we persist on the invoices row.
@@ -976,19 +1006,21 @@ export default function Invoices() {
         {tab === "ledger" && (
           <div className="mt-3">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                <StatCard title="Total invoiced" value={`PKR ${summary.invoiced.toLocaleString()}`} icon={ReceiptText} tone="brand" />
-                <StatCard title="Total received" value={`PKR ${summary.received.toLocaleString()}`} icon={CheckCircle2} tone="success" />
-                <StatCard title="Outstanding" value={`PKR ${summary.outstanding.toLocaleString()}`} icon={Clock} tone="warning" />
+                <StatCard title="Total invoiced" value={`PKR ${summary.invoiced.toLocaleString()}`} icon={ReceiptText} tone="brand" onClick={() => openSummary("invoiced")} />
+                <StatCard title="Total received" value={`PKR ${summary.received.toLocaleString()}`} icon={CheckCircle2} tone="success" onClick={() => openSummary("received")} />
+                <StatCard title="Outstanding" value={`PKR ${summary.outstanding.toLocaleString()}`} icon={Clock} tone="warning" onClick={() => openSummary("outstanding")} />
                 <StatCard
                   title="Collected"
                   value={summary.invoiced > 0 ? `${Math.round((summary.received / summary.invoiced) * 100)}%` : "—"}
                   icon={Percent}
                   tone="info"
+                  onClick={() => openSummary("collected")}
                 />
               </div>
           </div>
         )}
       </Header>
+      <DetailSheet content={sheet} onClose={() => setSheet(null)} />
 
       <InvoiceStructureModal isOpen={structureOpen} onClose={() => setStructureOpen(false)} />
 
