@@ -56,6 +56,7 @@ import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import AmountInWords from "../../components/AmountInWords";
 import StatutoryRemitModal, { type StatutoryRemitDefaults } from "../../components/StatutoryRemitModal";
+import StatutoryPayments from "../../components/StatutoryPayments";
 import { usePageState } from "../../lib/pageState";
 
 const PIE_COLORS = CHART_COLORS;
@@ -379,6 +380,8 @@ export default function Expenses() {
   // which asks accounting.edit — the key paying any liability out of a bank asks.
   const canRemitStatutory = hasPermission(profile, "accounting.edit");
   const [remitOpen, setRemitOpen] = useState(false);
+  // Bumped after a statutory payment so the Statutory tab re-reads.
+  const [statutoryKey, setStatutoryKey] = useState(0);
   const [remitDefaults, setRemitDefaults] = useState<StatutoryRemitDefaults | undefined>(undefined);
   // 0495/0496: anyone signed in may ask for an expense; expenses.approve holders
   // approve or reject it with a note.
@@ -426,14 +429,14 @@ export default function Expenses() {
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const { regionId } = useRegion();
-  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred" | "payables">("Expenses.activeTab", "expenses");
+  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred" | "payables" | "statutory">("Expenses.activeTab", "expenses");
   // Every band figure opens the entries behind it (2026-10-22: "every figure clickable").
   const [sheet, setSheet] = useState<DetailContent | null>(null);
   // ?tab=payables (old Banks & Ledgers links, ledger drills) opens that tab.
   const [urlParams] = useSearchParams();
   useEffect(() => {
     const t = urlParams.get("tab");
-    if (t === "payables" || t === "advances" || t === "fixed" || t === "deferred" || t === "expenses") setActiveTab(t);
+    if (t === "payables" || t === "advances" || t === "fixed" || t === "deferred" || t === "expenses" || t === "statutory") setActiveTab(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlParams]);
   // 0401. "What is sitting in prepaid and when does it clear" is a LIST
@@ -2418,8 +2421,8 @@ export default function Expenses() {
                 Manage Vendors
               </Button>
             )}
-            {activeTab === "expenses" && canRemitStatutory && (
-              <Button variant="secondary" size="md" onClick={() => { setRemitDefaults(undefined); setRemitOpen(true); }}>
+            {activeTab === "statutory" && canRemitStatutory && (
+              <Button variant="primary" size="md" onClick={() => { setRemitDefaults(undefined); setRemitOpen(true); }}>
                 Pay a statutory liability
               </Button>
             )}
@@ -2452,7 +2455,7 @@ export default function Expenses() {
         }
       >
         <div className="flex flex-col gap-3">
-          <Tabs<"expenses" | "fixed" | "advances" | "deferred" | "payables">
+          <Tabs<"expenses" | "fixed" | "advances" | "deferred" | "payables" | "statutory">
             value={activeTab}
             onChange={setActiveTab}
             items={[
@@ -2461,6 +2464,8 @@ export default function Expenses() {
               { value: "advances", label: "Advances" },
               { value: "deferred", label: "Deferred", count: deferred.filter((d) => d.remaining !== 0).length || undefined },
               ...(canViewPayables ? [{ value: "payables" as const, label: "Payables" }] : []),
+              // 2026-10-22: EOBI, salary tax, PESSI, IESSI — their own tab, beside Payables.
+              ...(canViewPayables || canRemitStatutory ? [{ value: "statutory" as const, label: "Statutory" }] : []),
             ]}
           />
           {activeTab === "advances" && (() => {
@@ -3513,6 +3518,16 @@ export default function Expenses() {
           </div>
         )}
 
+        {activeTab === "statutory" && (canViewPayables || canRemitStatutory) && (
+          <StatutoryPayments
+            companyId={treasuryCompanyId}
+            banks={banks}
+            canPay={canRemitStatutory}
+            onPay={(scheme) => { setRemitDefaults(scheme ? { scheme } : undefined); setRemitOpen(true); }}
+            refreshKey={statutoryKey}
+          />
+        )}
+
         {activeTab === "payables" && canViewPayables && (
           <Suspense fallback={<div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading payables…</div>}>
             <AccountsPayable embed="payables" />
@@ -3864,7 +3879,7 @@ export default function Expenses() {
         custodians={custodians}
         branches={branches}
         defaults={remitDefaults}
-        onDone={() => { void loadAll(); }}
+        onDone={() => { void loadAll(); setStatutoryKey((k) => k + 1); }}
       />
 
       <Modal
@@ -4003,7 +4018,7 @@ export default function Expenses() {
             <div>
               <label className="block text-sm text-foreground mb-1">Category *</label>
               <CategoryPicker
-                categories={categories}
+                categories={categories.filter((c) => !STATUTORY_CATEGORY_SCHEME[c.name] || c.id === fixedForm.category_id)}
                 value={fixedForm.category_id}
                 onChange={(v) => setFixedForm({ ...fixedForm, category_id: v })}
               />
@@ -5030,8 +5045,10 @@ export default function Expenses() {
           </div>
           <div>
             <label className="block text-sm text-foreground mb-1">Category *</label>
+            {/* EOBI, salary tax, PESSI and IESSI are paid on the Statutory tab, so
+                they are not offered here (an existing one still shows when edited). */}
             <CategoryPicker
-              categories={categories}
+              categories={categories.filter((c) => !STATUTORY_CATEGORY_SCHEME[c.name] || c.id === state.category_id)}
               value={state.category_id}
               onChange={(v) => setState({ ...state, category_id: v })}
             />
