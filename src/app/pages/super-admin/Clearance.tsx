@@ -20,6 +20,7 @@ import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ClipboardCheck, Loader2, PenLine, Printer, ShieldCheck, Wallet } from "lucide-react";
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import StatCard from "../../components/StatCard";
@@ -70,6 +71,8 @@ export default function Clearance() {
   const [busy, setBusy] = useState(false);
 
   const [open, setOpen] = useState<{ emp: Pending; certId: string; items: KitItem[] } | null>(null);
+  // Each count opens the people it counts (2026-10-22: "every figure clickable").
+  const [sheet, setSheet] = useState<DetailContent | null>(null);
 
   const { regionId } = useRegion();
   const load = useCallback(async () => {
@@ -208,6 +211,17 @@ export default function Clearance() {
   const daysOpen = (p: Pending) => p.last_working_day
     ? Math.floor((Date.now() - new Date(p.last_working_day).getTime()) / 86400000) : 0;
   const closeOpen = () => { setOpen(null); setErr(null); };
+  const openQueue = (title: string, rows: any[], note: string) => setSheet({
+    kicker: "Clearance", title, big: String(rows.length), note,
+    rows: rows.map((r) => ({
+      label: r.full_name,
+      value: money(r.undisbursed_salary),
+      hint: [r.covers_to ? `covers to ${formatDate(r.covers_to)}` : null,
+             Number(r.kit_fine_total ?? 0) > 0 ? `kit fine ${money(r.kit_fine_total)}` : null,
+             r.dues_released_on ? `released ${formatDate(r.dues_released_on)}` : r.signed_at ? `signed ${formatDate(r.signed_at)}` : null]
+        .filter(Boolean).join(" · ") || undefined,
+    })),
+  });
   const assessed = open ? open.items.filter((i) => i.outcome).length : 0;
   const totalFine = open ? open.items.reduce((a, i) => a + Number(i.fine || 0), 0) : 0;
 
@@ -243,12 +257,27 @@ export default function Clearance() {
     <>
       <Header title="Clearance" subtitle="Operations assesses the kit; finance settles the dues">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          <StatCard title="Waiting on operations" value={notCleared.length} icon={AlertTriangle} tone={notCleared.length ? "warning" : "neutral"} />
-          <StatCard title="Awaiting signature" value={awaitingSig} icon={PenLine} tone="info" />
-          <StatCard title="Ready to release" value={readyToRelease} icon={Wallet} tone="brand" />
-          <StatCard title="Dues released" value={released} icon={ShieldCheck} tone="success" />
+          <StatCard title="Waiting on operations" value={notCleared.length} icon={AlertTriangle} tone={notCleared.length ? "warning" : "neutral"}
+            onClick={() => setSheet({
+              kicker: "Clearance", title: "Waiting on operations", big: String(notCleared.length),
+              note: "Separated guards whose kit operations has not yet assessed. Longest open first.",
+              rows: [...notCleared].sort((a, b) => daysOpen(b) - daysOpen(a)).map((p) => ({
+                label: p.full_name, value: `${daysOpen(p)} days`,
+                hint: p.last_working_day ? `last worked ${formatDate(p.last_working_day)}` : undefined,
+              })),
+            })} />
+          <StatCard title="Awaiting signature" value={awaitingSig} icon={PenLine} tone="info"
+            onClick={() => openQueue("Awaiting signature", queue.filter((r) => !r.signed_at && !r.dues_released),
+              "Kit assessed; the guard has not yet signed the clearance certificate. The figure is undisbursed salary.")} />
+          <StatCard title="Ready to release" value={readyToRelease} icon={Wallet} tone="brand"
+            onClick={() => openQueue("Ready to release", queue.filter((r) => r.signed_at && !r.dues_released),
+              "Signed; finance can release the dues. The figure is undisbursed salary before the kit fine.")} />
+          <StatCard title="Dues released" value={released} icon={ShieldCheck} tone="success"
+            onClick={() => openQueue("Dues released", queue.filter((r) => r.dues_released),
+              "Settled. The figure is the salary that was undisbursed at clearance.")} />
         </div>
       </Header>
+      <DetailSheet content={sheet} onClose={() => setSheet(null)} />
 
       <PageBody>
         {err && !open && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}

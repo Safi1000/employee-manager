@@ -226,19 +226,27 @@ export default function OverviewTab({ period, onOpenTab }: { period: string; onO
     <div className="space-y-5">
       {error && <div className="text-sm text-danger-600">{error}</div>}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <StatCard title="Red controls" value={checks ? red.length : "…"} icon={ShieldAlert} tone={red.length ? "danger" : "success"} />
-        <StatCard title="Audit findings open" value={checks ? (byName.has(FINDINGS[0]) ? findingsRed : "—") : "…"} icon={AlertTriangle} tone="warning" />
-        <StatCard title={`Head office unallocated · ${monthLabel(period)}`} value={hoLine == null ? "…" : money(hoLine)} icon={Building2} tone="neutral" />
-        <StatCard title="Unbilled cover (heads)" value={cover.missing ? "—" : cover.value == null ? "…" : money(cover.value)} icon={Users} tone="info" />
+        {/* Each tile opens what it counts (2026-10-22: "every figure clickable"). */}
+        <StatCard title="Red controls" value={checks ? red.length : "…"} icon={ShieldAlert} tone={red.length ? "danger" : "success"}
+          onClick={() => document.getElementById("overview-red-controls")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+        <StatCard title="Audit findings open" value={checks ? (byName.has(FINDINGS[0]) ? findingsRed : "—") : "…"} icon={AlertTriangle} tone="warning"
+          onClick={() => document.getElementById("overview-findings")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+        <StatCard title={`Head office unallocated · ${monthLabel(period)}`} value={hoLine == null ? "…" : money(hoLine)} icon={Building2} tone="neutral"
+          onClick={() => onOpenTab("clients")} />
+        <StatCard title="Unbilled cover (heads)" value={cover.missing ? "—" : cover.value == null ? "…" : money(cover.value)} icon={Users} tone="info"
+          onClick={() => onOpenTab("statements")} />
       </div>
 
+      <div id="overview-findings" className="scroll-mt-4">
       <Panel icon={AlertTriangle} tone="warning" title="What the September audit found by hand"
         description="Each is a check: it turns red on its own overnight and stays red until the cause is fixed. Open one for its rows; open a row for its source.">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {FINDINGS.map((f) => <FindingCard key={f} name={f} check={byName.get(f)} period={period} />)}
         </div>
       </Panel>
+      </div>
 
+      <div id="overview-red-controls" className="scroll-mt-4">
       <Panel icon={ShieldAlert} tone="danger" title="Every red control"
         description="Straight from ledger_checks. Expected, actual and the difference; open one for the rows behind it."
         flush>
@@ -266,6 +274,7 @@ export default function OverviewTab({ period, onOpenTab }: { period: string; onO
           </div>
         )}
       </Panel>
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <BridgePanel period={period} />
