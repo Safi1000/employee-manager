@@ -68,6 +68,17 @@ posting. Recommended only if the cutover cannot wait.
 
 **So the cutover now waits on the Lahore roster (Shayan's).**
 
+**Bank openings went in ahead of the cutover (0544, 2026-10-22, asked for by
+Shayan).** The four banks' balances from before the ledger began are posted
+as an opening batch dated 1 August (Askari 3,645,821 — its 31 Aug 3,619,821
+plus the 26,000 August advance already in the GL; BOAJK 2,368,041; Allied
+707,902; Soneri 775,855.23; Cr 3200 7,497,619.23). The cutover archives it
+with the rest of August and its redraft, drawn from the GL, carries the banks
+at their 31 August balances. **The redraft must not add bank openings again.**
+`2026-08-31-cutover-batch-proposed.csv` still has them and is superseded on
+that point; the draft batch 9d90fee2 had its four bank lines taken out by
+0544 (now 24,712,229: receivables and Gul Rehman's 890).
+
 ## Prepared, waiting on the user
 
 ### Employer EOBI amount (for 0524)
