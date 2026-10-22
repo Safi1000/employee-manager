@@ -28,7 +28,8 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   (invoiced, received, outstanding by client; collected % least first),
   Financial Reports ▸ Overview (red controls and findings jump to their
   panels; head office and cover open their tabs), Clearance (each count
-  lists its guards). Assets, Store and Kit issuance tiles are left until
+  lists its guards), Clients (no live contract, guards by client, owed by
+  client, concentration). Assets, Store and Kit issuance tiles are left until
   those tables hold rows.
 - **DECIDED 2026-10-22: not wanted** — Saved views per user (named filter
   sets and share links). Built and removed the same day at Shayan's word

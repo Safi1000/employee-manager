@@ -15,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import Tabs from "../../components/Tabs";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -397,6 +398,8 @@ export default function Clients() {
     return { total: rows.length, active: active.length, guards, owed, top, topShare: top && guards ? Number(top.employees_count ?? 0) / guards : 0 };
   }, [rows, activeClientIds, owedByClient]);
   const [clientView, setClientView] = usePageState<"cards" | "table">("Clients.view", "cards");
+  // Each band figure opens the clients behind it (2026-10-22: "every figure clickable").
+  const [sheet, setSheet] = useState<DetailContent | null>(null);
 
   // HEALTH (2026-10-21): four signals, a quarter each — pays on time (age of
   // the oldest unpaid invoice), staffed to contract (enrolled against
@@ -1257,19 +1260,40 @@ export default function Clients() {
       >
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {[
-              { label: "Clients", v: portfolio.total.toLocaleString(), sub: `${portfolio.active} with a live contract`, tone: "text-foreground" },
-              { label: "Guards deployed", v: portfolio.guards.toLocaleString(), sub: "across active clients", tone: "text-foreground" },
-              canSeeMoney
-                ? { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "open invoices, all clients", tone: portfolio.owed ? "text-heed" : "text-up" }
-                : { label: "Active clients", v: portfolio.active.toLocaleString(), sub: `of ${portfolio.total} on the books`, tone: "text-foreground" },
-              { label: "Largest client", v: `${Math.round(portfolio.topShare * 100)}%`, sub: portfolio.top ? `of guards at ${portfolio.top.name}` : "—", tone: portfolio.topShare > 0.3 ? "text-down" : "text-foreground" },
-            ].map((t) => (
-              <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0">
+            {(() => {
+              const active = rows.filter((r) => activeClientIds.has(r.id));
+              const byGuards = [...active].sort((a, b) => Number(b.employees_count ?? 0) - Number(a.employees_count ?? 0));
+              const guardRows = byGuards.filter((r) => Number(r.employees_count ?? 0) > 0).map((r) => ({
+                label: r.name, value: Number(r.employees_count ?? 0).toLocaleString(),
+                hint: portfolio.guards ? `${Math.round((Number(r.employees_count ?? 0) / portfolio.guards) * 100)}% of guards` : undefined,
+              }));
+              const kicker = "Clients";
+              return [
+                { label: "Clients", v: portfolio.total.toLocaleString(), sub: `${portfolio.active} with a live contract`, tone: "text-foreground",
+                  open: () => setSheet({ kicker, title: "Without a live contract", big: `${portfolio.total - portfolio.active} of ${portfolio.total}`,
+                    note: "Clients on the books with no live contract — candidates to renew or mark inactive.",
+                    rows: rows.filter((r) => !activeClientIds.has(r.id)).map((r) => ({ label: r.name, value: Number(r.employees_count ?? 0) ? `${r.employees_count} guards` : "—" })) }) },
+                { label: "Guards deployed", v: portfolio.guards.toLocaleString(), sub: "across active clients", tone: "text-foreground",
+                  open: () => setSheet({ kicker, title: "Guards, by client", big: portfolio.guards.toLocaleString(), rows: guardRows }) },
+                canSeeMoney
+                  ? { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "open invoices, all clients", tone: portfolio.owed ? "text-heed" : "text-up",
+                      open: () => setSheet({ kicker, title: "Owed to us, by client", big: `PKR ${Math.round(portfolio.owed).toLocaleString()}`,
+                        rows: rows.map((r) => ({ r, owed: owedByClient.get(r.id)?.owed ?? 0 })).filter((x) => Math.round(x.owed) !== 0)
+                          .sort((a, b) => b.owed - a.owed).map((x) => ({ label: x.r.name, value: Math.round(x.owed).toLocaleString() })),
+                        link: { to: "/super-admin/invoices?tab=receivables", label: "Open receivables" } }) }
+                  : { label: "Active clients", v: portfolio.active.toLocaleString(), sub: `of ${portfolio.total} on the books`, tone: "text-foreground",
+                      open: () => setSheet({ kicker, title: "Active clients", big: portfolio.active.toLocaleString(), rows: guardRows }) },
+                { label: "Largest client", v: `${Math.round(portfolio.topShare * 100)}%`, sub: portfolio.top ? `of guards at ${portfolio.top.name}` : "—", tone: portfolio.topShare > 0.3 ? "text-down" : "text-foreground",
+                  open: () => setSheet({ kicker, title: "Concentration", big: `${Math.round(portfolio.topShare * 100)}%`,
+                    note: "Each active client's share of the guards deployed. Above 30% in one client is a dependency worth watching.",
+                    rows: guardRows }) },
+              ];
+            })().map((t) => (
+              <button key={t.label} type="button" onClick={t.open} className="group text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0 hover:border-brand-500/60">
                 <span className="lbl">{t.label}</span>
-                <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span>
+                <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap group-hover:underline ${t.tone}`}>{t.v}</span>
                 <span className="text-xs text-muted-foreground truncate">{t.sub}</span>
-              </div>
+              </button>
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1287,6 +1311,7 @@ export default function Clients() {
           </div>
         </div>
       </Header>
+      <DetailSheet content={sheet} onClose={() => setSheet(null)} />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
