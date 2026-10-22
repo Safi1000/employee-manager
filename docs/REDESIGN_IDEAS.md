@@ -296,6 +296,25 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   what belongs there and how to add the first one; Kit issuance, Planning,
   Fixed expenses, Recurring alerts and Vehicles were checked and left.
 
+## Transaction logs (2026-10-22)
+
+- **Built** — Banks & Ledgers ▸ Transaction Log and Cash Custody ▸
+  Transaction Log: payment runs fold into one row — same client, same pay
+  month, same account, paid within three days — "HMC Taxila — September 2026
+  payroll · 109 payments · −x" that opens to every line. Advances fold the
+  same way. The client is read from the guard code in each line's own
+  description. A "Group runs" switch gives the flat list back.
+- **Built** — A search box (name, code, client, description) and a money in /
+  money out / net strip for whatever the filters show, on both logs.
+- **Idea** — Day headers with each day's net, so a long log reads as a
+  statement.
+- **Idea** — Tick lines off against the bank statement inside the log (the
+  bank reconciliation's statement date drawn as a line), so "tallied to" is
+  visible where the lines are.
+- **Idea** — Expenses from one custodian on one day fold the same way
+  ("Gul Rehman — 6 expenses on 13 Oct").
+- **Idea** — Export the log as it is shown (grouped), for sending to a partner.
+
 ## Clients, Contracts, Invoices
 
 - **Built** — Clients: band with clients, guards, owed and largest client's

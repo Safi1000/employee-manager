@@ -2,7 +2,8 @@ import { loadEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2 } from "lucide-react";
+import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2, Search, Layers, ChevronRight, ChevronDown } from "lucide-react";
+import { groupLedger, usePayClientIndex } from "../../lib/txGroups";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
@@ -485,17 +486,44 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   }, [ledger]);
 
   // Transactions log: the ledger, optionally narrowed to one office-staff member and/or month.
+  // 2026-10-22: search, and payment runs folded into one row (txGroups.ts) —
+  // the same as the bank Transaction Log.
+  const [ledgerQuery, setLedgerQuery] = useState("");
+  const [ledgerGrouped, setLedgerGrouped] = useState(true);
+  const [openRuns, setOpenRuns] = useState<Set<string>>(new Set());
+  const payClients = usePayClientIndex();
   const filteredLedger = useMemo(
     () => ledger.filter((e) =>
       (ledgerStaffFilter === "all" || e.employeeId === ledgerStaffFilter) &&
-      (ledgerMonth === "all" || (e.date ?? "").slice(0, 7) === ledgerMonth)),
-    [ledger, ledgerStaffFilter, ledgerMonth],
+      (ledgerMonth === "all" || (e.date ?? "").slice(0, 7) === ledgerMonth) &&
+      (!ledgerQuery.trim() || `${e.detail} ${LEDGER_KIND_LABEL[e.kind]}`.toLowerCase().includes(ledgerQuery.trim().toLowerCase()))),
+    [ledger, ledgerStaffFilter, ledgerMonth, ledgerQuery],
   );
   const ledgerTotals = useMemo(() => {
     let cin = 0, cout = 0;
     for (const e of filteredLedger) { cin += e.cashIn; cout += e.cashOut; }
     return { cin, cout, net: cin - cout };
   }, [filteredLedger]);
+  // One log line; `nested` when it sits inside an opened payment run.
+  const ledgerRow = (e: LedgerEntry, nested: boolean) => {
+    const delta = e.cashIn - e.cashOut;
+    return (
+      <tr
+        key={e.id}
+        ref={isFocusRow(e.id) ? focusTransferRow : undefined}
+        className={isFocusRow(e.id) ? FOCUS_ROW_CLASS : nested ? "bg-muted/10" : undefined}
+      >
+        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{e.date}</td>
+        <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[e.kind]}</td>
+        <td className="px-3 py-2 text-xs text-foreground">{staffName(e.employeeId)}</td>
+        <td className={`px-3 py-2 text-right text-xs font-ledger ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
+        <td className="px-3 py-2 text-right text-xs font-ledger text-foreground whitespace-nowrap">
+          <span className="text-muted-foreground/70">Cash </span>{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}
+        </td>
+        <td className="px-3 py-2 text-xs text-muted-foreground">{e.detail}</td>
+      </tr>
+    );
+  };
   // Only a serving office-staff member can be given a custody. The full list
   // stays loaded — it resolves the NAME on every historical custodian, including
   // people who have since left — so the narrowing happens here, at the picker,
@@ -946,8 +974,29 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 {ledgerMonthOptions.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
               </ThemedSelect>
             </div>
+            <div className="flex items-center gap-2 flex-1 min-w-[12rem]">
+              <Search className="w-3.5 h-3.5 text-muted-foreground" />
+              <input value={ledgerQuery} onChange={(e) => setLedgerQuery(e.target.value)} placeholder="Search name, code, client, description"
+                className="flex-1 min-w-0 px-3 py-1.5 border border-border rounded-xl bg-card text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+            </div>
+            <button type="button" onClick={() => setLedgerGrouped((g) => !g)} aria-pressed={ledgerGrouped}
+              title="Fold payment runs (payroll, advances) into one row per client and month"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs ${ledgerGrouped ? "bg-foreground text-background font-semibold" : "bg-card text-muted-foreground border border-border hover:bg-muted/50"}`}>
+              <Layers className="w-3.5 h-3.5" /> Group runs
+            </button>
             <span className="ml-auto text-xs text-muted-foreground">{filteredLedger.length} entr{filteredLedger.length === 1 ? "y" : "ies"}</span>
           </div>
+
+          {filteredLedger.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {[{ l: "Cash in", v: ledgerTotals.cin, c: "text-up" }, { l: "Cash out", v: ledgerTotals.cout, c: "text-down" }, { l: "Net", v: ledgerTotals.net, c: ledgerTotals.net >= 0 ? "text-up" : "text-down" }].map((x) => (
+                <div key={x.l} className="rounded-xl border border-border bg-card px-3 py-2">
+                  <div className="lbl">{x.l}</div>
+                  <div className={`font-ledger text-base font-semibold ${x.c}`}>{x.l === "Net" && x.v > 0 ? "+" : ""}{Math.round(x.v).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Same table chrome as the Bank Accounts Transaction Log (HistoryBody):
               sticky header, plain-text Kind, colored Δ, labeled Before → After. */}
@@ -967,24 +1016,38 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredLedger.map((e) => {
-                    const delta = e.cashIn - e.cashOut;
-                    return (
-                      <tr
-                        key={e.id}
-                        ref={isFocusRow(e.id) ? focusTransferRow : undefined}
-                        className={isFocusRow(e.id) ? FOCUS_ROW_CLASS : undefined}
-                      >
-                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{e.date}</td>
-                        <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[e.kind]}</td>
-                        <td className="px-3 py-2 text-xs text-foreground">{staffName(e.employeeId)}</td>
-                        <td className={`px-3 py-2 text-right text-xs font-ledger ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-xs font-ledger text-foreground whitespace-nowrap">
-                          <span className="text-muted-foreground/70">Cash </span>{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}
+                  {(ledgerGrouped
+                    ? groupLedger(filteredLedger, {
+                        at: (e) => e.date, text: (e) => e.detail, account: (e) => e.locationId,
+                        delta: (e) => e.cashIn - e.cashOut, clients: payClients,
+                      })
+                    : filteredLedger.map((row) => ({ kind: "row" as const, row }))
+                  ).flatMap((it) => {
+                    if (it.kind === "row") return [ledgerRow(it.row, false)];
+                    const isOpen = openRuns.has(it.key);
+                    const first = it.rows[it.rows.length - 1], last = it.rows[0];
+                    const head = (
+                      <tr key={it.key} className="bg-muted/30 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => setOpenRuns((s) => { const n = new Set(s); if (n.has(it.key)) n.delete(it.key); else n.add(it.key); return n; })}>
+                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1">
+                            {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            {first.date === last.date ? last.date : `${first.date} – ${last.date}`}
+                          </span>
                         </td>
-                        <td className="px-3 py-2 text-xs text-muted-foreground">{e.detail}</td>
+                        <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[last.kind]}</td>
+                        <td className="px-3 py-2 text-xs text-foreground">{staffName(last.employeeId)}</td>
+                        <td className={`px-3 py-2 text-right text-xs font-ledger font-semibold ${it.total >= 0 ? "text-success-700" : "text-danger-700"}`}>{it.total > 0 ? "+" : ""}{Math.round(it.total).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-xs font-ledger text-foreground whitespace-nowrap">
+                          <span className="text-muted-foreground/70">Cash </span>{Math.round(first.before).toLocaleString()} → {Math.round(last.after).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-foreground font-medium">
+                          {it.title} · {it.rows.length} payments
+                          <span className="block text-[11px] text-muted-foreground font-normal">{isOpen ? "Tap to fold" : `Tap to see all ${it.rows.length}`}</span>
+                        </td>
                       </tr>
                     );
+                    return isOpen ? [head, ...it.rows.map((r) => ledgerRow(r, true))] : [head];
                   })}
                 </tbody>
               </table>
@@ -996,6 +1059,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           </div>
         </div>
       </Modal>
+
 
       {/* ── Add/Edit Location Modal ── */}
       <Modal isOpen={isLocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">

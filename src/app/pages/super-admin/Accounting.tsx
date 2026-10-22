@@ -3,7 +3,8 @@ import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy, Scale } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy, Scale, ChevronRight, ChevronDown, Layers } from "lucide-react";
+import { groupLedger, usePayClientIndex } from "../../lib/txGroups";
 import Header from "../../components/Header";
 import { useRegion } from "../../lib/region";
 import Tabs from "../../components/Tabs";
@@ -5634,7 +5635,16 @@ function HistoryBody({
   depositRefs?: Set<string>;
   onDownloadSlip?: (referenceId: string) => void;
 }) {
+  // 2026-10-22: search, a money-in / money-out strip, and payment runs folded
+  // into one row (txGroups.ts) — 109 HMC payslips paid from Askari read as one
+  // line that opens to the 109.
+  const [query, setQuery] = useState("");
+  const [grouped, setGrouped] = useState(true);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const clients = usePayClientIndex();
+  const q = query.trim().toLowerCase();
   const filtered = transactions.filter((t) => {
+    if (q && !`${t.description ?? ""} ${kindLabel[t.kind] ?? t.kind}`.toLowerCase().includes(q)) return false;
     if (bankFilter !== "all") {
       if (bankFilter === "__cash__") {
         if (Number(t.cash_delta) === 0) return false;
@@ -5699,10 +5709,38 @@ function HistoryBody({
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-2 flex-1 min-w-[12rem]">
+          <Search className="w-3.5 h-3.5 text-muted-foreground" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, code, client, description"
+            className="flex-1 min-w-0 px-3 py-1.5 border border-border rounded-xl bg-card text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+        </div>
+        <button type="button" onClick={() => setGrouped((g) => !g)} aria-pressed={grouped}
+          title="Fold payment runs (payroll, advances) into one row per client and month"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs ${grouped ? "bg-foreground text-background font-semibold" : "bg-card text-muted-foreground border border-border hover:bg-muted/50"}`}>
+          <Layers className="w-3.5 h-3.5" /> Group runs
+        </button>
         <span className="ml-auto text-xs text-muted-foreground">
           {filtered.length} entr{filtered.length === 1 ? "y" : "ies"}
         </span>
       </div>
+
+      {filtered.length > 0 && (() => {
+        // What the money in view did: bank and cash movements together.
+        let inn = 0, out = 0;
+        for (const t of filtered) {
+          for (const d of [Number(t.account_delta), Number(t.cash_delta)]) { if (d > 0) inn += d; else out -= d; }
+        }
+        return (
+          <div className="grid grid-cols-3 gap-2">
+            {[{ l: "Money in", v: inn, c: "text-up" }, { l: "Money out", v: out, c: "text-down" }, { l: "Net", v: inn - out, c: inn - out >= 0 ? "text-up" : "text-down" }].map((x) => (
+              <div key={x.l} className="rounded-xl border border-border bg-card px-3 py-2">
+                <div className="lbl">{x.l}</div>
+                <div className={`font-ledger text-base font-semibold ${x.c}`}>{x.l === "Net" && x.v > 0 ? "+" : ""}{Math.round(x.v).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* overflow-x on the SAME element as overflow-y, not a nested wrapper:
           the sticky <thead> below positions against its nearest scroll
@@ -5723,13 +5761,64 @@ function HistoryBody({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((t) => {
+              {(grouped
+                ? groupLedger(filtered, {
+                    at: (t) => t.created_at,
+                    text: (t) => t.description,
+                    account: (t) => t.bank_account_id ?? (Number(t.cash_delta) !== 0 ? "cash" : "none"),
+                    delta: (t) => Number(t.account_delta) + Number(t.cash_delta),
+                    clients,
+                  })
+                : filtered.map((row) => ({ kind: "row" as const, row }))
+              ).flatMap((it) => {
+                if (it.kind === "row") return [renderTx(it.row, false)];
+                const isOpen = openGroups.has(it.key);
+                const first = it.rows[it.rows.length - 1], last = it.rows[0];
+                const bank = banks.find((b) => b.id === last.bank_account_id);
+                const span = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "—");
+                const head = (
+                  <tr key={it.key} className="bg-muted/30 hover:bg-muted/50 cursor-pointer"
+                    onClick={() => setOpenGroups((s) => { const n = new Set(s); if (n.has(it.key)) n.delete(it.key); else n.add(it.key); return n; })}>
+                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        {span(first.created_at) === span(last.created_at) ? span(last.created_at) : `${span(first.created_at)} – ${span(last.created_at)}`}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-foreground">{kindLabel[last.kind]}</td>
+                    <td className="px-3 py-2 text-xs text-foreground">{bank ? bank.bank_name : Number(last.cash_delta) !== 0 ? "Cash" : "—"}</td>
+                    <td className={`px-3 py-2 text-xs text-right font-mono font-semibold ${it.total >= 0 ? "text-success-700" : "text-danger-700"}`}>
+                      {it.total > 0 ? "+" : ""}{Math.round(it.total).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right text-muted-foreground">{it.rows.length} payments</td>
+                    <td className="px-3 py-2 text-xs text-foreground font-medium">
+                      {it.title}{it.subtitle ? <span className="text-muted-foreground font-normal"> · {it.subtitle}</span> : null}
+                      <span className="block text-[11px] text-muted-foreground font-normal">{isOpen ? "Tap to fold" : `Tap to see all ${it.rows.length}`}</span>
+                    </td>
+                  </tr>
+                );
+                return isOpen ? [head, ...it.rows.map((r) => renderTx(r, true))] : [head];
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 pt-4 border-t border-border">
+        <Button variant="secondary" size="md" className="ml-auto" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
+  );
+
+  function renderTx(t: BankTransaction, nested: boolean) {
                 const bank = banks.find((b) => b.id === t.bank_account_id);
                 const ledger = balanceLedger.get(t.id) ?? {};
                 const cd = Number(t.cash_delta);
                 const ad = Number(t.account_delta);
                 return (
-                  <tr key={t.id}>
+                  <tr key={t.id} className={nested ? "bg-muted/10" : undefined}>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
                     </td>
@@ -5804,17 +5893,5 @@ function HistoryBody({
                     </td>
                   </tr>
                 );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="flex items-center gap-3 pt-4 border-t border-border">
-        <Button variant="secondary" size="md" className="ml-auto" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-    </div>
-  );
+  }
 }
