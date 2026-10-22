@@ -57,6 +57,7 @@ import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } f
 import AmountInWords from "../../components/AmountInWords";
 import StatutoryRemitModal, { type StatutoryRemitDefaults } from "../../components/StatutoryRemitModal";
 import StatutoryPayments from "../../components/StatutoryPayments";
+import FuelCards from "../../components/FuelCards";
 import { usePageState } from "../../lib/pageState";
 
 const PIE_COLORS = CHART_COLORS;
@@ -429,14 +430,14 @@ export default function Expenses() {
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const { regionId } = useRegion();
-  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred" | "payables" | "statutory">("Expenses.activeTab", "expenses");
+  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred" | "payables" | "statutory" | "fuel">("Expenses.activeTab", "expenses");
   // Every band figure opens the entries behind it (2026-10-22: "every figure clickable").
   const [sheet, setSheet] = useState<DetailContent | null>(null);
   // ?tab=payables (old Banks & Ledgers links, ledger drills) opens that tab.
   const [urlParams] = useSearchParams();
   useEffect(() => {
     const t = urlParams.get("tab");
-    if (t === "payables" || t === "advances" || t === "fixed" || t === "deferred" || t === "expenses" || t === "statutory") setActiveTab(t);
+    if (t === "payables" || t === "advances" || t === "fixed" || t === "deferred" || t === "expenses" || t === "statutory" || t === "fuel") setActiveTab(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlParams]);
   // 0401. "What is sitting in prepaid and when does it clear" is a LIST
@@ -2455,7 +2456,7 @@ export default function Expenses() {
         }
       >
         <div className="flex flex-col gap-3">
-          <Tabs<"expenses" | "fixed" | "advances" | "deferred" | "payables" | "statutory">
+          <Tabs<"expenses" | "fixed" | "advances" | "deferred" | "payables" | "statutory" | "fuel">
             value={activeTab}
             onChange={setActiveTab}
             items={[
@@ -2463,6 +2464,9 @@ export default function Expenses() {
               { value: "fixed", label: "Fixed expenses", count: fixedInstances.filter((i) => i.status === "pending").length || undefined },
               { value: "advances", label: "Advances" },
               { value: "deferred", label: "Deferred", count: deferred.filter((d) => d.remaining !== 0).length || undefined },
+              // 2026-10-22: whoever records operations' fuel bills does it here, with
+              // the rest of the expenses — not in Banks & Ledgers, which they cannot see.
+              ...(canEditExpenses ? [{ value: "fuel" as const, label: "Fuel bills" }] : []),
               ...(canViewPayables ? [{ value: "payables" as const, label: "Payables" }] : []),
               // 2026-10-22: EOBI, salary tax, PESSI, IESSI — their own tab, beside Payables.
               ...(canViewPayables || canRemitStatutory ? [{ value: "statutory" as const, label: "Statutory" }] : []),
@@ -3516,6 +3520,10 @@ export default function Expenses() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === "fuel" && canEditExpenses && (
+          <FuelCards companyId={treasuryCompanyId} banks={[]} canEdit={canEditExpenses} mode="bills" onMoved={() => { void loadAll(); }} />
         )}
 
         {activeTab === "statutory" && (canViewPayables || canRemitStatutory) && (

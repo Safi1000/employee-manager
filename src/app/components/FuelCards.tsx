@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, CircleAlert, Plus, Fuel, Receipt, Gauge, Undo2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, Plus, Fuel, Receipt, Gauge, Undo2, ListPlus, Trash2 } from "lucide-react";
 import Button from "./Button";
 import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
@@ -33,6 +33,7 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const monthStartISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
 const fmt = (n: number | null) => (n == null ? "—" : Math.round(Number(n)).toLocaleString());
 const fmtDate = (d: string | null) =>
   d ? new Date(`${d.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -43,19 +44,32 @@ type Dialog =
   | { kind: "bill"; card: CardRow }
   | { kind: "reading"; card: CardRow }
   | { kind: "reverse"; load: Load; card: CardRow }
+  | { kind: "bills"; card: CardRow }
+  | { kind: "book"; card: CardRow; gap: number }
   | null;
 
 export default function FuelCards({
-  companyId, banks, canEdit, onMoved,
+  companyId, banks, canEdit, onMoved, mode = "treasury",
 }: {
   companyId: string | null;
   banks: BankAccount[];
   canEdit: boolean;
-  /** A bank balance moved: the page reloads its bank cards. */
+  /** A bank balance moved (or, in "bills" mode, a bill was recorded): the page reloads. */
   onMoved: () => void;
+  /** "bills": the Expenses tab's view — float cards and their bill forms only.
+   *  Whoever records operations' bills there never sees a bank, a load or the
+   *  Attock balance; loading, the portal reading and the month-end booking stay
+   *  with the accountant in Banks & Ledgers. */
+  mode?: "treasury" | "bills";
 }) {
+  const billsOnly = mode === "bills";
   const [cards, setCards] = useState<CardRow[]>([]);
   const [loads, setLoads] = useState<Load[]>([]);
+  // This month's bills per card: with a client, general (no client), and how many.
+  const [monthBills, setMonthBills] = useState<Map<string, { client: number; general: number; n: number }>>(new Map());
+  // "Enter bills": several of operations' bills typed in one go.
+  type BillLine = { date: string; amount: string; client: string; note: string; err?: string; done?: boolean };
+  const [lines, setLines] = useState<BillLine[]>([]);
   const [missing, setMissing] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -88,6 +102,16 @@ export default function FuelCards({
       difference: r.difference == null ? null : Number(r.difference),
     })));
     setLoads(((l.data ?? []) as Load[]).map((x) => ({ ...x, amount: Number(x.amount) })));
+    const ms = monthStartISO();
+    const { data: bx } = await supabase.from("expenses").select("fuel_card_id, client_id, amount")
+      .eq("company_id", companyId).eq("payment_mode", "Card").gte("expense_date", ms);
+    const mb = new Map<string, { client: number; general: number; n: number }>();
+    for (const x of (bx ?? []) as { fuel_card_id: string; client_id: string | null; amount: number }[]) {
+      const m = mb.get(x.fuel_card_id) ?? { client: 0, general: 0, n: 0 };
+      if (x.client_id) m.client += Number(x.amount); else m.general += Number(x.amount);
+      m.n += 1; mb.set(x.fuel_card_id, m);
+    }
+    setMonthBills(mb);
   }, [companyId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -159,7 +183,7 @@ export default function FuelCards({
         p_fuel_card_id: dialog.card.fuel_card_id, p_amount: amount, p_bill_date: f.date || todayISO(),
         p_category_id: f.category, p_client_id: f.client || null, p_branch_id: f.branch || null,
         p_description: f.description?.trim() || null,
-      }), false);
+      }), billsOnly);
     }
     if (dialog.kind === "reading") {
       if (f.portal === undefined || f.portal === "" || !Number.isFinite(Number(f.portal))) return setErr("Enter the balance the Attock portal shows.");
@@ -167,6 +191,36 @@ export default function FuelCards({
         p_fuel_card_id: dialog.card.fuel_card_id, p_as_of: f.date || todayISO(),
         p_portal_balance: Number(f.portal), p_note: f.note?.trim() || null,
       }), false);
+    }
+    if (dialog.kind === "bills") {
+      const todo = lines.map((l, i) => ({ l, i })).filter(({ l }) => !l.done && (l.amount || l.note));
+      if (todo.length === 0) return setErr("Type at least one bill.");
+      if (!fuelCategory) return setErr("The expense category \"Transportation & Fuel\" is missing.");
+      setBusy(true); setErr(null);
+      const next = [...lines];
+      // One at a time, oldest first, so the card's balance check sees each bill in turn.
+      for (const { l, i } of [...todo].sort((a, b) => a.l.date.localeCompare(b.l.date))) {
+        const amt = Number(l.amount);
+        if (!(amt > 0)) { next[i] = { ...l, err: "Enter the amount." }; continue; }
+        const cl = clients.find((x) => x.id === l.client);
+        const { error } = await supabase.rpc("record_fuel_card_bill", {
+          p_fuel_card_id: dialog.card.fuel_card_id, p_amount: amt, p_bill_date: l.date || todayISO(),
+          p_category_id: fuelCategory, p_client_id: l.client || null,
+          p_branch_id: cl?.branch_id ?? dialog.card.branch_id ?? null,
+          p_description: l.note.trim() || null,
+        });
+        next[i] = error ? { ...l, err: friendlyDbError(error) } : { ...l, err: undefined, done: true };
+      }
+      setLines(next);
+      setBusy(false);
+      await load();
+      if (billsOnly) onMoved();
+      if (next.every((l) => l.done || (!l.amount && !l.note))) setDialog(null);
+      else setErr("Some bills were not recorded — each says why. The rest are in.");
+      return;
+    }
+    if (dialog.kind === "book") {
+      return run(() => supabase.rpc("book_unbilled_fuel", { p_fuel_card_id: dialog.card.fuel_card_id }), false);
     }
     if (dialog.kind === "reverse") {
       if ((f.reason ?? "").trim().length < 5) return setErr("Say why this load is being reversed.");
@@ -190,15 +244,19 @@ export default function FuelCards({
     : dialog?.kind === "load" ? `Load — ${dialog.card.label}`
     : dialog?.kind === "bill" ? `Fuel bill — ${dialog.card.label}`
     : dialog?.kind === "reading" ? `Attock balance — ${dialog.card.label}`
-    : dialog?.kind === "reverse" ? `Reverse load — ${dialog.card.label}` : "";
+    : dialog?.kind === "reverse" ? `Reverse load — ${dialog.card.label}`
+    : dialog?.kind === "bills" ? `Enter bills — ${dialog.card.label}`
+    : dialog?.kind === "book" ? `Book unbilled fuel — ${dialog.card.label}` : "";
 
   return (
     <div className="mt-6 rounded-2xl border border-border bg-card overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-foreground">Fuel cards</div>
+          <div className="text-sm font-semibold text-foreground">{billsOnly ? "Fuel bills" : "Fuel cards"}</div>
           <div className="text-xs text-muted-foreground">
-            Company float on cards is an asset until it is spent; an allowance card is where a man&rsquo;s fixed allowance is paid.
+            {billsOnly
+              ? "Record each fuel bill against the card it was paid with — with its client, or as a general bill when it was not for one site."
+              : <>Company float on cards is an asset until it is spent; an allowance card is where a man&rsquo;s fixed allowance is paid.</>}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-3">
@@ -208,7 +266,7 @@ export default function FuelCards({
               <span className="cur">PKR</span>{fmt(floatTotal)}
             </div>
           </div>
-          {canEdit && (
+          {canEdit && !billsOnly && (
             <Button size="sm" onClick={() => open({ kind: "register" }, { role: "float", provider: "Attock" })}>
               <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Register card
             </Button>
@@ -218,10 +276,13 @@ export default function FuelCards({
 
       {cards.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted-foreground">
-          No fuel cards registered. Register a company float card to load it and record its bills here, or an employee&rsquo;s card so payroll can pay his fixed allowance onto it.
+          {billsOnly ? "No fuel cards yet — accounts registers them in Banks & Ledgers." : <>No fuel cards registered. Register a company float card to load it and record its bills here, or an employee&rsquo;s card so payroll can pay his fixed allowance onto it.</>}
         </p>
       ) : (
         <>
+          {billsOnly && floats.length === 0 && (
+            <p className="px-4 py-6 text-sm text-muted-foreground">No company float card yet — accounts registers them in Banks & Ledgers.</p>
+          )}
           {floats.length > 0 && (
             <div className="divide-y divide-border">
               {floats.map((c) => {
@@ -230,35 +291,69 @@ export default function FuelCards({
                 return (
                   <div key={c.fuel_card_id} className={c.is_active ? "" : "opacity-60"}>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-                      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpenCard(openCard === c.fuel_card_id ? null : c.fuel_card_id)}>
+                      <button type="button" className="min-w-0 flex-1 text-left" disabled={billsOnly} onClick={() => setOpenCard(openCard === c.fuel_card_id ? null : c.fuel_card_id)}>
                         <div className="text-sm font-medium text-foreground truncate">
                           {c.label}
                           <span className="text-muted-foreground font-normal"> · {c.provider}{c.card_last4 ? ` ••${c.card_last4}` : ""}{c.account_code ? ` · ${c.account_code}` : ""}</span>
                         </div>
-                        <div className={`text-xs flex items-center gap-1 ${st.ok ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
+                        {!billsOnly && <div className={`text-xs flex items-center gap-1 ${st.ok ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
                           {st.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <CircleAlert className="w-3.5 h-3.5" />}
                           {st.text}
-                        </div>
+                        </div>}
                       </button>
                       <div className="text-right">
                         <div className="font-ledger text-sm font-semibold text-foreground whitespace-nowrap">{fmt(c.balance)}</div>
                         <div className="text-[11px] text-muted-foreground whitespace-nowrap">loaded {fmt(c.loaded)} · spent {fmt(c.billed)}</div>
                       </div>
+                      {(() => {
+                        // This month, and the fuel Attock shows spent beyond the bills (0547).
+                        const ms = monthStartISO();
+                        const loadedMonth = cardLoads.filter((l) => l.loaded_on >= ms).reduce((n, l) => n + l.amount, 0);
+                        const mb = monthBills.get(c.fuel_card_id) ?? { client: 0, general: 0, n: 0 };
+                        const gap = c.reading_as_of && c.balance_on_reading != null && c.portal_balance != null
+                          ? Math.round((c.balance_on_reading - c.portal_balance) * 100) / 100 : null;
+                        return (
+                          <div className="basis-full flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                            {!billsOnly && <span>This month: loaded <span className="font-ledger text-foreground">{fmt(loadedMonth)}</span></span>}
+                            <span>{billsOnly ? "Bills this month" : "bills"} <span className="font-ledger text-foreground">{fmt(mb.client + mb.general)}</span> ({mb.n}{mb.general ? `, ${fmt(mb.general)} general` : ""})</span>
+                            {gap != null && gap > 0.5 && (
+                              <span className="text-heed font-semibold">No bill yet: <span className="font-ledger">{fmt(gap)}</span> to {fmtDate(c.reading_as_of)}</span>
+                            )}
+                            {gap != null && gap < -0.5 && (
+                              <span className="text-danger-700 dark:text-danger-500 font-semibold">Bills exceed Attock by {fmt(-gap)} — check for a bill entered twice</span>
+                            )}
+                            {gap != null && gap > 0.5 && canEdit && !billsOnly && c.is_active && (
+                              <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline font-medium"
+                                onClick={() => open({ kind: "book", card: c, gap })}>Book unbilled (month end)</button>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {canEdit && c.is_active && (
                         <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => open({ kind: "load", card: c }, { date: todayISO() })}>
-                            <Fuel className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Load
-                          </Button>
+                          {!billsOnly && (
+                            <Button size="sm" variant="secondary" onClick={() => open({ kind: "load", card: c }, { date: todayISO() })}>
+                              <Fuel className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Load
+                            </Button>
+                          )}
                           <Button size="sm" variant="secondary" onClick={() => open({ kind: "bill", card: c }, { date: todayISO(), category: fuelCategory, branch: c.branch_id ?? "" })}>
                             <Receipt className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Bill
                           </Button>
-                          <Button size="sm" variant="secondary" onClick={() => open({ kind: "reading", card: c }, { date: todayISO() })}>
-                            <Gauge className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Attock balance
+                          <Button size="sm" variant="secondary" onClick={() => {
+                            setLines(Array.from({ length: 5 }, () => ({ date: todayISO(), amount: "", client: "", note: "" })));
+                            open({ kind: "bills", card: c });
+                          }}>
+                            <ListPlus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Enter bills
                           </Button>
+                          {!billsOnly && (
+                            <Button size="sm" variant="secondary" onClick={() => open({ kind: "reading", card: c }, { date: todayISO() })}>
+                              <Gauge className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Attock balance
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
-                    {openCard === c.fuel_card_id && (
+                    {!billsOnly && openCard === c.fuel_card_id && (
                       <div className="px-4 pb-3">
                         {cardLoads.length === 0 ? (
                           <p className="text-xs text-muted-foreground">No loads yet.</p>
@@ -287,7 +382,7 @@ export default function FuelCards({
               })}
             </div>
           )}
-          {allowances.length > 0 && (
+          {!billsOnly && allowances.length > 0 && (
             <div className="border-t border-border">
               <div className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Allowance cards — paid from payroll, not tracked</div>
               <div className="divide-y divide-border">
@@ -306,7 +401,7 @@ export default function FuelCards({
       <Modal isOpen={!!dialog} onClose={close} title={title} error={err} onDismissError={() => setErr(null)}
         footer={<>
           <Button variant="secondary" onClick={close}>Cancel</Button>
-          <Button onClick={submit} disabled={busy}>{busy ? "Saving…" : dialog?.kind === "reverse" ? "Reverse load" : "Save"}</Button>
+          <Button onClick={submit} disabled={busy}>{busy ? "Saving…" : dialog?.kind === "reverse" ? "Reverse load" : dialog?.kind === "bills" ? "Record bills" : dialog?.kind === "book" ? "Book it" : "Save"}</Button>
         </>}>
         {dialog?.kind === "register" && (
           <div className="flex flex-col gap-3">
@@ -415,7 +510,7 @@ export default function FuelCards({
                   const cl = clients.find((x) => x.id === e.target.value);
                   setF((p) => ({ ...p, client: e.target.value, branch: cl?.branch_id ?? p.branch ?? "" }));
                 }}>
-                  <option value="">None — region cost</option>
+                  <option value="">General — no client (region cost)</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </ThemedSelect>
               </div>
@@ -453,6 +548,59 @@ export default function FuelCards({
               <label className={label}>Note</label>
               <input className={field} value={f.note ?? ""} onChange={(e) => set("note", e.target.value)} />
             </div>
+          </div>
+        )}
+
+        {dialog?.kind === "bills" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Operations&rsquo; bills, one per line. Give each a client, or leave it General for fuel that was not for one site (the office bike, a general run).
+              The card holds PKR {fmt(dialog.card.balance)}.
+            </p>
+            <div className="flex flex-col gap-2">
+              {lines.map((l, i) => {
+                const upd = (patch: Partial<BillLine>) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, ...patch, err: undefined } : x)));
+                return (
+                  <div key={i} className={`grid grid-cols-[7.5rem_6rem_1fr_auto] gap-2 items-start ${l.done ? "opacity-50" : ""}`}>
+                    <input type="date" className={field} value={l.date} disabled={l.done} onChange={(e) => upd({ date: e.target.value })} />
+                    <input className={field} inputMode="decimal" placeholder="Amount" value={l.amount} disabled={l.done} onChange={(e) => upd({ amount: e.target.value })} />
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <ThemedSelect value={l.client} disabled={l.done} onChange={(e) => upd({ client: e.target.value })}>
+                        <option value="">General — no client</option>
+                        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </ThemedSelect>
+                      <input className={field} placeholder="Site / purpose, e.g. visit to site X" value={l.note} disabled={l.done} onChange={(e) => upd({ note: e.target.value })} />
+                      {l.err && <span className="text-[11px] text-danger-700 dark:text-danger-500">{l.err}</span>}
+                      {l.done && <span className="text-[11px] text-success-700 dark:text-success-500">Recorded</span>}
+                    </div>
+                    <button type="button" className="p-2 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={l.done}
+                      onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} title="Remove this line">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <button type="button" className="self-start text-sm text-brand-700 dark:text-brand-500 hover:underline"
+              onClick={() => setLines((ls) => [...ls, { date: ls[ls.length - 1]?.date ?? todayISO(), amount: "", client: "", note: "" }])}>
+              + Another bill
+            </button>
+            <p className="text-xs text-muted-foreground">
+              Total {fmt(lines.filter((l) => !l.done).reduce((n, l) => n + (Number(l.amount) || 0), 0))} — each is a fuel expense on its date and comes off the card.
+            </p>
+          </div>
+        )}
+
+        {dialog?.kind === "book" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-foreground">
+              Attock shows PKR {fmt(dialog.card.portal_balance)} on {fmtDate(dialog.card.reading_as_of)}; the bills entered leave Bastion at PKR {fmt(dialog.card.balance_on_reading)}.
+              The <span className="font-semibold">PKR {fmt(dialog.gap)}</span> between them is fuel spent with no bill.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Booking it writes one general expense, &ldquo;Fuel — no bill&rdquo;, on this card dated {fmtDate(dialog.card.reading_as_of)}: a cost to the card&rsquo;s region with no client.
+              The card then agrees with Attock. Do this at month end, once operations has handed in every bill it can.
+            </p>
           </div>
         )}
 
