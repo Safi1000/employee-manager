@@ -30,7 +30,9 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   panels; head office and cover open their tabs), Clearance (each count
   lists its guards), Clients (no live contract, guards by client, owed by
   client, concentration), Attendance board (unconfirmed, on ground, exceptions,
-  not started — each register by client, site and shift). Assets, Store and Kit issuance tiles are left until
+  not started — each register by client, site and shift), Contracts (value by
+  contract, posted against committed shortest first, ending in 60 days).
+  Assets, Store and Kit issuance tiles are left until
   those tables hold rows.
 - **DECIDED 2026-10-22: not wanted** — Saved views per user (named filter
   sets and share links). Built and removed the same day at Shayan's word

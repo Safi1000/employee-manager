@@ -15,6 +15,7 @@ import {
   CalendarRange,
 } from "lucide-react";
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import Button from "../../components/Button";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
@@ -79,6 +80,8 @@ export default function Contracts() {
   // "needs_renewal" = a pseudo-status filtering on the EFFECTIVE end date (renewal
   // addendums applied), distinct from the stored contract.status enum.
   const [statusFilter, setStatusFilter] = usePageState<"all" | "needs_renewal" | ContractStatus>("Contracts.statusFilter", "all");
+  // The band's value, guards and runway open the contracts behind them (2026-10-22).
+  const [sheet, setSheet] = useState<DetailContent | null>(null);
   const [clientFilter, setClientFilter] = usePageState("Contracts.clientFilter", "all");
 
   const [addOpen, setAddOpen] = useState(false);
@@ -389,14 +392,34 @@ export default function Contracts() {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
               {[
                 { label: "Live contracts", v: book.live.toLocaleString(), sub: "active today", tone: "text-foreground", on: false, click: () => setStatusFilter("active") },
-                { label: "Contracted value", v: <><span className="cur">PKR</span>{Math.round(book.value).toLocaleString()}</>, sub: "per month, live contracts", tone: "text-foreground", on: false, click: undefined },
-                { label: "Guards", v: `${book.posted} / ${book.committed}`, sub: "posted against committed", tone: book.posted < book.committed ? "text-heed" : "text-up", on: false, click: undefined },
-                { label: "Ending in 60 days", v: book.ending60.toLocaleString(), sub: "renew or let go", tone: book.ending60 ? "text-heed" : "text-foreground", on: false, click: undefined },
+                { label: "Contracted value", v: <><span className="cur">PKR</span>{Math.round(book.value).toLocaleString()}</>, sub: "per month, live contracts", tone: "text-foreground", on: false,
+                  click: () => {
+                    const rows = filteredRows.filter((r) => r.status === "active").map((r) => ({ r, d: deriveContract(r) }))
+                      .sort((a, b) => Number(b.d.valuePerMonth ?? 0) - Number(a.d.valuePerMonth ?? 0));
+                    setSheet({ kicker: "Contracts · live", title: "Contracted value, by contract", big: `PKR ${Math.round(book.value).toLocaleString()}`,
+                      note: "Per month, at the line rates in force today.",
+                      rows: rows.map(({ r, d }) => ({ label: `${r.client_name} · ${r.contract_code}`, value: Math.round(Number(d.valuePerMonth ?? 0)).toLocaleString(),
+                        hint: book.value ? `${Math.round((Number(d.valuePerMonth ?? 0) / book.value) * 100)}%` : undefined })) });
+                  } },
+                { label: "Guards", v: `${book.posted} / ${book.committed}`, sub: "posted against committed", tone: book.posted < book.committed ? "text-heed" : "text-up", on: false,
+                  click: () => {
+                    const rows = filteredRows.filter((r) => r.status === "active").map((r) => ({ r, d: deriveContract(r) }))
+                      .sort((a, b) => (a.d.activeGuards - a.d.totalCommitted) - (b.d.activeGuards - b.d.totalCommitted));
+                    setSheet({ kicker: "Contracts · live", title: "Posted against committed", big: `${book.posted} / ${book.committed}`,
+                      note: "Shortest first: guards posted on each live contract against the heads it commits.",
+                      rows: rows.map(({ r, d }) => ({ label: `${r.client_name} · ${r.contract_code}`, value: `${d.activeGuards} / ${d.totalCommitted}`,
+                        hint: d.activeGuards < d.totalCommitted ? `${d.totalCommitted - d.activeGuards} short` : d.activeGuards > d.totalCommitted ? `${d.activeGuards - d.totalCommitted} over` : "on contract" })) });
+                  } },
+                { label: "Ending in 60 days", v: book.ending60.toLocaleString(), sub: "renew or let go", tone: book.ending60 ? "text-heed" : "text-foreground", on: false,
+                  click: () => setSheet({ kicker: "Contracts · renewal runway", title: "Ending in 60 days", big: String(book.ending60),
+                    note: book.ending60 ? "Soonest first. Each needs a renewal decision." : "No live contract ends in the next 60 days.",
+                    rows: book.runway.filter((x) => x.days >= 0 && x.days <= 60).map((x) => ({ label: `${x.client} · ${x.code}`, value: `${x.days} days`, hint: `PKR ${Math.round(x.value).toLocaleString()} a month` })),
+                    link: { to: "/super-admin/compliance?tab=renewals", label: "Open Contract Renewals" } }) },
                 { label: "Needs renewal", v: book.needsRenewal.toLocaleString(), sub: "past their end date", tone: book.needsRenewal ? "text-down" : "text-up", on: statusFilter === "needs_renewal", click: () => setStatusFilter(statusFilter === "needs_renewal" ? "all" : "needs_renewal") },
               ].map((t) => {
                 const body = (<><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></>);
-                const cls = `text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 min-w-0 ${t.on ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"} ${t.click ? "hover:border-brand-500/70" : ""}`;
-                return t.click ? <button key={t.label} type="button" onClick={t.click} className={cls}>{body}</button> : <div key={t.label} className={cls}>{body}</div>;
+                const cls = `text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 min-w-0 hover:border-brand-500/70 ${t.on ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"}`;
+                return <button key={t.label} type="button" onClick={t.click} className={cls}>{body}</button>;
               })}
             </div>
             {book.runway.length > 0 && (
@@ -422,6 +445,7 @@ export default function Contracts() {
           </div>
         )}
       </Header>
+      <DetailSheet content={sheet} onClose={() => setSheet(null)} />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
