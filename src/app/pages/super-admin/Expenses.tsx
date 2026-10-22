@@ -335,6 +335,15 @@ type DeferredRow = {
   is_stale: boolean;
 };
 
+// Releases run once a month, at 02:20 on the 1st (run_monthly_ledger_jobs). A
+// schedule whose period has passed but whose expense is dated THIS month was
+// entered after this month's run: it waits for the next one rather than being
+// stuck (2026-10-22 — five such October entries read "Stuck").
+const thisMonthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+const nextRunLabel = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+const awaitsNextRun = (d: { is_stale: boolean; expense_date: string }) => d.is_stale && d.expense_date >= thisMonthStart();
+const isStuck = (d: { is_stale: boolean; expense_date: string }) => d.is_stale && !awaitsNextRun(d);
+
 const emptyForm: ExpenseForm = {
   category_id: "",
   pl_category: "operating_expense",
@@ -2365,7 +2374,7 @@ export default function Expenses() {
                   exportExpenses(
                     deferred.map((d) => ({
                       date: d.expense_date,
-                      particulars: `${d.description ?? ""} — ${d.months_released}/${d.months_total} months released, finishes ${monthLabel(d.final_month.slice(0, 7))}${d.is_stale ? " (STUCK)" : ""}`.trim(),
+                      particulars: `${d.description ?? ""} — ${d.months_released}/${d.months_total} months released, finishes ${monthLabel(d.final_month.slice(0, 7))}${isStuck(d) ? " (STUCK)" : awaitsNextRun(d) ? ` (releases ${nextRunLabel()})` : ""}`.trim(),
                       category: d.category_name ?? "",
                       client: d.shape === "prepaid" ? "Prepaid" : "Service period",
                       amount: d.remaining,
@@ -2569,14 +2578,18 @@ export default function Expenses() {
           })()}
           {activeTab === "deferred" && (() => {
             const live = deferred.filter((d) => d.remaining !== 0);
-            const stuck = live.filter((d) => d.is_stale);
+            const stuck = live.filter(isStuck);
+            const waiting = live.filter(awaitsNextRun);
             const left = live.reduce((n, d) => n + Number(d.remaining), 0);
             const done = deferred.reduce((n, d) => n + d.months_released, 0), all = deferred.reduce((n, d) => n + d.months_total, 0);
             return (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {[
                   { label: "Still to release", v: <><span className="cur">PKR</span>{Math.round(left).toLocaleString()}</>, sub: `across ${live.length} schedule${live.length === 1 ? "" : "s"}`, tone: "" },
-                  { label: "Stuck", v: stuck.length.toLocaleString(), sub: stuck.length ? "a month that should have released has not" : "every schedule is on time", tone: stuck.length ? "text-down" : "text-up" },
+                  { label: "Stuck", v: stuck.length.toLocaleString(),
+                    sub: stuck.length ? "a month that should have released has not"
+                      : waiting.length ? `${waiting.length} entered this month, release ${nextRunLabel()}` : "every schedule is on time",
+                    tone: stuck.length ? "text-down" : "text-up" },
                   { label: "Months released", v: `${done} / ${all}`, sub: "across every schedule", tone: "" },
                   { label: "Prepaid vs service", v: `${deferred.filter((d) => d.shape === "prepaid").length} · ${deferred.filter((d) => d.shape !== "prepaid").length}`, sub: "prepaid · service period", tone: "" },
                 ].map((t) => (
@@ -3208,7 +3221,7 @@ export default function Expenses() {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {deferred.map((d) => (
-                      <tr key={d.expense_id} className={d.is_stale ? "bg-danger-50" : undefined}>
+                      <tr key={d.expense_id} className={isStuck(d) ? "bg-danger-50" : undefined}>
                         <td className="px-4 py-3 text-sm">
                           <div className="text-foreground">{d.description ?? "—"}</div>
                           <div className="text-xs text-muted-foreground">
@@ -3232,10 +3245,16 @@ export default function Expenses() {
                           {/* THE ONE ROW-LEVEL ALARM. no_stale_prepaid_balance
                               goes red for the company; this says WHICH expense,
                               because "something is stuck" is not an instruction. */}
-                          {d.is_stale && (
+                          {isStuck(d) && (
                             <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-danger-100 text-danger-700"
                                   title="Its period has fully passed and it still carries a balance on 1160 — the monthly release run has not finished it.">
                               Stuck
+                            </span>
+                          )}
+                          {awaitsNextRun(d) && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-warning-50 text-warning-700 dark:text-warning-500"
+                                  title="Entered after this month's release run (1st, 02:20). The next run releases it.">
+                              Releases {nextRunLabel()}
                             </span>
                           )}
                         </td>
@@ -4419,7 +4438,8 @@ export default function Expenses() {
                       {d.months_total} months released · PKR {d.released.toLocaleString()} of{" "}
                       {d.amount.toLocaleString()}, PKR {d.remaining.toLocaleString()} still on 1160 ·
                       finishes {monthLabel(d.final_month.slice(0, 7))}
-                      {d.is_stale && " — STUCK: its period has passed and it still carries a balance."}
+                      {isStuck(d) && " — STUCK: its period has passed and it still carries a balance."}
+                      {awaitsNextRun(d) && ` — entered after this month's release run; the run on ${nextRunLabel()} releases it.`}
                     </p>
                   </div>
                 );
