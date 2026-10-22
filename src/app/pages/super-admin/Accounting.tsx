@@ -247,6 +247,9 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   const [chequeFilter, setChequeFilter] = usePageState<"all" | "pending" | "cleared" | "bounced">("Accounting.chequeFilter", "all");
   // Which record type the Cheques section shows: cheques or cash deposits.
   const [chequeSectionView, setChequeSectionView] = useState<"cheques" | "deposits">("cheques");
+  // 2026-10-22 redesign: what sits below the bank cards is one section at a
+  // time instead of four panels stacked down the page.
+  const [bankSection, setBankSection] = usePageState<"cheques" | "reconcile" | "deposits_held" | "fuel">("Accounting.bankSection", "cheques");
   const [chequeBankFilter, setChequeBankFilter] = usePageState<string>("Accounting.chequeBankFilter", "all");
   const [chequeMonthFilter, setChequeMonthFilter] = usePageState<string>("Accounting.chequeMonthFilter", "all");
 
@@ -260,6 +263,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   useEffect(() => {
     if (!focusCheque) return;
     setActiveTab("banks");
+    setBankSection("cheques");
     setChequeSectionView("cheques");
     setChequeBankFilter("all");
     setChequeFilter("all");
@@ -1493,9 +1497,9 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   };
 
   // Per-row entry point: bank is fixed to the row clicked.
-  const openCashDeposit = () => {
+  const openCashDeposit = (bankId?: string) => {
     setSelectedBank(null);
-    setDepositBankId(banks[0]?.id ?? "");
+    setDepositBankId(bankId ?? banks[0]?.id ?? "");
     resetDepositForm();
     setIsDepositModalOpen(true);
   };
@@ -2987,6 +2991,10 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                           <span className="text-[11px] text-muted-foreground">{Math.round(share * 100)}% of the company's bank money</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border">
+                          <Button variant="ghost" size="sm" onClick={() => { setLogBankFilter(bank.id); setLogScope("all"); setIsLogModalOpen(true); }}>
+                            <History className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Transactions
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => openCashDeposit(bank.id)} disabled={!bank.active || bank.owner_type !== "company"}>Deposit</Button>
                           <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)} disabled={!bank.active}>Withdraw</Button>
                           <Button variant="ghost" size="sm" onClick={() => openEditBank(bank)}>Edit</Button>
                           <button
@@ -3006,6 +3014,31 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               )}
             </div>
 
+            {(() => {
+              const pend = cheques.filter((c) => c.status === "pending");
+              return (
+                <div className="flex flex-col gap-2 mb-3">
+                  <Tabs<typeof bankSection>
+                    value={bankSection}
+                    onChange={setBankSection}
+                    items={[
+                      { value: "cheques", label: "Cheques & deposits", count: pend.length || undefined },
+                      { value: "reconcile", label: "Reconciliation" },
+                      { value: "deposits_held", label: "Security deposits" },
+                      { value: "fuel", label: "Fuel cards" },
+                    ]}
+                  />
+                  {bankSection === "cheques" && pend.length > 0 && chequeFilter !== "pending" && (
+                    <button type="button" onClick={() => { setChequeSectionView("cheques"); setChequeFilter("pending"); }}
+                      className="self-start text-left rounded-xl border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:text-warning-500 hover:border-warning-500/60">
+                      {pend.length} cheque{pend.length === 1 ? "" : "s"} waiting to clear · PKR {pend.reduce((n, c) => n + Number(c.amount), 0).toLocaleString()} — show only these
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {bankSection === "cheques" && (
             <div className="bg-card border border-border rounded-2xl p-5 md:p-6">
               <Tabs<"cheques" | "deposits">
                 size="sm"
@@ -3086,7 +3119,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={openCashDeposit}
+                      onClick={() => openCashDeposit()}
                       disabled={banks.length === 0}
                     >
                       <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
@@ -3393,9 +3426,10 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               </div>
               )}
             </div>
-            <BankReconciliation companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />
-            <SecurityDeposits companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />
-            <FuelCards companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />
+            )}
+            {bankSection === "reconcile" && <BankReconciliation companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />}
+            {bankSection === "deposits_held" && <SecurityDeposits companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />}
+            {bankSection === "fuel" && <FuelCards companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />}
             </>
           )}
 
