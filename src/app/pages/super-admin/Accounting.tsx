@@ -1,10 +1,11 @@
 import { loadEmployeeCodeIndex, useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy, Scale, ChevronRight, ChevronDown, Layers } from "lucide-react";
-import { groupLedger, usePayClientIndex } from "../../lib/txGroups";
+import { dayLabel, groupLedger, itemDay, localDay, usePayClientIndex, type TxItem } from "../../lib/txGroups";
+import type { ReconStatus } from "../../lib/reconStatus";
 import Header from "../../components/Header";
 import { useRegion } from "../../lib/region";
 import Tabs from "../../components/Tabs";
@@ -5493,8 +5494,17 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               variant="primary"
               size="md"
               className="flex-1"
-              onClick={() => {
+              onClick={async () => {
                 const bankById = new Map(banks.map((b) => [b.id, b]));
+                // Who each cash withdrawal went to (its reference is the custodian's holding).
+                const { data: locs } = await supabase.from("cash_locations").select("id, name");
+                const holder = new Map(((locs ?? []) as { id: string; name: string }[]).map((l) => [l.id, l.name]));
+                const narrate = (t: BankTransaction) => {
+                  const who = t.kind === "withdraw_to_cash" && t.reference_id ? holder.get(t.reference_id) : undefined;
+                  if (!who) return t.description;
+                  const d = (t.description ?? "").trim();
+                  return /^(Cash withdrawn to custodian|Withdraw from .+ to .+)$/.test(d) || !d ? `To ${who}` : `To ${who} — ${d}`;
+                };
                 let txs = transactions;
                 if (bankExportBankId !== "all") txs = txs.filter((t) => t.bank_account_id === bankExportBankId);
                 if (bankExportFrom) txs = txs.filter((t) => (t.created_at ?? "") >= bankExportFrom);
@@ -5507,7 +5517,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                     return {
                       date: (t.created_at ?? "").slice(0, 10),
                       kind: kindLabel[t.kind] ?? t.kind,
-                      description: t.description,
+                      description: narrate(t),
                       bankName: bk ? `${bk.bank_name} (${bk.account_number})` : "Cash",
                       credit: t.account_delta > 0 ? t.account_delta : 0,
                       debit: t.account_delta < 0 ? -t.account_delta : 0,
@@ -5549,6 +5559,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
           emptyText="No transactions yet."
           depositRefs={new Set(depositsById.keys())}
           onDownloadSlip={downloadSlipByRef}
+          recon={reconStatus}
         />
       </Modal>
 
@@ -5619,6 +5630,7 @@ function HistoryBody({
   emptyText,
   depositRefs,
   onDownloadSlip,
+  recon,
 }: {
   transactions: BankTransaction[];
   banks: BankAccount[];
@@ -5634,6 +5646,8 @@ function HistoryBody({
   emptyText: string;
   depositRefs?: Set<string>;
   onDownloadSlip?: (referenceId: string) => void;
+  /** Each bank's last reconciliation: drawn as a line in that bank's log. */
+  recon?: Map<string, ReconStatus>;
 }) {
   // 2026-10-22: search, a money-in / money-out strip, and payment runs folded
   // into one row (txGroups.ts) — 109 HMC payslips paid from Askari read as one
@@ -5642,9 +5656,28 @@ function HistoryBody({
   const [grouped, setGrouped] = useState(true);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const clients = usePayClientIndex();
+  // Who a cash withdrawal went to: the line's reference is the custodian's cash
+  // holding (record_bank_to_custodian). Shown on the line, searched and exported.
+  const [holders, setHolders] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    void supabase.from("cash_locations").select("id, name").then(({ data }) => {
+      if (alive) setHolders(new Map(((data ?? []) as { id: string; name: string }[]).map((l) => [l.id, l.name])));
+    });
+    return () => { alive = false; };
+  }, []);
+  const custodianOf = (t: BankTransaction) =>
+    t.kind === "withdraw_to_cash" && t.reference_id ? holders.get(t.reference_id) ?? null : null;
+  const describe = (t: BankTransaction) => {
+    const who = custodianOf(t);
+    if (!who) return t.description ?? "—";
+    const d = (t.description ?? "").trim();
+    // the default wording adds nothing once the name is there
+    return /^(Cash withdrawn to custodian|Withdraw from .+ to .+)$/.test(d) || !d ? `To ${who}` : `To ${who} — ${d}`;
+  };
   const q = query.trim().toLowerCase();
   const filtered = transactions.filter((t) => {
-    if (q && !`${t.description ?? ""} ${kindLabel[t.kind] ?? t.kind}`.toLowerCase().includes(q)) return false;
+    if (q && !`${t.description ?? ""} ${kindLabel[t.kind] ?? t.kind} ${custodianOf(t) ?? ""}`.toLowerCase().includes(q)) return false;
     if (bankFilter !== "all") {
       if (bankFilter === "__cash__") {
         if (Number(t.cash_delta) === 0) return false;
@@ -5660,6 +5693,111 @@ function HistoryBody({
     }
     return true;
   });
+
+  // Runs folded (payroll, advances, the day's expenses); one item per run.
+  const at = (t: BankTransaction) => t.created_at;
+  const items: TxItem<BankTransaction>[] = grouped
+    ? groupLedger(filtered, {
+        at,
+        text: (t) => t.description,
+        account: (t) => t.bank_account_id ?? (Number(t.cash_delta) !== 0 ? "cash" : "none"),
+        delta: (t) => Number(t.account_delta) + Number(t.cash_delta),
+        clients,
+        misc: (t) => (t.kind === "expense" ? "expenses" : null),
+      })
+    : filtered.map((row) => ({ kind: "row" as const, row }));
+  const itemTotal = (it: TxItem<BankTransaction>) =>
+    it.kind === "row" ? Number(it.row.account_delta) + Number(it.row.cash_delta) : it.total;
+  // Each day's net, from the items it heads (an item sits under its newest line's day).
+  const dayNet = new Map<string, number>();
+  for (const it of items) { const d = itemDay(it, at); dayNet.set(d, (dayNet.get(d) ?? 0) + itemTotal(it)); }
+  // One bank in view: where its last reconciliation falls.
+  const tally = bankFilter !== "all" && bankFilter !== "__cash__" ? recon?.get(bankFilter) : undefined;
+  const toggle = (k: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  const renderList = () => {
+    const out: ReactElement[] = [];
+    let cur = "", drawn = false;
+    for (const it of items) {
+      const d = itemDay(it, at);
+      if (tally && !drawn && d <= tally.statementDate.slice(0, 10)) {
+        drawn = true;
+        out.push(
+          <tr key="__tally__">
+            <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-success-700 dark:text-success-500 bg-success-50 border-y-2 border-success-200">
+              ✓ Tallied to the statement of {dayLabel(tally.statementDate.slice(0, 10))} — everything below agrees with the bank.
+              {tally.enteredSince > 0 && <span className="font-normal text-muted-foreground"> {tally.enteredSince} line{tally.enteredSince === 1 ? "" : "s"} above entered since.</span>}
+              {tally.parked && <span className="font-normal text-heed"> A difference sits in suspense.</span>}
+            </td>
+          </tr>,
+        );
+      }
+      if (d !== cur) {
+        cur = d;
+        const net = dayNet.get(d) ?? 0;
+        out.push(
+          <tr key={`day-${d}`} className="bg-muted/50">
+            <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{dayLabel(d)}</td>
+            <td className={`px-3 py-1.5 text-xs text-right font-mono font-semibold ${net >= 0 ? "text-success-700" : "text-danger-700"}`}>{net > 0 ? "+" : ""}{Math.round(net).toLocaleString()}</td>
+            <td colSpan={2} className="px-3 py-1.5 text-[11px] text-muted-foreground">day&rsquo;s net</td>
+          </tr>,
+        );
+      }
+      if (it.kind === "row") { out.push(renderTx(it.row, false)); continue; }
+      const isOpen = openGroups.has(it.key);
+      const first = it.rows[it.rows.length - 1], last = it.rows[0];
+      const bank = banks.find((b) => b.id === last.bank_account_id);
+      const span = (x: string | null | undefined) => (x ? new Date(x).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "—");
+      out.push(
+        <tr key={it.key} className="bg-muted/20 hover:bg-muted/40 cursor-pointer" onClick={() => toggle(it.key)}>
+          <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+            <span className="inline-flex items-center gap-1">
+              {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              {span(first.created_at) === span(last.created_at) ? span(last.created_at) : `${span(first.created_at)} – ${span(last.created_at)}`}
+            </span>
+          </td>
+          <td className="px-3 py-2 text-xs text-foreground">{kindLabel[last.kind]}</td>
+          <td className="px-3 py-2 text-xs text-foreground">{bank ? bank.bank_name : Number(last.cash_delta) !== 0 ? "Cash" : "—"}</td>
+          <td className={`px-3 py-2 text-xs text-right font-mono font-semibold ${it.total >= 0 ? "text-success-700" : "text-danger-700"}`}>
+            {it.total > 0 ? "+" : ""}{Math.round(it.total).toLocaleString()}
+          </td>
+          <td className="px-3 py-2 text-xs text-right text-muted-foreground">{it.rows.length} {it.unit}</td>
+          <td className="px-3 py-2 text-xs text-foreground font-medium">
+            {it.title}{it.subtitle ? <span className="text-muted-foreground font-normal"> · {it.subtitle}</span> : null}
+            <span className="block text-[11px] text-muted-foreground font-normal">{isOpen ? "Tap to fold" : `Tap to see all ${it.rows.length}`}</span>
+          </td>
+        </tr>,
+      );
+      if (isOpen) for (const r of it.rows) out.push(renderTx(r, true));
+    }
+    return out;
+  };
+
+  // Export what the log shows: runs as one line each, an opened run with its lines under it.
+  const exportShown = async () => {
+    const { exportTable } = await import("../../lib/excel");
+    const acct = (t: BankTransaction) => banks.find((b) => b.id === t.bank_account_id)?.bank_name ?? (Number(t.cash_delta) !== 0 ? "Cash" : "");
+    const line = (t: BankTransaction, indent: boolean) => [
+      localDay(t.created_at), kindLabel[t.kind] ?? t.kind, acct(t),
+      Number(t.account_delta) + Number(t.cash_delta), `${indent ? "    " : ""}${describe(t)}`, "",
+    ];
+    const rows: (string | number)[][] = [];
+    for (const it of items) {
+      if (it.kind === "row") { rows.push(line(it.row, false)); continue; }
+      const last = it.rows[0];
+      rows.push([localDay(last.created_at), kindLabel[last.kind] ?? last.kind, acct(last), it.total, it.title, `${it.rows.length} ${it.unit}`]);
+      if (openGroups.has(it.key)) for (const r of it.rows) rows.push(line(r, true));
+    }
+    const bankName = bankFilter === "all" ? "All accounts" : bankFilter === "__cash__" ? "Cash" : banks.find((b) => b.id === bankFilter)?.bank_name ?? "Account";
+    exportTable({
+      fileName: `Transaction log — ${bankName}${monthFilter !== "all" ? ` — ${monthFilter}` : ""}.xlsx`,
+      sheetName: "Transaction log",
+      title: `Transaction log — ${bankName}${monthFilter !== "all" ? `, ${monthFilter}` : ""}`,
+      headers: ["Date", "Kind", "Account", "Amount", "Description", "Lines"],
+      rows,
+      columnWidths: [12, 16, 16, 14, 60, 14],
+    });
+  };
 
   return (
     <div className="space-y-3">
@@ -5719,6 +5857,11 @@ function HistoryBody({
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs ${grouped ? "bg-foreground text-background font-semibold" : "bg-card text-muted-foreground border border-border hover:bg-muted/50"}`}>
           <Layers className="w-3.5 h-3.5" /> Group runs
         </button>
+        <button type="button" onClick={() => void exportShown()} disabled={filtered.length === 0}
+          title="Download the log as it is shown — runs as one line, opened runs with their lines"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs bg-card text-muted-foreground border border-border hover:bg-muted/50 disabled:opacity-50">
+          <Download className="w-3.5 h-3.5" /> Export as shown
+        </button>
         <span className="ml-auto text-xs text-muted-foreground">
           {filtered.length} entr{filtered.length === 1 ? "y" : "ies"}
         </span>
@@ -5761,44 +5904,7 @@ function HistoryBody({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {(grouped
-                ? groupLedger(filtered, {
-                    at: (t) => t.created_at,
-                    text: (t) => t.description,
-                    account: (t) => t.bank_account_id ?? (Number(t.cash_delta) !== 0 ? "cash" : "none"),
-                    delta: (t) => Number(t.account_delta) + Number(t.cash_delta),
-                    clients,
-                  })
-                : filtered.map((row) => ({ kind: "row" as const, row }))
-              ).flatMap((it) => {
-                if (it.kind === "row") return [renderTx(it.row, false)];
-                const isOpen = openGroups.has(it.key);
-                const first = it.rows[it.rows.length - 1], last = it.rows[0];
-                const bank = banks.find((b) => b.id === last.bank_account_id);
-                const span = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "—");
-                const head = (
-                  <tr key={it.key} className="bg-muted/30 hover:bg-muted/50 cursor-pointer"
-                    onClick={() => setOpenGroups((s) => { const n = new Set(s); if (n.has(it.key)) n.delete(it.key); else n.add(it.key); return n; })}>
-                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        {span(first.created_at) === span(last.created_at) ? span(last.created_at) : `${span(first.created_at)} – ${span(last.created_at)}`}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-foreground">{kindLabel[last.kind]}</td>
-                    <td className="px-3 py-2 text-xs text-foreground">{bank ? bank.bank_name : Number(last.cash_delta) !== 0 ? "Cash" : "—"}</td>
-                    <td className={`px-3 py-2 text-xs text-right font-mono font-semibold ${it.total >= 0 ? "text-success-700" : "text-danger-700"}`}>
-                      {it.total > 0 ? "+" : ""}{Math.round(it.total).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-right text-muted-foreground">{it.rows.length} payments</td>
-                    <td className="px-3 py-2 text-xs text-foreground font-medium">
-                      {it.title}{it.subtitle ? <span className="text-muted-foreground font-normal"> · {it.subtitle}</span> : null}
-                      <span className="block text-[11px] text-muted-foreground font-normal">{isOpen ? "Tap to fold" : `Tap to see all ${it.rows.length}`}</span>
-                    </td>
-                  </tr>
-                );
-                return isOpen ? [head, ...it.rows.map((r) => renderTx(r, true))] : [head];
-              })}
+              {renderList()}
             </tbody>
           </table>
         )}
@@ -5833,7 +5939,7 @@ function HistoryBody({
                               {[bank.branch_name, bank.branch_code].filter(Boolean).join(" · ")}
                             </div>
                           )}
-                          {cd !== 0 && <div className="text-muted-foreground">↔ Cash</div>}
+                          {cd !== 0 && <div className="text-muted-foreground">{custodianOf(t) ? `→ ${custodianOf(t)}` : "↔ Cash"}</div>}
                         </>
                       ) : cd !== 0 ? "Cash" : "—"}
                     </td>
@@ -5878,7 +5984,7 @@ function HistoryBody({
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       <div className="flex items-center gap-2">
-                        <span className="flex-1">{t.description ?? "—"}</span>
+                        <span className="flex-1">{describe(t)}</span>
                         {t.kind === "deposit" && t.reference_id && onDownloadSlip && depositRefs?.has(t.reference_id) && (
                           <button
                             type="button"

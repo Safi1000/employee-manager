@@ -1,9 +1,9 @@
 import { loadEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2, Search, Layers, ChevronRight, ChevronDown } from "lucide-react";
-import { groupLedger, usePayClientIndex } from "../../lib/txGroups";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2, Search, Layers, ChevronRight, ChevronDown, Download } from "lucide-react";
+import { dayLabel, groupLedger, itemDay, usePayClientIndex, type TxItem } from "../../lib/txGroups";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
@@ -153,11 +153,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
 
   // Transfer modal
   const [isTransferOpen, setIsTransferOpen] = useState(false);
+  // 2026-10-22: a transfer here is custodian → custodian only. Cash comes out of
+  // a bank in ONE place — Withdraw on the bank (Banks & Ledgers) — which names
+  // the custodian; the second way in, from this modal, is gone.
   const [transferForm, setTransferForm] = useState({
-    // from_type: where the cash comes from — another office-staff custodian, or a
-    // bank (a withdrawal that raises Cash in Hand).
-    from_type: "staff" as "staff" | "bank",
-    date: today(), from_location_id: "", from_bank_id: "", to_location_id: "", amount: "", notes: "",
+    date: today(), from_location_id: "", to_location_id: "", amount: "", notes: "",
   });
   const [transferSaving, setTransferSaving] = useState(false);
 
@@ -504,6 +504,89 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     for (const e of filteredLedger) { cin += e.cashIn; cout += e.cashOut; }
     return { cin, cout, net: cin - cout };
   }, [filteredLedger]);
+  // Runs folded (payroll, advances, a custodian's expenses on one day).
+  const ledgerItems: TxItem<LedgerEntry>[] = ledgerGrouped
+    ? groupLedger(filteredLedger, {
+        at: (e) => e.date, text: (e) => e.detail, account: (e) => e.locationId,
+        delta: (e) => e.cashIn - e.cashOut, clients: payClients,
+        // an expense paid from the custody (built as "e-<expense id>")
+        misc: (e) => (e.id.startsWith("e-") ? "expenses" : null),
+      })
+    : filteredLedger.map((row) => ({ kind: "row" as const, row }));
+  const ledgerItemTotal = (it: TxItem<LedgerEntry>) => (it.kind === "row" ? it.row.cashIn - it.row.cashOut : it.total);
+  const toggleRun = (k: string) => setOpenRuns((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  const renderLedgerList = () => {
+    const dayNet = new Map<string, number>();
+    for (const it of ledgerItems) { const d = itemDay(it, (e) => e.date); dayNet.set(d, (dayNet.get(d) ?? 0) + ledgerItemTotal(it)); }
+    const out: ReactElement[] = [];
+    let cur = "";
+    for (const it of ledgerItems) {
+      const d = itemDay(it, (e) => e.date);
+      if (d !== cur) {
+        cur = d;
+        const net = dayNet.get(d) ?? 0;
+        out.push(
+          <tr key={`day-${d}`} className="bg-muted/50">
+            <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{dayLabel(d)}</td>
+            <td className={`px-3 py-1.5 text-right text-xs font-ledger font-semibold ${net >= 0 ? "text-success-700" : "text-danger-700"}`}>{net > 0 ? "+" : ""}{Math.round(net).toLocaleString()}</td>
+            <td colSpan={2} className="px-3 py-1.5 text-[11px] text-muted-foreground">day&rsquo;s net</td>
+          </tr>,
+        );
+      }
+      if (it.kind === "row") { out.push(ledgerRow(it.row, false)); continue; }
+      const isOpen = openRuns.has(it.key);
+      const first = it.rows[it.rows.length - 1], last = it.rows[0];
+      out.push(
+        <tr key={it.key} className="bg-muted/20 hover:bg-muted/40 cursor-pointer" onClick={() => toggleRun(it.key)}>
+          <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+            <span className="inline-flex items-center gap-1">
+              {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              {first.date === last.date ? last.date : `${first.date} – ${last.date}`}
+            </span>
+          </td>
+          <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[last.kind]}</td>
+          <td className="px-3 py-2 text-xs text-foreground">{staffName(last.employeeId)}</td>
+          <td className={`px-3 py-2 text-right text-xs font-ledger font-semibold ${it.total >= 0 ? "text-success-700" : "text-danger-700"}`}>{it.total > 0 ? "+" : ""}{Math.round(it.total).toLocaleString()}</td>
+          <td className="px-3 py-2 text-right text-xs font-ledger text-foreground whitespace-nowrap">
+            <span className="text-muted-foreground/70">Cash </span>{Math.round(first.before).toLocaleString()} → {Math.round(last.after).toLocaleString()}
+          </td>
+          <td className="px-3 py-2 text-xs text-foreground font-medium">
+            {it.title} · {it.rows.length} {it.unit}
+            <span className="block text-[11px] text-muted-foreground font-normal">{isOpen ? "Tap to fold" : `Tap to see all ${it.rows.length}`}</span>
+          </td>
+        </tr>,
+      );
+      if (isOpen) for (const r of it.rows) out.push(ledgerRow(r, true));
+    }
+    return out;
+  };
+
+  // Export what the log shows: runs as one line each, an opened run with its lines under it.
+  const exportLedgerShown = async () => {
+    const { exportTable } = await import("../../lib/excel");
+    const line = (e: LedgerEntry, indent: boolean) => [
+      e.date, LEDGER_KIND_LABEL[e.kind], staffName(e.employeeId), e.cashIn - e.cashOut, Math.round(e.before), Math.round(e.after),
+      `${indent ? "    " : ""}${e.detail}`, "",
+    ];
+    const rows: (string | number)[][] = [];
+    for (const it of ledgerItems) {
+      if (it.kind === "row") { rows.push(line(it.row, false)); continue; }
+      const first = it.rows[it.rows.length - 1], last = it.rows[0];
+      rows.push([last.date, LEDGER_KIND_LABEL[last.kind], staffName(last.employeeId), it.total, Math.round(first.before), Math.round(last.after), it.title, `${it.rows.length} ${it.unit}`]);
+      if (openRuns.has(it.key)) for (const r of it.rows) rows.push(line(r, true));
+    }
+    const who = ledgerStaffFilter === "all" ? "All custodians" : staffName(ledgerStaffFilter);
+    exportTable({
+      fileName: `Cash custody log — ${who}${ledgerMonth !== "all" ? ` — ${ledgerMonth}` : ""}.xlsx`,
+      sheetName: "Cash custody log",
+      title: `Cash custody log — ${who}${ledgerMonth !== "all" ? `, ${ledgerMonth}` : ""}`,
+      headers: ["Date", "Kind", "Custodian", "Amount", "Cash before", "Cash after", "Description", "Lines"],
+      rows,
+      columnWidths: [12, 20, 20, 14, 14, 14, 60, 14],
+    });
+  };
+
   // One log line; `nested` when it sits inside an opened payment run.
   const ledgerRow = (e: LedgerEntry, nested: boolean) => {
     const delta = e.cashIn - e.cashOut;
@@ -687,10 +770,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
 
   const saveTransfer = async () => {
     if (!companyId || !transferForm.to_location_id || !transferForm.amount) return;
-    const fromBank = transferForm.from_type === "bank";
-    if (!fromBank && !transferForm.from_location_id) return;
-    if (fromBank && !transferForm.from_bank_id) { setError("Select the bank to withdraw from."); return; }
-    if (!fromBank && transferForm.from_location_id === transferForm.to_location_id) {
+    if (!transferForm.from_location_id) return;
+    if (transferForm.from_location_id === transferForm.to_location_id) {
       setError("From and To locations must be different.");
       return;
     }
@@ -699,32 +780,19 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     try {
       const amt = parseFloat(transferForm.amount);
       if (isNaN(amt) || amt <= 0) throw new Error("Enter a valid amount");
-      if (fromBank) {
-        // Bank → office staff: withdrawal that raises Cash in Hand and credits the
-        // custodian, done atomically (bank −, Cash in Hand +, custody transfer, log).
-        const { error: e } = await supabase.rpc("record_bank_to_custodian", {
-          p_bank_account_id: transferForm.from_bank_id,
-          p_custodian_location_id: transferForm.to_location_id,
-          p_amount: amt,
-          p_date: transferForm.date,
-          p_notes: transferForm.notes || null,
-        });
-        if (e) throw e;
-      } else {
-        // Office staff → office staff: pure custody move; Cash in Hand unchanged.
-        // Routed through record_custody_transfer (0484, accounting.edit) so the row
-        // and its GL posting are one gated write — no raw insert on the table.
-        const { error: e } = await supabase.rpc("record_custody_transfer", {
-          p_from_location_id: transferForm.from_location_id,
-          p_to_location_id: transferForm.to_location_id,
-          p_amount: amt,
-          p_date: transferForm.date,
-          p_notes: transferForm.notes || null,
-        });
-        if (e) throw e;
-      }
+      // Office staff → office staff: pure custody move; Cash in Hand unchanged.
+      // Routed through record_custody_transfer (0484, accounting.edit) so the row
+      // and its GL posting are one gated write — no raw insert on the table.
+      const { error: e } = await supabase.rpc("record_custody_transfer", {
+        p_from_location_id: transferForm.from_location_id,
+        p_to_location_id: transferForm.to_location_id,
+        p_amount: amt,
+        p_date: transferForm.date,
+        p_notes: transferForm.notes || null,
+      });
+      if (e) throw e;
       setIsTransferOpen(false);
-      setTransferForm({ from_type: "staff", date: today(), from_location_id: "", from_bank_id: "", to_location_id: "", amount: "", notes: "" });
+      setTransferForm({ date: today(), from_location_id: "", to_location_id: "", amount: "", notes: "" });
       await loadData();
     } catch (e: any) { setError(e.message); }
     finally { setTransferSaving(false); }
@@ -984,6 +1052,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs ${ledgerGrouped ? "bg-foreground text-background font-semibold" : "bg-card text-muted-foreground border border-border hover:bg-muted/50"}`}>
               <Layers className="w-3.5 h-3.5" /> Group runs
             </button>
+            <button type="button" onClick={() => void exportLedgerShown()} disabled={filteredLedger.length === 0}
+              title="Download the log as it is shown — runs as one line, opened runs with their lines"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs bg-card text-muted-foreground border border-border hover:bg-muted/50 disabled:opacity-50">
+              <Download className="w-3.5 h-3.5" /> Export as shown
+            </button>
             <span className="ml-auto text-xs text-muted-foreground">{filteredLedger.length} entr{filteredLedger.length === 1 ? "y" : "ies"}</span>
           </div>
 
@@ -1016,39 +1089,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {(ledgerGrouped
-                    ? groupLedger(filteredLedger, {
-                        at: (e) => e.date, text: (e) => e.detail, account: (e) => e.locationId,
-                        delta: (e) => e.cashIn - e.cashOut, clients: payClients,
-                      })
-                    : filteredLedger.map((row) => ({ kind: "row" as const, row }))
-                  ).flatMap((it) => {
-                    if (it.kind === "row") return [ledgerRow(it.row, false)];
-                    const isOpen = openRuns.has(it.key);
-                    const first = it.rows[it.rows.length - 1], last = it.rows[0];
-                    const head = (
-                      <tr key={it.key} className="bg-muted/30 hover:bg-muted/50 cursor-pointer"
-                        onClick={() => setOpenRuns((s) => { const n = new Set(s); if (n.has(it.key)) n.delete(it.key); else n.add(it.key); return n; })}>
-                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1">
-                            {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            {first.date === last.date ? last.date : `${first.date} – ${last.date}`}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-foreground">{LEDGER_KIND_LABEL[last.kind]}</td>
-                        <td className="px-3 py-2 text-xs text-foreground">{staffName(last.employeeId)}</td>
-                        <td className={`px-3 py-2 text-right text-xs font-ledger font-semibold ${it.total >= 0 ? "text-success-700" : "text-danger-700"}`}>{it.total > 0 ? "+" : ""}{Math.round(it.total).toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-xs font-ledger text-foreground whitespace-nowrap">
-                          <span className="text-muted-foreground/70">Cash </span>{Math.round(first.before).toLocaleString()} → {Math.round(last.after).toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-foreground font-medium">
-                          {it.title} · {it.rows.length} payments
-                          <span className="block text-[11px] text-muted-foreground font-normal">{isOpen ? "Tap to fold" : `Tap to see all ${it.rows.length}`}</span>
-                        </td>
-                      </tr>
-                    );
-                    return isOpen ? [head, ...it.rows.map((r) => ledgerRow(r, true))] : [head];
-                  })}
+                  {renderLedgerList()}
                 </tbody>
               </table>
             )}
@@ -1131,20 +1172,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       <Modal isOpen={isTransferOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsTransferOpen(false)} title="Record Custody Transfer" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            {transferForm.from_type === "bank"
-              ? "Withdraw cash from a bank to an office-staff custodian. This raises Cash in Hand and reduces the bank."
-              : "Move cash from one office-staff custodian to another. Cash in Hand is unchanged — only who holds it."}
+            Move cash from one custodian to another. Cash in Hand is unchanged — only who holds it.
           </p>
-          {/* From-source toggle */}
-          <div className="flex gap-1 bg-muted rounded-xl p-1 w-fit max-w-full overflow-x-auto">
-            {([["staff", "From Office Staff"], ["bank", "From Bank"]] as const).map(([k, l]) => (
-              <button key={k} type="button"
-                onClick={() => setTransferForm({ ...transferForm, from_type: k, from_location_id: "", from_bank_id: "" })}
-                className={`px-3 py-1.5 text-sm rounded transition-colors ${transferForm.from_type === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                {l}
-              </button>
-            ))}
-          </div>
+          <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/40 px-3 py-2">
+            Cash out of a bank to a custodian is recorded in one place: <span className="text-foreground font-medium">Bank accounts → Withdraw</span> on that bank, where you choose who receives it.
+          </p>
           <div>
             <label className="block text-sm text-foreground mb-1">Date *</label>
             <input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })}
@@ -1152,16 +1184,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-foreground mb-1">{transferForm.from_type === "bank" ? "From (bank) *" : "From (office staff) *"}</label>
-              {transferForm.from_type === "bank" ? (
-                <ThemedSelect value={transferForm.from_bank_id} onChange={(e) => setTransferForm({ ...transferForm, from_bank_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
-                  <option value="">Select bank…</option>
-                  {banks.filter((b) => b.active).map((b) => (
-                    <option key={b.id} value={b.id}>{b.bank_name}{b.account_number ? ` ••${String(b.account_number).slice(-4)}` : ""} — {fmt(b.balance)}</option>
-                  ))}
-                </ThemedSelect>
-              ) : (
+              <label className="block text-sm text-foreground mb-1">From (custodian) *</label>
                 <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                   <option value="">Select…</option>
@@ -1170,10 +1193,9 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                     <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id ?? l.custodian_partner_id)} — holds {fmt(heldCash(l))}</option>
                   ))}
                 </ThemedSelect>
-              )}
             </div>
             <div>
-              <label className="block text-sm text-foreground mb-1">To (office staff) *</label>
+              <label className="block text-sm text-foreground mb-1">To (custodian) *</label>
               <ThemedSelect value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40">
                 <option value="">Select…</option>

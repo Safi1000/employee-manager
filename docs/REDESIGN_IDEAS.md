@@ -306,14 +306,20 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   description. A "Group runs" switch gives the flat list back.
 - **Built** — A search box (name, code, client, description) and a money in /
   money out / net strip for whatever the filters show, on both logs.
-- **Idea** — Day headers with each day's net, so a long log reads as a
-  statement.
-- **Idea** — Tick lines off against the bank statement inside the log (the
-  bank reconciliation's statement date drawn as a line), so "tallied to" is
-  visible where the lines are.
-- **Idea** — Expenses from one custodian on one day fold the same way
-  ("Gul Rehman — 6 expenses on 13 Oct").
-- **Idea** — Export the log as it is shown (grouped), for sending to a partner.
+- **Built** — Day headers with each day's net on both logs.
+- **Built** — One bank in view: its last reconciliation drawn in the log —
+  "Tallied to the statement of …", with lines entered since and any
+  suspense noted. (Cash custody has no statement to tally against.)
+- **Built** — Expenses from one account or custodian on one day fold into one
+  row ("Expenses · 6 expenses").
+- **Built** — "Export as shown": the log as displayed — runs as one line,
+  opened runs with their lines under them.
+- **Built** — A cash withdrawal names the custodian it went to ("To Gul
+  Rehman"), on the log, in its search and exports, and in the Bank Statement
+  export.
+- **Built** — One way to move bank money to a custodian: Withdraw on the bank.
+  Cash Custody's transfer is custodian → custodian only (its "From Bank" option
+  removed), with a pointer to Withdraw.
 
 ## Clients, Contracts, Invoices
 

@@ -21,6 +21,8 @@ export type TxGroup<T> = {
   key: string;
   title: string;
   subtitle: string;
+  /** What each line is, for the count: "payments", "expenses". */
+  unit: string;
   rows: T[];
   total: number;
 };
@@ -79,6 +81,9 @@ export function groupLedger<T>(rows: T[], o: {
   delta: (r: T) => number;
   clients: PayClientIndex;
   windowDays?: number;
+  /** Any other line that folds by account and DAY — e.g. expenses — named by
+   *  what it returns ("expenses"); null leaves the line alone. */
+  misc?: (r: T) => string | null;
 }): TxItem<T>[] {
   const win = (o.windowDays ?? 3) * DAY;
   const items: (TxItem<T> & { last?: number })[] = [];
@@ -86,7 +91,7 @@ export function groupLedger<T>(rows: T[], o: {
   for (const r of rows) {
     const text = o.text(r) ?? "";
     const t = Date.parse(o.at(r) ?? "") || 0;
-    let key: string | null = null, title = "", subtitle = "";
+    let key: string | null = null, title = "", subtitle = "", unit = "payments";
     const p = PAYROLL.exec(text);
     const a = p ? null : ADVANCE.exec(text);
     if (p) {
@@ -99,6 +104,15 @@ export function groupLedger<T>(rows: T[], o: {
       const client = o.clients.get(a[1]) ?? "Client not found";
       key = `adv|${o.account(r)}|${client}`;
       title = `${client} — advances`;
+    } else {
+      const m = o.misc?.(r);
+      if (m) {
+        // Same account, same calendar day: the key carries the day, so the
+        // time window never joins two days.
+        key = `misc|${o.account(r)}|${m}|${localDay(o.at(r))}`;
+        title = m.charAt(0).toUpperCase() + m.slice(1);
+        unit = m;
+      }
     }
     if (!key) { items.push({ kind: "row", row: r }); continue; }
     const g = open.get(key);
@@ -106,9 +120,29 @@ export function groupLedger<T>(rows: T[], o: {
       g.rows.push(r); g.total += o.delta(r); g.last = t;
       continue;
     }
-    const ng = { kind: "group" as const, key: `${key}|${t}`, title, subtitle, rows: [r], total: o.delta(r), last: t };
+    const ng = { kind: "group" as const, key: `${key}|${t}`, title, subtitle, unit, rows: [r], total: o.delta(r), last: t };
     open.set(key, ng);
     items.push(ng);
   }
   return items.map((it) => (it.kind === "group" && it.rows.length === 1 ? { kind: "row", row: it.rows[0] } : it));
+}
+
+/** A date or timestamp as the local calendar day, "YYYY-MM-DD". */
+export function localDay(d: string | null | undefined): string {
+  if (!d) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return d.slice(0, 10);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+
+/** "Tue 21 Oct" for a day header. */
+export function dayLabel(day: string): string {
+  if (!day) return "—";
+  return new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The day an item sits under: the day of its newest line. */
+export function itemDay<T>(it: TxItem<T>, at: (r: T) => string | null | undefined): string {
+  return localDay(at(it.kind === "row" ? it.row : it.rows[0]));
 }
