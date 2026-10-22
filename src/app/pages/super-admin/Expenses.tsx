@@ -820,7 +820,6 @@ export default function Expenses() {
   const addAdvEmployeeOptions = useMemo(() => {
     const q = advEmpSearch.trim().toLowerCase();
     let list = employees;
-    if (advForm.client_id) list = list.filter((e) => e.client_id === advForm.client_id);
     if (q) {
       list = list.filter(
         (e) =>
@@ -831,12 +830,11 @@ export default function Expenses() {
       );
     }
     return list.slice(0, 25);
-  }, [employees, advForm.client_id, advEmpSearch]);
+  }, [employees, advEmpSearch]);
 
   const editAdvEmployeeOptions = useMemo(() => {
     const q = advEditEmpSearch.trim().toLowerCase();
     let list = employees;
-    if (advEditForm.client_id) list = list.filter((e) => e.client_id === advEditForm.client_id);
     if (q) {
       list = list.filter(
         (e) =>
@@ -847,7 +845,7 @@ export default function Expenses() {
       );
     }
     return list.slice(0, 25);
-  }, [employees, advEditForm.client_id, advEditEmpSearch]);
+  }, [employees, advEditEmpSearch]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -4744,34 +4742,6 @@ export default function Expenses() {
           </div>
         )}
         <div>
-          <label className="block text-sm text-foreground mb-1">Client (optional)</label>
-          <ThemedSelect
-            value={state.client_id}
-            onChange={(e) => {
-              const newClientId = e.target.value;
-              const emp = employees.find((x) => x.id === state.employee_id);
-              const keep = !newClientId || !emp || emp.client_id === newClientId;
-              setState({
-                ...state,
-                client_id: newClientId,
-                employee_id: keep ? state.employee_id : "",
-              });
-              if (!keep) setEmpQuery("");
-            }}
-            className="w-full px-4 py-2 border border-border rounded-xl text-sm"
-          >
-            <option value="">No client (direct)</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </ThemedSelect>
-          <p className="text-xs text-muted-foreground mt-1">
-            When set, the employee list below is filtered to that client's employees.
-          </p>
-        </div>
-        <div>
           <label className="block text-sm text-foreground mb-1">Employee *</label>
           {selectedEmp ? (
             <div className="flex items-center justify-between px-3 py-2 border border-border rounded-xl bg-muted/50">
@@ -4811,11 +4781,7 @@ export default function Expenses() {
                       key={emp.id}
                       type="button"
                       onClick={() => {
-                        setState({
-                          ...state,
-                          employee_id: emp.id,
-                          client_id: state.client_id || emp.client_id || "",
-                        });
+                        setState({ ...state, employee_id: emp.id, client_id: emp.client_id || "" });
                         setEmpQuery("");
                       }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 border-b border-border last:border-b-0"
@@ -4831,6 +4797,29 @@ export default function Expenses() {
               </div>
             </>
           )}
+        </div>
+        <div>
+          <label className="block text-sm text-foreground mb-1">Client</label>
+          <ThemedSelect
+            value={state.client_id}
+            onChange={(e) => setState({ ...state, client_id: e.target.value })}
+            className="w-full px-4 py-2 border border-border rounded-xl text-sm"
+          >
+            <option value="">No client (direct)</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </ThemedSelect>
+          {/* 2026-10-22: the client comes from the employee picked; change it only for an exception. */}
+          <p className="text-xs text-muted-foreground mt-1">
+            {selectedEmp
+              ? state.client_id === (selectedEmp.client_id ?? "")
+                ? "Filled from the employee's client."
+                : "Differs from the employee's own client — the advance is charged to this one."
+              : "Filled in when you pick the employee."}
+          </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
