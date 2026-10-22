@@ -11,6 +11,7 @@ import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { isSeparatedState } from "../../lib/employmentWindow";
 import { PageStateScope } from "../../lib/pageState";
+import { useNavigate } from "react-router";
 
 // Payroll Run — a scoped Draft → Review → Finance Verify workflow.
 //   • A "scope" is either a real CLIENT or a client-less CATEGORY group
@@ -87,6 +88,7 @@ export default function PayrollRun() {
       };
     } catch { return {}; }
   }, []);
+  const navigate = useNavigate();
   const [month, setMonth] = useState(saved.month ?? monthNow());
   const period = `${month}-01`;
 
@@ -492,6 +494,26 @@ export default function PayrollRun() {
     setTab("review"); setExpanded(s.key);
   };
 
+  // 2026-10-22: every Draft scope whose attendance is cleared moves in one go.
+  // Each is re-checked live (Rule 8) exactly as the single move does; any that
+  // fail are named and stay in Draft.
+  const moveAllReady = async () => {
+    const ready = draftScopes.filter((s) => !s.verifiable || verified.has(s.key));
+    if (ready.length === 0) return;
+    setBusyKey("__draft_all__"); setErr(null);
+    const failed: string[] = [];
+    for (const s of ready) {
+      if (!(await isVerifiedNow(s))) { failed.push(s.name); continue; }
+      const { error } = await supabase.from("payroll_run_phases")
+        .insert({ client_id: s.clientId, category: s.category, period_month: period, phase: "review", moved_by: profile?.id ?? null });
+      if (error) failed.push(`${s.name} (${error.message})`);
+    }
+    setBusyKey(null);
+    if (failed.length) setErr(`Not moved — ${failed.join(", ")}.`);
+    await load();
+    if (failed.length < ready.length) setTab("review");
+  };
+
   // Back to Draft: delete the phase row (frees the month for un-verify again).
   const backToDraft = async (s: Scope) => {
     setBusyKey(s.key); setErr(null);
@@ -615,6 +637,18 @@ export default function PayrollRun() {
     );
   };
 
+  // What a scope holds, on its row without opening it (2026-10-22): headcount
+  // always; money where it exists — saved payslips (Finance Verify), or the
+  // live figures a Review roster reported once opened.
+  const people = (s: Scope) => { const n = rowsByScope.get(s.key)?.length ?? 0; return `${n} ${n === 1 ? "person" : "people"}`; };
+  const moneyLine = (s: Scope): string | null => {
+    const t = liveTotalsByKey.get(s.key) ?? totalsByKey.get(s.key);
+    if (!t) return null;
+    const net = t.disbursed + t.notDisbursed;
+    if (net === 0 && t.advance === 0) return null;
+    return `net PKR ${net.toLocaleString()}${t.advance ? ` · advance ${t.advance.toLocaleString()}` : ""}${t.disbursedCount ? ` · ${t.disbursedCount} paid` : ""}`;
+  };
+
   const ScopeIcon = ({ s }: { s: Scope }) =>
     s.category ? <Users className="w-5 h-5 text-muted-foreground shrink-0" strokeWidth={1.5} /> : <Building2 className="w-5 h-5 text-muted-foreground shrink-0" strokeWidth={1.5} />;
 
@@ -646,6 +680,17 @@ export default function PayrollRun() {
               <div className="flex h-2.5 rounded-full overflow-hidden bg-muted" aria-hidden="true">
                 {TABS.map((t) => <span key={t.key} className="h-full" style={{ width: `${(t.count / total) * 100}%`, background: tone[t.key] }} />)}
               </div>
+              {(() => {
+                // The month's money that exists as payslips — written at Finance Verify.
+                let net = 0, paid = 0, n = 0;
+                for (const t of totalsByKey.values()) { net += t.disbursed + t.notDisbursed; paid += t.disbursed; n += t.disbursedCount + t.notDisbursedCount; }
+                return n > 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    {fmtMonth(month)} payslips: <span className="font-ledger text-foreground font-semibold">PKR {net.toLocaleString()}</span> net across {n} ·{" "}
+                    <span className="font-ledger">PKR {paid.toLocaleString()}</span> disbursed · <span className="font-ledger">PKR {(net - paid).toLocaleString()}</span> to pay
+                  </div>
+                ) : null;
+              })()}
             </div>
           );
         })()}
@@ -745,6 +790,20 @@ export default function PayrollRun() {
             {/* ── DRAFT ── */}
             {tab === "draft" && (
               <div className="space-y-3">
+                {(() => {
+                  const ready = draftScopes.filter((s) => !s.verifiable || verified.has(s.key)).length;
+                  const blocked = draftScopes.length - ready;
+                  return draftScopes.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <span className="text-muted-foreground">{ready} ready · {blocked} waiting on attendance</span>
+                      {ready > 1 && (
+                        <Button size="sm" variant="primary" className="ml-auto" disabled={busyKey === "__draft_all__"} onClick={() => void moveAllReady()}>
+                          {busyKey === "__draft_all__" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Move all {ready} ready to Review <ArrowRight className="w-4 h-4 ml-1.5" /></>}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
                 {draftScopes.length === 0 && (
                   <p className="text-sm text-muted-foreground py-8 text-center">
                     {search.trim()
@@ -759,7 +818,7 @@ export default function PayrollRun() {
                     <div key={s.key} className={`bg-card rounded-xl border p-4 flex items-center gap-3 ${blocked ? "border-warning-200 dark:border-warning-500/30 bg-warning-50/40 dark:bg-warning-500/8" : "border-border"}`}>
                       <ScopeIcon s={s} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span></p>
                         {!s.verifiable ? (
                           <p className="text-xs text-muted-foreground">Not gated (no attendance verification for this group)</p>
                         ) : ok ? (
@@ -773,7 +832,9 @@ export default function PayrollRun() {
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Move to Review <ArrowRight className="w-4 h-4 ml-1.5" /></>}
                         </Button>
                       ) : (
-                        <span className="text-xs text-muted-foreground italic px-2">Blocked</span>
+                        <Button size="sm" variant="ghost" onClick={() => navigate("/super-admin/attendance-run")}>
+                          Open attendance <ArrowRight className="w-4 h-4 ml-1.5" />
+                        </Button>
                       )}
                     </div>
                   );
@@ -800,10 +861,11 @@ export default function PayrollRun() {
                           <ChevronRight className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
                           <ScopeIcon s={s} />
                           <span className="min-w-0">
-                            <span className="text-sm font-medium text-foreground truncate block">{s.name}</span>
-                            {verifiedAt.get(s.key) && (
-                              <span className="text-[11px] text-muted-foreground block">Attendance verified: {fmtStamp(verifiedAt.get(s.key))}</span>
-                            )}
+                            <span className="text-sm font-medium text-foreground truncate block">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span></span>
+                            <span className="text-[11px] text-muted-foreground block">
+                              {moneyLine(s) ?? (open ? "Computing…" : "Open to compute pay")}
+                              {verifiedAt.get(s.key) ? ` · attendance verified ${fmtStamp(verifiedAt.get(s.key))}` : ""}
+                            </span>
                           </span>
                           {/* Rule 10: OPS verification revoked while past Draft — warn, don't auto-revert. */}
                           {s.verifiable && !verified.has(s.key) && (
@@ -859,7 +921,8 @@ export default function PayrollRun() {
                   <div key={s.key} className={`rounded-xl border p-4 flex items-center gap-2 flex-wrap ${locked ? "bg-success-50/40 dark:bg-success-500/8 border-success-200 dark:border-success-500/30" : "bg-card border-border"}`}>
                     <ShieldCheck className={`w-5 h-5 shrink-0 ${locked ? "text-success-600" : "text-brand-600"}`} strokeWidth={1.5} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
+                      <p className="text-sm font-medium text-foreground truncate">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span></p>
+                      {moneyLine(s) && <p className="text-xs font-ledger text-foreground">{moneyLine(s)}</p>}
                       {verifiedAt.get(s.key) && (
                         <p className="text-[11px] text-muted-foreground">Attendance verified: {fmtStamp(verifiedAt.get(s.key))}</p>
                       )}
@@ -873,9 +936,14 @@ export default function PayrollRun() {
                       </span>
                     )}
                     {locked ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 dark:text-success-500">
-                        <Lock className="w-3.5 h-3.5" /> Locked — Finance Verified, cannot be reversed
-                      </span>
+                      <>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 dark:text-success-500">
+                          <Lock className="w-3.5 h-3.5" /> Finance verified
+                        </span>
+                        <Button size="sm" variant="secondary" onClick={() => navigate("/super-admin/payroll")}>
+                          Disburse in Payslips <ArrowRight className="w-4 h-4 ml-1.5" />
+                        </Button>
+                      </>
                     ) : (
                       <>
                         <Button size="sm" variant="ghost" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setPhase(s, "review")}>Back to Review</Button>
