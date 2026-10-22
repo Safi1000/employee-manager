@@ -680,7 +680,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             "client_id, branch_id, contract_id, contract_line_id, category, shift, status, lifecycle_state, " +
             "base_salary, per_day_salary, pay_basis, daily_rate, allowance, bank_name, account_title, bank_account, bank_branch_code, iban, " +
             "cnic_number, father_or_husband_name, designation, current_address, join_date, last_working_day, termination_date, exit_date, " +
-            "eligible_for_rehire, assignment_effective_from, assignment_effective_to, opening_leaves, opening_leaves_month, created_at, " +
+            "eligible_for_rehire, assignment_effective_from, assignment_effective_to, opening_leaves, opening_leaves_month, created_at, eobi_deduct, " +
             "client:client_id(name)",
           )
           .order("employee_code"),
@@ -791,8 +791,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     return m;
   }, [employees, contractById, clientById]);
 
-  // EOBI (0551): the dated rate's employee share, where the guard's client is
-  // marked to bear it. One rate for the company — never per client or contract.
+  // EOBI (0552): the dated rate's employee share, from the employees ticked
+  // for it on the Statutory tab. One rate for the company — never per client.
+  // Payroll books no employer share; that is a cost only when a challan pays.
   const [statutoryRates, setStatutoryRates] = useState<StatutoryRate[]>([]);
   useEffect(() => {
     void supabase.from("statutory_rates").select("scheme, employee_amount, employer_amount, effective_from")
@@ -801,7 +802,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const eobiByEmployee = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of employees) {
-      m.set(e.id, resolveEobiAmount(e.client_id ? clientById.get(e.client_id) : null, statutoryRates, selectedPeriod));
+      m.set(e.id, resolveEobiAmount(e as { eobi_deduct?: boolean }, e.client_id ? clientById.get(e.client_id) : null, statutoryRates, selectedPeriod));
     }
     return m;
   }, [employees, clientById, statutoryRates, selectedPeriod]);
@@ -1011,7 +1012,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       merged.income_tax = earnedSalary > 50000
         ? Math.round((earnedSalary - 50000) * 0.01)
         : 0;
-      // EOBI: the dated rate's employee share, where his client bears it by deduction (0551).
+      // EOBI: the dated rate's employee share, if he is ticked for EOBI (0552).
       merged.eobi = eobiByEmployee.get(emp.id) ?? 0;
       // Allowance is part of Final Salary now — the reports (which read
       // final_salary) count it, and the advance recovers from it too. It is no

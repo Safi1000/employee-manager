@@ -1926,8 +1926,8 @@ export default function ContractEditorModal({
             <div>
               <div className="text-sm text-foreground mb-1">EOBI</div>
               {/* 0551 (DECIDED 2026-10-22): one dated EOBI rate for the company, and who
-                  bears it is set once per client on Expenses › Statutory — not per contract. */}
-              <p className="text-xs text-muted-foreground">One rate for the company, set on Expenses › Statutory, where each client is marked as deducting it from guards or absorbing it.</p>
+                  it is deducted from is ticked per employee on Expenses › Statutory — not per contract. */}
+              <p className="text-xs text-muted-foreground">One rate for the company, and who it is deducted from is ticked employee by employee, on Expenses › Statutory.</p>
             </div>
             <EscalationPanel
               pct={form.annual_escalation_pct}

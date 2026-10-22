@@ -660,8 +660,6 @@ export type Client = {
   /** SUPERSEDED by eobi_bearer + statutory_rates (0551); read only for months before the first dated rate. */
   eobi_enabled: boolean;
   eobi_amount: number;
-  /** 0551: who bears EOBI for this client's guards — the guard (his share is deducted), the company, or no EOBI. */
-  eobi_bearer?: "employee" | "company" | null;
   branch_id: string | null;
   auto_invoice_enabled: boolean;
   auto_invoice_amount: number;
@@ -1729,20 +1727,20 @@ export function statutoryRateOn(rates: StatutoryRate[], scheme: StatutoryRate["s
 }
 
 /**
- * EOBI withheld from one employee for a payroll month (0551, DECIDED 2026-10-22):
- * the employee share of the dated rate when his client is marked "employee"
- * bears it; nothing when the company absorbs it or the client has no EOBI.
- * Months before the first dated rate keep the old per-client amount, so a
- * past month reads as it was paid.
+ * EOBI withheld from one employee for a payroll month (0552, DECIDED 2026-10-22):
+ * the employee share of the dated rate when he is ticked for EOBI, nothing
+ * otherwise. Months before the first dated rate keep the old per-client
+ * amount, so a past month reads as it was paid.
  */
 export function resolveEobiAmount(
-  client: Pick<Client, "eobi_enabled" | "eobi_amount" | "eobi_bearer"> | null | undefined,
+  employee: { eobi_deduct?: boolean | null },
+  client: Pick<Client, "eobi_enabled" | "eobi_amount"> | null | undefined,
   rates: StatutoryRate[],
   periodMonth: string,
 ): number {
   const r = statutoryRateOn(rates, "eobi", periodMonth);
   if (!r) return client?.eobi_enabled ? Number(client.eobi_amount ?? 0) : 0;
-  return client?.eobi_bearer === "employee" ? Number(r.employee_amount) : 0;
+  return employee.eobi_deduct ? Number(r.employee_amount) : 0;
 }
 
 // The canonical attendance vocabulary — lowercase, one spelling per state

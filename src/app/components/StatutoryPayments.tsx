@@ -316,17 +316,24 @@ function IncomeTaxDeducted({ companyId, refreshKey }: { companyId: string | null
 }
 
 /**
- * PER-HEAD RATES AND WHO BEARS EOBI (0551, DECIDED 2026-10-22). One dated rate
- * per scheme for the company — EOBI went 370, 400, 407 — changed only from a
- * payroll month on, with a reason. Each client is marked once: its guards'
- * share deducted, the company absorbing all of it, or no EOBI. Payroll applies
- * it from the month on its own.
+ * PER-HEAD RATES AND WHO IS DEDUCTED (0551, 0552 — DECIDED 2026-10-22). One
+ * dated rate per scheme for the company — EOBI went 370, 400, 407 — changed
+ * only from a payroll month on, with a reason. EOBI is withheld from the
+ * employees chosen here, one by one ("not every employee's EOBI is paid
+ * because sometimes a client refuses"); it sits in EOBI Payable until a
+ * challan pays it. The soft flags only inform — nothing is enforced.
  */
 function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
   companyId: string | null; rates: StatutoryRate[]; canEdit: boolean; canClassify: boolean; onChanged: () => void;
 }) {
-  type Cl = { id: string; name: string; eobi_bearer: "employee" | "company" | null };
-  const [clients, setClients] = useState<Cl[]>([]);
+  type Emp = {
+    id: string; full_name: string; client_id: string | null; category: string | null; lifecycle_state: string | null;
+    date_of_birth: string | null; cnic_number: string | null; cnic_expiry: string | null; eobi_registration_number: string | null; eobi_deduct: boolean;
+  };
+  const [emps, setEmps] = useState<Emp[]>([]);
+  const [clientName, setClientName] = useState<Map<string, string>>(new Map());
+  const [onlyChosen, setOnlyChosen] = useState(true);
+  const [q, setQ] = useState("");
   const [show, setShow] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -334,18 +341,25 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
   const thisMonth = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const [f, setF] = useState<{ scheme: "eobi" | "pessi" | "iessi"; emp: string; er: string; from: string; reason: string }>({ scheme: "eobi", emp: "", er: "", from: thisMonth(), reason: "" });
 
-  const loadClients = useCallback(async () => {
+  const loadEmps = useCallback(async () => {
     if (!companyId) return;
-    const { data, error } = await supabase.from("clients").select("id, name, eobi_bearer").eq("company_id", companyId).order("name");
-    if (!error) setClients((data ?? []) as Cl[]);
+    const [e, c] = await Promise.all([
+      supabase.from("employees")
+        .select("id, full_name, client_id, category, lifecycle_state, date_of_birth, cnic_number, cnic_expiry, eobi_registration_number, eobi_deduct")
+        .eq("company_id", companyId).order("full_name"),
+      supabase.from("clients").select("id, name").eq("company_id", companyId),
+    ]);
+    if (!e.error) setEmps((e.data ?? []) as Emp[]);
+    setClientName(new Map(((c.data ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name])));
   }, [companyId]);
-  useEffect(() => { void loadClients(); }, [loadClients]);
+  useEffect(() => { void loadEmps(); }, [loadEmps]);
 
-  const setBearer = async (id: string, v: string) => {
+  const setDeduct = async (ids: string[], v: boolean) => {
+    if (ids.length === 0) return;
     setBusy(true); setErr(null);
-    const { error } = await supabase.from("clients").update({ eobi_bearer: v || null }).eq("id", id);
+    const { error } = await supabase.from("employees").update({ eobi_deduct: v }).in("id", ids);
     setBusy(false);
-    if (error) setErr(friendlyDbError(error)); else void loadClients();
+    if (error) setErr(friendlyDbError(error)); else void loadEmps();
   };
   const save = async () => {
     if (!(Number(f.emp) >= 0) || !(Number(f.er) >= 0) || f.emp === "" || f.er === "") return setErr("Enter the employee and employer amounts per head.");
@@ -361,7 +375,31 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
 
   const nowIso = new Date().toISOString();
   const field = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
-  const bearers = clients.filter((c) => c.eobi_bearer);
+  const LEFT = ["left", "terminated", "fired", "absconded", "archived"];
+  const today = new Date().toISOString().slice(0, 10);
+  const age = (dob: string | null) => {
+    if (!dob) return null;
+    const b = new Date(`${dob}T00:00:00`), n = new Date();
+    return n.getFullYear() - b.getFullYear() - (n < new Date(n.getFullYear(), b.getMonth(), b.getDate()) ? 1 : 0);
+  };
+  // Soft flags — informing only, never enforced.
+  const flags = (e: Emp) => {
+    const out: string[] = [];
+    const a = age(e.date_of_birth);
+    if (a == null) out.push("age unknown"); else if (a >= 65) out.push(`age ${a}`);
+    if (!e.cnic_number?.trim()) out.push("no CNIC"); else if (e.cnic_expiry && e.cnic_expiry < today) out.push("CNIC expired");
+    if (!e.eobi_registration_number?.trim()) out.push("no EOBI no.");
+    if (LEFT.includes(String(e.lifecycle_state ?? ""))) out.push(String(e.lifecycle_state));
+    return out;
+  };
+  const chosen = emps.filter((e) => e.eobi_deduct);
+  const shown = emps.filter((e) => (onlyChosen ? e.eobi_deduct : !LEFT.includes(String(e.lifecycle_state ?? "")) || e.eobi_deduct)
+    && (!q.trim() || e.full_name.toLowerCase().includes(q.trim().toLowerCase())));
+  const groups = [...shown.reduce((m, e) => {
+    const k = e.client_id ? clientName.get(e.client_id) ?? "Client" : "Head office / office staff";
+    m.set(k, [...(m.get(k) ?? []), e]); return m;
+  }, new Map<string, Emp[]>())].sort((a, b) => b[1].length - a[1].length);
+  const flagged = chosen.filter((e) => flags(e).some((f) => !f.startsWith("age unknown") && f !== "no EOBI no.")).length;
 
   return (
     <section className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -382,30 +420,62 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
             onClick={() => { setErr(null); setF({ scheme: "eobi", emp: "", er: "", from: thisMonth(), reason: "" }); setOpen(true); }}>Change a rate</button>
         )}
         <button type="button" className="ml-auto text-xs text-brand-700 dark:text-brand-500 hover:underline font-medium" onClick={() => setShow((v) => !v)}>
-          EOBI clients · {bearers.length} of {clients.length}
+          EOBI deducted from · {chosen.length} employees{flagged ? ` · ${flagged} flagged` : ""}
         </button>
       </div>
       {err && !open && <p className="px-4 pb-2 text-sm text-danger-700 dark:text-danger-500">{err}</p>}
       {show && (
-        <div className="px-4 py-3 border-t border-border">
-          <p className="text-xs text-muted-foreground mb-2">
-            Set once per client. &ldquo;Guard&rsquo;s share deducted&rdquo;: payroll withholds the employee share from every guard there and the company pays the employer share.
-            &ldquo;Company absorbs&rdquo;: nothing is withheld and the company pays the whole amount. Applies from the next payroll made.
+        <div className="px-4 py-3 border-t border-border flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            Payroll withholds the EOBI employee share from everyone ticked, from the next payroll made, and holds it as a liability.
+            Whose EOBI is actually paid is chosen on the challan; the employer share is a cost only for them, on their client (office staff on head office).
+            Flags are for information only.
           </p>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5">
-            {clients.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 text-sm min-w-0">
-                <span className={`flex-1 min-w-0 truncate ${c.eobi_bearer ? "text-foreground" : "text-muted-foreground"}`}>{c.name}</span>
-                <div className="w-44 flex-shrink-0">
-                  <ThemedSelect value={c.eobi_bearer ?? ""} disabled={!canClassify || busy} aria-label={`EOBI for ${c.name}`} onChange={(e) => void setBearer(c.id, e.target.value)}>
-                    <option value="">No EOBI</option>
-                    <option value="employee">Guard&rsquo;s share deducted</option>
-                    <option value="company">Company absorbs</option>
-                  </ThemedSelect>
-                </div>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            <input className="w-56 rounded-lg border border-border bg-background px-3 py-1.5 text-sm" placeholder="Search a name" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs">
+              {([true, false] as const).map((v) => (
+                <button key={String(v)} type="button" aria-pressed={onlyChosen === v} onClick={() => setOnlyChosen(v)}
+                  className={`px-3 py-1 rounded-md ${onlyChosen === v ? "bg-card text-foreground shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}>
+                  {v ? `Ticked (${chosen.length})` : "Everyone working"}
+                </button>
+              ))}
+            </div>
           </div>
+          {groups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nobody here.</p>
+          ) : groups.map(([g, list]) => {
+            const ticked = list.filter((e) => e.eobi_deduct).length;
+            return (
+              <div key={g} className="rounded-lg border border-border">
+                <div className="flex items-center gap-3 px-3 py-1.5 bg-muted/40 text-sm">
+                  <span className="font-medium text-foreground flex-1">{g}</span>
+                  <span className="text-xs text-muted-foreground">{ticked} of {list.length} ticked</span>
+                  {canClassify && (
+                    <>
+                      <button type="button" disabled={busy} className="text-xs text-brand-700 dark:text-brand-500 hover:underline" onClick={() => void setDeduct(list.filter((e) => !e.eobi_deduct).map((e) => e.id), true)}>Tick all</button>
+                      <button type="button" disabled={busy} className="text-xs text-muted-foreground hover:text-foreground" onClick={() => void setDeduct(list.filter((e) => e.eobi_deduct).map((e) => e.id), false)}>Untick all</button>
+                    </>
+                  )}
+                </div>
+                <ul className="divide-y divide-border text-sm">
+                  {list.map((e) => {
+                    const fl = e.eobi_deduct ? flags(e) : [];
+                    return (
+                      <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-1">
+                        <input type="checkbox" className="accent-brand-600" checked={e.eobi_deduct} disabled={!canClassify || busy}
+                          aria-label={`Deduct EOBI from ${e.full_name}`} onChange={() => void setDeduct([e.id], !e.eobi_deduct)} />
+                        <span className={`flex-1 min-w-0 truncate ${e.eobi_deduct ? "text-foreground" : "text-muted-foreground"}`}>{e.full_name}</span>
+                        {fl.map((f) => (
+                          <span key={f} className={`text-[11px] rounded px-1.5 py-0.5 ${/^age \d/.test(f) || f === "CNIC expired" || LEFT.includes(f) ? "bg-warning-50 text-heed" : "bg-muted text-muted-foreground"}`}>{f}</span>
+                        ))}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </div>
       )}
 
