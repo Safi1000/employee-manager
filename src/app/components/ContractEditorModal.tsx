@@ -1907,7 +1907,7 @@ export default function ContractEditorModal({
         )}
 
         <fieldset disabled={locked} className={LOCK_CLS}>
-        {/* Contract terms — leave allowance and EOBI are the values payroll and
+        {/* Contract terms — the leave allowance is the value payroll and
             attendance read for every employee on this contract. */}
         <div className="border border-border rounded-md p-3">
           <div className="text-sm font-medium text-foreground mb-2">Contract terms</div>
@@ -1924,26 +1924,10 @@ export default function ContractEditorModal({
               />
             </div>
             <div>
-              <label className="flex items-center gap-2 text-sm text-foreground mb-1">
-                <input
-                  type="checkbox"
-                  disabled={termsLocked}
-                  checked={form.eobi_deduction}
-                  onChange={(e) => setForm({ ...form, eobi_deduction: e.target.checked })}
-                />
-                EOBI deduction
-              </label>
-              {form.eobi_deduction && (
-                <input
-                  type="number"
-                  min="0"
-                  disabled={termsLocked}
-                  value={form.eobi_amount}
-                  onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm"
-                  placeholder="Per-employee EOBI"
-                />
-              )}
+              <div className="text-sm text-foreground mb-1">EOBI</div>
+              {/* 0551 (DECIDED 2026-10-22): one dated EOBI rate for the company, and who
+                  bears it is set once per client on Expenses › Statutory — not per contract. */}
+              <p className="text-xs text-muted-foreground">One rate for the company, set on Expenses › Statutory, where each client is marked as deducting it from guards or absorbing it.</p>
             </div>
             <EscalationPanel
               pct={form.annual_escalation_pct}

@@ -657,8 +657,11 @@ export type Client = {
   client_type: ClientType;
   leave_carry_forward: boolean;
   leave_carry_start: string | null;
+  /** SUPERSEDED by eobi_bearer + statutory_rates (0551); read only for months before the first dated rate. */
   eobi_enabled: boolean;
   eobi_amount: number;
+  /** 0551: who bears EOBI for this client's guards — the guard (his share is deducted), the company, or no EOBI. */
+  eobi_bearer?: "employee" | "company" | null;
   branch_id: string | null;
   auto_invoice_enabled: boolean;
   auto_invoice_amount: number;
@@ -1716,12 +1719,30 @@ export function resolveAllowedLeaves(
 
 // EOBI withheld per employee per month. A contract only overrides when it both enables
 // the deduction and names an amount; otherwise the client fallback stands.
+/** A per-head statutory rate from statutory_rates (0551), dated by payroll month. */
+export type StatutoryRate = { scheme: "eobi" | "pessi" | "iessi"; employee_amount: number; employer_amount: number; effective_from: string; reason?: string };
+
+/** The rate in force for a payroll month: the latest that started on or before it. */
+export function statutoryRateOn(rates: StatutoryRate[], scheme: StatutoryRate["scheme"], month: string): StatutoryRate | null {
+  const m = `${month.slice(0, 7)}-01`;
+  return rates.filter((r) => r.scheme === scheme && r.effective_from <= m).sort((a, b) => b.effective_from.localeCompare(a.effective_from))[0] ?? null;
+}
+
+/**
+ * EOBI withheld from one employee for a payroll month (0551, DECIDED 2026-10-22):
+ * the employee share of the dated rate when his client is marked "employee"
+ * bears it; nothing when the company absorbs it or the client has no EOBI.
+ * Months before the first dated rate keep the old per-client amount, so a
+ * past month reads as it was paid.
+ */
 export function resolveEobiAmount(
-  contract: Pick<Contract, "eobi_deduction" | "eobi_amount"> | null | undefined,
-  client: Pick<Client, "eobi_enabled" | "eobi_amount"> | null | undefined,
+  client: Pick<Client, "eobi_enabled" | "eobi_amount" | "eobi_bearer"> | null | undefined,
+  rates: StatutoryRate[],
+  periodMonth: string,
 ): number {
-  if (contract?.eobi_deduction && contract.eobi_amount != null) return Number(contract.eobi_amount);
-  return client?.eobi_enabled ? Number(client.eobi_amount ?? 0) : 0;
+  const r = statutoryRateOn(rates, "eobi", periodMonth);
+  if (!r) return client?.eobi_enabled ? Number(client.eobi_amount ?? 0) : 0;
+  return client?.eobi_bearer === "employee" ? Number(r.employee_amount) : 0;
 }
 
 // The canonical attendance vocabulary — lowercase, one spelling per state

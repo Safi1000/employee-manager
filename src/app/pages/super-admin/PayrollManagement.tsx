@@ -17,6 +17,7 @@ import {
   friendlyDbError,
   resolveAllowedLeaves,
   resolveEobiAmount,
+  type StatutoryRate,
   type Employee,
   type Client,
   type BankAccount,
@@ -790,20 +791,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     return m;
   }, [employees, contractById, clientById]);
 
-  // EOBI: flat PKR amount withheld per employee per month. 0 = no EOBI.
+  // EOBI (0551): the dated rate's employee share, where the guard's client is
+  // marked to bear it. One rate for the company — never per client or contract.
+  const [statutoryRates, setStatutoryRates] = useState<StatutoryRate[]>([]);
+  useEffect(() => {
+    void supabase.from("statutory_rates").select("scheme, employee_amount, employer_amount, effective_from")
+      .then(({ data }) => setStatutoryRates(((data ?? []) as StatutoryRate[]).map((r) => ({ ...r, employee_amount: Number(r.employee_amount), employer_amount: Number(r.employer_amount) }))));
+  }, []);
   const eobiByEmployee = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of employees) {
-      m.set(
-        e.id,
-        resolveEobiAmount(
-          e.contract_id ? contractById.get(e.contract_id) : null,
-          e.client_id ? clientById.get(e.client_id) : null,
-        ),
-      );
+      m.set(e.id, resolveEobiAmount(e.client_id ? clientById.get(e.client_id) : null, statutoryRates, selectedPeriod));
     }
     return m;
-  }, [employees, contractById, clientById]);
+  }, [employees, clientById, statutoryRates, selectedPeriod]);
 
   // Carry-forward has no contract-level equivalent, so it stays anchored to the client.
   const clientCarryEnabled = useMemo(() => {
@@ -1010,7 +1011,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       merged.income_tax = earnedSalary > 50000
         ? Math.round((earnedSalary - 50000) * 0.01)
         : 0;
-      // EOBI: flat amount from the employee's contract, falling back to their client.
+      // EOBI: the dated rate's employee share, where his client bears it by deduction (0551).
       merged.eobi = eobiByEmployee.get(emp.id) ?? 0;
       // Allowance is part of Final Salary now — the reports (which read
       // final_salary) count it, and the advance recovers from it too. It is no
