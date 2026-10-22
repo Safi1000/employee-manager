@@ -9,15 +9,17 @@ import { loadCustodianOptions, type CustodianOption } from "../lib/custodian";
 /**
  * SALES TAX (0549, DECIDED 2026-10-22). PRA, FBR (ICT) and AJK.
  *
- *  • Each client is classified by hand: which authority, or not taxable.
+ *  • Each client is classified once, by hand: which authority, or not taxable.
+ *    Every return then lists all of that authority's taxable clients.
+ *  • Rates are locked and dated (0550): a change is a new rate from a date,
+ *    with a reason. A return uses the rate in force on its due date.
  *  • A return runs from the 16th to the 15th and is due on the 15th. Its
  *    window's client receipts into the bank are listed and highlighted; the
  *    taxable amount per client and service month is typed in by hand.
- *  • The lines add up to the challan. The actual challan is typed in and must
- *    match before the return posts — each line then lands on its client at the
- *    service month (Dr 4050, Cr 2400).
- *  • One payment can settle several posted returns: a missed month is paid
- *    with the next.
+ *  • The lines add up to the challan. Creating the challan books each line on
+ *    its client at the service month (Dr 4050, Cr 2400); paying nets it off.
+ *  • One payment can settle several challans: a missed month is paid with the
+ *    next.
  *
  * Every write is an RPC; the only arithmetic here is the preview of a line's
  * tax before it is saved, and the sum of the lines shown under them.
@@ -25,7 +27,11 @@ import { loadCustodianOptions, type CustodianOption } from "../lib/custodian";
 
 type Code = "PRA" | "FBR" | "AJK";
 const CODES: Code[] = ["FBR", "PRA", "AJK"];
-type Authority = { code: Code; name: string; rate: number | null };
+type Authority = { code: Code; name: string };
+type Rate = { code: Code; rate: number; effective_from: string; reason: string };
+/** The rate in force on a date: the latest that started on or before it. */
+const rateOn = (rates: Rate[], code: Code, on: string) =>
+  rates.filter((x) => x.code === code && x.effective_from <= on).sort((a, b) => b.effective_from.localeCompare(a.effective_from))[0] ?? null;
 type Ret = { id: string; authority: Code; due_on: string; window_from: string; window_to: string; challan_amount: number | null; status: "draft" | "posted" | "paid"; payment_id: string | null };
 type Line = { id: string; return_id: string; client_id: string; service_month: string; taxable_amount: number; rate: number; tax_amount: number; note: string | null };
 type Client = { id: string; name: string; sales_tax_authority: Code | null; branch_id: string | null };
@@ -51,6 +57,7 @@ export default function SalesTaxReturns({
   canClassify: boolean;
 }) {
   const [auths, setAuths] = useState<Authority[] | null>(null);
+  const [rates, setRates] = useState<Rate[]>([]);
   const [rets, setRets] = useState<Ret[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -63,19 +70,20 @@ export default function SalesTaxReturns({
 
   const load = useCallback(async () => {
     if (!companyId) return;
-    const [a, r, l, c, p] = await Promise.all([
-      supabase.from("sales_tax_authorities").select("code, name, rate").eq("company_id", companyId),
+    const [a, r, l, c, p, rt] = await Promise.all([
+      supabase.from("sales_tax_authorities").select("code, name").eq("company_id", companyId),
       supabase.from("sales_tax_returns").select("id, authority, due_on, window_from, window_to, challan_amount, status, payment_id")
         .eq("company_id", companyId).order("due_on", { ascending: false }),
       supabase.from("sales_tax_return_lines").select("id, return_id, client_id, service_month, taxable_amount, rate, tax_amount, note").eq("company_id", companyId),
       supabase.from("clients").select("id, name, sales_tax_authority, branch_id").eq("company_id", companyId).order("name"),
       supabase.from("sales_tax_payments").select("id, amount, paid_on, paid_via, bank_account_id, reference").eq("company_id", companyId),
+      supabase.from("sales_tax_rates").select("code, rate, effective_from, reason").eq("company_id", companyId).order("effective_from", { ascending: false }),
     ]);
     // Before 0549 is applied the tables do not exist: show nothing rather than an error.
     if (a.error) { setMissing(true); return; }
     setMissing(false);
-    setAuths(((a.data ?? []) as Authority[]).map((x) => ({ ...x, rate: x.rate == null ? null : Number(x.rate) }))
-      .sort((x, y) => CODES.indexOf(x.code) - CODES.indexOf(y.code)));
+    setAuths(((a.data ?? []) as Authority[]).sort((x, y) => CODES.indexOf(x.code) - CODES.indexOf(y.code)));
+    setRates(((rt.data ?? []) as Rate[]).map((x) => ({ ...x, rate: Number(x.rate) })));
     setRets(((r.data ?? []) as Ret[]).map((x) => ({ ...x, challan_amount: x.challan_amount == null ? null : Number(x.challan_amount) })));
     setLines(((l.data ?? []) as Line[]).map((x) => ({ ...x, taxable_amount: Number(x.taxable_amount), rate: Number(x.rate), tax_amount: Number(x.tax_amount) })));
     setClients((c.data ?? []) as Client[]);
@@ -94,6 +102,10 @@ export default function SalesTaxReturns({
   useEffect(() => {
     if (payOpen && companyId && custodians.length === 0) void loadCustodianOptions(companyId, false).then(setCustodians).catch(() => undefined);
   }, [payOpen, companyId, custodians.length]);
+
+  // ── change a rate (dated) ──
+  const [rateOpen, setRateOpen] = useState(false);
+  const [rateForm, setRateForm] = useState<{ code: Code; rate: string; from: string; reason: string }>({ code: "FBR", rate: "", from: "", reason: "" });
 
   // ── new return ──
   const [newOpen, setNewOpen] = useState(false);
@@ -131,7 +143,7 @@ export default function SalesTaxReturns({
         </div>
         <div className="ml-auto flex items-center gap-4">
           <div className="text-right">
-            <div className="lbl">Posted, not paid</div>
+            <div className="lbl">Challans unpaid</div>
             <div className={`font-ledger text-lg font-semibold whitespace-nowrap ${owed > 0 ? "text-heed" : "text-foreground"}`}><span className="cur">PKR</span>{fmt(owed)}</div>
           </div>
           {canEdit && (
@@ -142,7 +154,7 @@ export default function SalesTaxReturns({
         </div>
       </div>
 
-      {err && !newOpen && !payOpen && (
+      {err && !newOpen && !payOpen && !rateOpen && (
         <div className="px-4 py-2 text-sm text-danger-700 dark:text-danger-500 border-b border-border flex items-start gap-2">
           <CircleAlert className="w-4 h-4 mt-0.5 flex-shrink-0" /><span className="flex-1">{err}</span>
           <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setErr(null)}>Dismiss</button>
@@ -151,10 +163,22 @@ export default function SalesTaxReturns({
 
       {/* Rates and classification */}
       <div className="px-4 py-3 border-b border-border flex flex-wrap items-center gap-x-6 gap-y-2">
-        {auths.map((a) => (
-          <RateField key={a.code} a={a} canEdit={canEdit && !busy}
-            onSave={(rate) => call(() => supabase.rpc("set_sales_tax_rate", { p_company_id: companyId, p_code: a.code, p_rate: rate }))} />
-        ))}
+        {auths.map((a) => {
+          const now = rateOn(rates, a.code, iso(new Date()));
+          const next = rates.filter((x) => x.code === a.code && x.effective_from > iso(new Date())).sort((x, y) => x.effective_from.localeCompare(y.effective_from))[0];
+          return (
+            <div key={a.code} className="text-sm" title={now?.reason}>
+              <span className="font-medium text-foreground">{a.code}</span>{" "}
+              {now ? <><span className="font-ledger">{now.rate}%</span> <span className="text-[11px] text-muted-foreground">since {fmtDate(now.effective_from)}</span></>
+                : <span className="text-[11px] text-heed">no rate</span>}
+              {next && <span className="text-[11px] text-muted-foreground"> · {next.rate}% from {fmtDate(next.effective_from)}</span>}
+            </div>
+          );
+        })}
+        {canEdit && (
+          <button type="button" className="text-xs text-brand-700 dark:text-brand-500 hover:underline font-medium"
+            onClick={() => { setErr(null); setRateForm({ code: "FBR", rate: "", from: "", reason: "" }); setRateOpen(true); }}>Change a rate</button>
+        )}
         <button type="button" className="ml-auto text-xs text-brand-700 dark:text-brand-500 hover:underline font-medium flex items-center gap-1"
           onClick={() => setShowClients((v) => !v)}>
           {showClients ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -216,7 +240,7 @@ export default function SalesTaxReturns({
                 </div>
                 {isOpen && (
                   <ReturnBody ret={r} lines={rl} clients={clients} clientName={clientName} bankName={bankName}
-                    rate={auths.find((a) => a.code === r.authority)?.rate ?? null}
+                    rate={rateOn(rates, r.authority, r.due_on)?.rate ?? null}
                     companyId={companyId} canEdit={canEdit} busy={busy} call={call} field={field} />
                 )}
               </div>
@@ -228,14 +252,51 @@ export default function SalesTaxReturns({
       {canEdit && posted.length > 0 && (
         <div className="px-4 py-3 border-t border-border flex flex-wrap items-center gap-3 bg-muted/30">
           <span className="text-xs text-muted-foreground">
-            {paySel.size === 0 ? "Tick the posted returns this challan pays — a missed month goes with the next." : `${paySel.size} selected · PKR ${fmt(selTotal)}`}
+            {paySel.size === 0 ? "Tick the challans this payment settles — a missed month goes with the next." : `${paySel.size} selected · PKR ${fmt(selTotal)}`}
           </span>
           <Button size="sm" className="ml-auto" disabled={paySel.size === 0 || busy}
             onClick={() => { setErr(null); setPay((x) => ({ ...x, date: iso(new Date()) })); setPayOpen(true); }}>
-            Pay selected
+            Paid — net off
           </Button>
         </div>
       )}
+
+      <Modal isOpen={rateOpen} onClose={() => !busy && setRateOpen(false)} title="Change a sales tax rate" error={rateOpen ? err : null} onDismissError={() => setErr(null)}
+        footer={<>
+          <Button variant="secondary" onClick={() => setRateOpen(false)}>Cancel</Button>
+          <Button disabled={busy} onClick={async () => {
+            if (!(Number(rateForm.rate) > 0)) return setErr("Enter the new rate.");
+            if (!rateForm.from) return setErr("Say from which date it applies.");
+            const ok = await call(() => supabase.rpc("change_sales_tax_rate", {
+              p_company_id: companyId, p_code: rateForm.code, p_rate: Number(rateForm.rate), p_effective_from: rateForm.from, p_reason: rateForm.reason,
+            }));
+            if (ok) setRateOpen(false);
+          }}>{busy ? "Saving…" : "Save the change"}</Button>
+        </>}>
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            A rate is never edited. The new one applies to every return due on or after its date; challans already made keep the rate they were made at.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <ThemedSelect value={rateForm.code} onChange={(e) => setRateForm((x) => ({ ...x, code: e.target.value as Code }))} aria-label="Authority">
+              {CODES.map((k) => <option key={k} value={k}>{k}</option>)}
+            </ThemedSelect>
+            <input className={field} inputMode="decimal" placeholder="New rate %" value={rateForm.rate} onChange={(e) => setRateForm((x) => ({ ...x, rate: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-muted-foreground mb-1">Applies from</label>
+            <input type="date" className={field} value={rateForm.from} onChange={(e) => setRateForm((x) => ({ ...x, from: e.target.value }))} />
+          </div>
+          <input className={field} placeholder="Why — e.g. Budget FY 2027-28" value={rateForm.reason} onChange={(e) => setRateForm((x) => ({ ...x, reason: e.target.value }))} />
+          {rates.filter((x) => x.code === rateForm.code).length > 0 && (
+            <ul className="text-xs divide-y divide-border rounded-lg border border-border">
+              {rates.filter((x) => x.code === rateForm.code).map((x) => (
+                <li key={x.effective_from} className="flex gap-3 px-3 py-1.5"><span className="font-ledger w-10">{x.rate}%</span><span className="text-muted-foreground w-28">from {fmtDate(x.effective_from)}</span><span className="text-muted-foreground truncate">{x.reason}</span></li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Modal>
 
       <Modal isOpen={newOpen} onClose={() => !busy && setNewOpen(false)} title="New sales tax return" error={newOpen ? err : null} onDismissError={() => setErr(null)}
         footer={<>
@@ -263,7 +324,7 @@ export default function SalesTaxReturns({
         </div>
       </Modal>
 
-      <Modal isOpen={payOpen} onClose={() => !busy && setPayOpen(false)} title={`Pay sales tax — PKR ${fmt(selTotal)}`} error={payOpen ? err : null} onDismissError={() => setErr(null)}
+      <Modal isOpen={payOpen} onClose={() => !busy && setPayOpen(false)} title={`Challans paid — PKR ${fmt(selTotal)}`} error={payOpen ? err : null} onDismissError={() => setErr(null)}
         footer={<>
           <Button variant="secondary" onClick={() => setPayOpen(false)}>Cancel</Button>
           <Button disabled={busy} onClick={async () => {
@@ -314,30 +375,8 @@ export default function SalesTaxReturns({
 
 function StatusChip({ status }: { status: Ret["status"] }) {
   if (status === "paid") return <span className="inline-flex items-center gap-1 text-xs text-success-700 dark:text-success-500"><CheckCircle2 className="w-3.5 h-3.5" /> Paid</span>;
-  if (status === "posted") return <span className="inline-flex items-center gap-1 text-xs text-heed"><CircleAlert className="w-3.5 h-3.5" /> Posted · to pay</span>;
+  if (status === "posted") return <span className="inline-flex items-center gap-1 text-xs text-heed"><CircleAlert className="w-3.5 h-3.5" /> Challan made · unpaid</span>;
   return <span className="text-xs text-muted-foreground">Draft</span>;
-}
-
-function RateField({ a, canEdit, onSave }: { a: Authority; canEdit: boolean; onSave: (rate: number) => Promise<boolean> }) {
-  const [v, setV] = useState(a.rate == null ? "" : String(a.rate));
-  useEffect(() => { setV(a.rate == null ? "" : String(a.rate)); }, [a.rate]);
-  const dirty = v !== (a.rate == null ? "" : String(a.rate));
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-foreground font-medium">{a.code}</span>
-      {canEdit ? (
-        <>
-          <input className="w-16 rounded-md border border-border bg-background px-2 py-1 text-sm font-ledger text-right" inputMode="decimal"
-            value={v} placeholder="rate" onChange={(e) => setV(e.target.value)} aria-label={`${a.code} rate`} />
-          <span className="text-muted-foreground">%</span>
-          {dirty && Number(v) > 0 && <button type="button" className="text-xs text-brand-700 dark:text-brand-500 font-medium hover:underline" onClick={() => void onSave(Number(v))}>Save</button>}
-        </>
-      ) : (
-        <span className="font-ledger text-muted-foreground">{a.rate == null ? "rate not set" : `${a.rate}%`}</span>
-      )}
-      {a.rate == null && !dirty && <span className="text-[11px] text-heed">not set</span>}
-    </div>
-  );
 }
 
 function ReturnBody({
@@ -349,7 +388,6 @@ function ReturnBody({
 }) {
   const [receipts, setReceipts] = useState<Receipt[] | null>(null);
   const [draft, setDraft] = useState<{ client: string; month: string; taxable: string; note: string }>({ client: "", month: "", taxable: "", note: "" });
-  const [challan, setChallan] = useState("");
   const editable = canEdit && ret.status === "draft";
   const mine = clients.filter((c) => c.sales_tax_authority === ret.authority);
 
@@ -373,6 +411,15 @@ function ReturnBody({
   const preview = rate != null && Number(draft.taxable) > 0 ? Math.round(Number(draft.taxable) * rate / 100) : null;
   const authOf = new Map(clients.map((c) => [c.id, c.sales_tax_authority]));
   const lined = new Set(lines.map((l) => `${l.client_id}|${l.service_month.slice(0, 7)}`));
+
+  // A client's service month: the one its latest receipt in the window paid,
+  // else the month before the due month.
+  const defaultMonth = (clientId: string) => {
+    const x = (receipts ?? []).filter((y) => y.client_id === clientId && y.service_month).sort((a, b) => b.payment_date.localeCompare(a.payment_date))[0];
+    if (x?.service_month) return x.service_month.slice(0, 7);
+    const d = new Date(`${ret.due_on}T00:00:00`); d.setMonth(d.getMonth() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
 
   const saveLine = async () => {
     if (!draft.client || !draft.month || !(Number(draft.taxable) > 0)) return;
@@ -452,18 +499,28 @@ function ReturnBody({
                   </td>
                 </tr>
               ))}
-              {editable && (
+              {/* Every taxable client of this authority that has no line yet — set once on the client, listed every month. */}
+              {editable && mine.filter((c) => !lines.some((l) => l.client_id === c.id)).map((c) => (
+                <ClientEntry key={c.id} client={c} month={defaultMonth(c.id)} rate={rate} busy={busy} field={field}
+                  onSave={(month, taxable) => call(() => supabase.rpc("set_sales_tax_return_line", {
+                    p_return_id: ret.id, p_client_id: c.id, p_service_month: `${month}-01`, p_taxable_amount: taxable,
+                  }))} />
+              ))}
+              {editable && mine.length === 0 && (
+                <tr><td colSpan={5} className="px-3 py-2 text-xs text-muted-foreground">No client is marked {ret.authority} yet — set them once under &ldquo;Taxable clients&rdquo;.</td></tr>
+              )}
+              {editable && mine.length > 0 && (
                 <tr className="bg-muted/30">
                   <td className="px-3 py-1.5 min-w-[12rem]">
                     <ThemedSelect value={draft.client} onChange={(e) => setDraft((d) => ({ ...d, client: e.target.value }))} aria-label="Client">
-                      <option value="">{mine.length ? "Client…" : `No client files with ${ret.authority} yet`}</option>
+                      <option value="">Another month for a client…</option>
                       {mine.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </ThemedSelect>
                   </td>
                   <td className="px-3 py-1.5"><input type="month" className={field} value={draft.month} onChange={(e) => setDraft((d) => ({ ...d, month: e.target.value }))} aria-label="Service month" /></td>
                   <td className="px-3 py-1.5"><input className={`${field} text-right font-ledger`} inputMode="decimal" placeholder="taxable" value={draft.taxable}
                     onChange={(e) => setDraft((d) => ({ ...d, taxable: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") void saveLine(); }} /></td>
-                  <td className="px-3 py-1.5 text-right font-ledger text-muted-foreground">{preview == null ? (rate == null ? "set rate" : "—") : fmt(preview)}</td>
+                  <td className="px-3 py-1.5 text-right font-ledger text-muted-foreground">{preview == null ? (rate == null ? "no rate" : "—") : fmt(preview)}</td>
                   <td className="px-3 py-1.5 text-right">
                     <Button size="sm" variant="secondary" disabled={busy || !draft.client || !draft.month || !(Number(draft.taxable) > 0)} onClick={() => void saveLine()}>Add</Button>
                   </td>
@@ -483,27 +540,43 @@ function ReturnBody({
 
       {canEdit && ret.status === "draft" && lines.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-muted-foreground">Actual challan</label>
-          <input className="w-36 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-ledger text-right" inputMode="decimal"
-            value={challan} onChange={(e) => setChallan(e.target.value)} placeholder={fmt(total)} />
-          {challan !== "" && Math.round(Number(challan)) !== total && (
-            <span className="text-xs text-danger-700 dark:text-danger-500 font-semibold">differs by {fmt(Math.abs(Math.round(Number(challan)) - total))} — correct a line or the challan</span>
-          )}
-          <Button size="sm" className="ml-auto" disabled={busy || challan === "" || Math.round(Number(challan)) !== total}
-            onClick={() => void call(() => supabase.rpc("post_sales_tax_return", { p_return_id: ret.id, p_challan_amount: Number(challan) }))}>
-            Matches — post
+          <span className="text-xs text-muted-foreground">Creating the challan books each client&rsquo;s tax on that client; paying it nets it off.</span>
+          <Button size="sm" className="ml-auto" disabled={busy}
+            onClick={() => void call(() => supabase.rpc("post_sales_tax_return", { p_return_id: ret.id, p_challan_amount: total }))}>
+            Create challan · PKR {fmt(total)}
           </Button>
         </div>
       )}
       {canEdit && ret.status === "posted" && (
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">Posted at PKR {fmt(ret.challan_amount)}. Tick it below to pay, alone or with another month.</span>
+          <span className="text-xs text-muted-foreground">Challan made for PKR {fmt(ret.challan_amount)}. Tick it below once paid — alone or with another month.</span>
           <button type="button" className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" disabled={busy}
             onClick={() => void call(() => supabase.rpc("unpost_sales_tax_return", { p_return_id: ret.id }))}>
-            <Undo2 className="w-3.5 h-3.5" /> Unpost to correct
+            <Undo2 className="w-3.5 h-3.5" /> Cancel the challan to correct it
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+function ClientEntry({ client, month: initialMonth, rate, busy, field, onSave }: {
+  client: Client; month: string; rate: number | null; busy: boolean; field: string;
+  onSave: (month: string, taxable: number) => Promise<boolean>;
+}) {
+  const [month, setMonth] = useState(initialMonth);
+  const [taxable, setTaxable] = useState("");
+  useEffect(() => { setMonth(initialMonth); }, [initialMonth]);
+  const ok = Number(taxable) > 0 && !!month;
+  const save = async () => { if (ok && await onSave(month, Number(taxable))) setTaxable(""); };
+  return (
+    <tr>
+      <td className="px-3 py-1.5 text-foreground">{client.name}</td>
+      <td className="px-3 py-1.5"><input type="month" className={field} value={month} onChange={(e) => setMonth(e.target.value)} aria-label={`Service month for ${client.name}`} /></td>
+      <td className="px-3 py-1.5"><input className={`${field} text-right font-ledger`} inputMode="decimal" placeholder="nothing this month" value={taxable}
+        onChange={(e) => setTaxable(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void save(); }} aria-label={`Taxable amount for ${client.name}`} /></td>
+      <td className="px-3 py-1.5 text-right font-ledger text-muted-foreground">{rate != null && ok ? fmt(Math.round(Number(taxable) * rate / 100)) : "—"}</td>
+      <td className="px-3 py-1.5 text-right"><Button size="sm" variant="secondary" disabled={busy || !ok} onClick={() => void save()}>Save</Button></td>
+    </tr>
   );
 }
