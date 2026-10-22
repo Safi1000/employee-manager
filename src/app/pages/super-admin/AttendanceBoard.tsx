@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, Suspense } from "react";
 import { lazyPage } from "../../lib/lazyPage";
 import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import RouteLoading from "../../components/RouteLoading";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -209,6 +210,8 @@ export default function AttendanceBoard() {
   const branding = brandingFromCompany(company);
   const [date, setDate] = usePageState("AttendanceBoard.date", today());
   const [tab, setTab] = usePageState<"board" | "monthly" | "vacancies" | "shifts">("AttendanceBoard.tab", "board");
+  // Each band figure opens the registers behind it (2026-10-22: "every figure clickable").
+  const [bandSheet, setBandSheet] = useState<DetailContent | null>(null);
   // Monthly tab: the client/group whose Monthly board is shown on the page, the
   // board's month, every client/group that can be picked (not just those with
   // attendance on the day the Daily board is showing), and each one's HR status
@@ -893,10 +896,36 @@ export default function AttendanceBoard() {
           />
           {tab === "board" && !loading && (
             <AttendanceBandFigures summary={summary} clients={tree.length}
-              clientsDone={tree.filter((c) => c.sites.every((st) => st.shifts.every((r) => rowStatus(r) === "confirmed"))).length} />
+              clientsDone={tree.filter((c) => c.sites.every((st) => st.shifts.every((r) => rowStatus(r) === "confirmed"))).length}
+              onOpen={(kind) => {
+                const where = (r: ClientShift) => `${r.client_name}${r.site_id ? ` · ${r.site_name}` : ""} · ${r.shift_code}`;
+                const kicker = "Attendance · today's board";
+                if (kind === "confirmed") {
+                  const open = visibleRows.filter((r) => !r.confirmation);
+                  setBandSheet({ kicker, title: "Not yet confirmed", big: `${open.length} of ${visibleRows.length}`,
+                    note: open.length ? "Registers a supervisor has not confirmed yet." : "Every register is confirmed.",
+                    rows: open.map((r) => ({ label: where(r), value: rowStatus(r) === "awaiting" ? "no marks" : "reported" })) });
+                } else if (kind === "awaiting") {
+                  const open = visibleRows.filter((r) => rowStatus(r) === "awaiting");
+                  setBandSheet({ kicker, title: "Not started", big: String(open.length),
+                    note: "Registers with no mark yet.",
+                    rows: open.map((r) => ({ label: where(r), value: `${r.roster.length} on roster` })) });
+                } else if (kind === "exceptions") {
+                  const open = visibleRows.filter((r) => r.marks.size > 0).sort((a, b) => b.marks.size - a.marks.size);
+                  setBandSheet({ kicker, title: "Exceptions", big: String(summary.exceptions),
+                    rows: open.map((r) => ({ label: where(r), value: String(r.marks.size), hint: exceptionSummary(r) })) });
+                } else {
+                  const by = visibleRows.map((r) => ({ r, n: r.roster.length - [...r.marks.values()].filter((m) => m.status === "absent").length }))
+                    .filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+                  setBandSheet({ kicker, title: "On ground", big: summary.onGround.toLocaleString(),
+                    note: "On the roster, less those marked absent.",
+                    rows: by.map(({ r, n }) => ({ label: where(r), value: String(n), hint: `contracted ${r.contracted}` })) });
+                }
+              }} />
           )}
         </div>
       </Header>
+      <DetailSheet content={bandSheet} onClose={() => setBandSheet(null)} />
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
@@ -2037,16 +2066,19 @@ function ExportMenu({ rows, date, branding, client }: {
 
 
 /** The day's register on the band: confirmation ring and the four counts. */
-function AttendanceBandFigures({ summary, clients, clientsDone }: {
+function AttendanceBandFigures({ summary, clients, clientsDone, onOpen }: {
   summary: { confirmed: number; total: number; onGround: number; exceptions: number; awaiting: number };
   clients: number; clientsDone: number;
+  /** Opens the registers behind a figure. */
+  onOpen?: (kind: "confirmed" | "onGround" | "exceptions" | "awaiting") => void;
 }) {
   const C = 2 * Math.PI * 30;
   const pct = summary.total ? summary.confirmed / summary.total : 0;
   const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none";
   return (
     <div className="flex flex-wrap items-stretch gap-3">
-      <div className="flex items-center gap-4 rounded-[14px] border border-border bg-card px-4 py-3 flex-[1_1_260px]">
+      <button type="button" onClick={() => onOpen?.("confirmed")} disabled={!onOpen}
+        className="group text-left flex items-center gap-4 rounded-[14px] border border-border bg-card px-4 py-3 flex-[1_1_260px] enabled:hover:border-brand-500/60">
         <svg width="76" height="76" viewBox="0 0 76 76" role="img" aria-label={`${Math.round(pct * 100)} percent of registers confirmed`} className="flex-shrink-0">
           <circle cx="38" cy="38" r="30" fill="none" stroke="#2e3125" strokeWidth="9" />
           <circle cx="38" cy="38" r="30" fill="none" stroke="#9ad1a3" strokeWidth="9" strokeLinecap="round" strokeDasharray={`${(C * pct).toFixed(1)} ${C.toFixed(1)}`} transform="rotate(-90 38 38)" />
@@ -2057,17 +2089,18 @@ function AttendanceBandFigures({ summary, clients, clientsDone }: {
           <span className={fig}>{summary.confirmed}<span className="text-base text-muted-foreground"> / {summary.total}</span></span>
           <span className="text-xs text-muted-foreground">{clientsDone} of {clients} clients fully done</span>
         </div>
-      </div>
+      </button>
       {[
-        { label: "On ground", value: summary.onGround, sub: "on roster, less absences", tone: "text-foreground" },
-        { label: "Exceptions", value: summary.exceptions, sub: "absent, leave, double duty", tone: summary.exceptions ? "text-down" : "text-foreground" },
-        { label: "Not started", value: summary.awaiting, sub: "registers with no mark yet", tone: summary.awaiting ? "text-heed" : "text-up" },
+        { kind: "onGround" as const, label: "On ground", value: summary.onGround, sub: "on roster, less absences", tone: "text-foreground" },
+        { kind: "exceptions" as const, label: "Exceptions", value: summary.exceptions, sub: "absent, leave, double duty", tone: summary.exceptions ? "text-down" : "text-foreground" },
+        { kind: "awaiting" as const, label: "Not started", value: summary.awaiting, sub: "registers with no mark yet", tone: summary.awaiting ? "text-heed" : "text-up" },
       ].map((t) => (
-        <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 flex-[1_1_160px]">
+        <button key={t.label} type="button" onClick={() => onOpen?.(t.kind)} disabled={!onOpen}
+          className="group text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 flex-[1_1_160px] enabled:hover:border-brand-500/60">
           <span className="lbl">{t.label}</span>
           <span className={`${fig} ${t.tone}`}>{t.value.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">{t.sub}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
