@@ -20,8 +20,12 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   (figure, how it is made up, a link through to the record).
 - **Built** — Command palette (⌘K): jump to any client, guard, invoice or
   screen; run common actions ("new expense", "mark attendance").
-- **Idea** — Every figure clickable by default: a table cell that is a sum
-  opens the rows behind it in a DetailSheet, the way Financial Reports does.
+- **In progress (2026-10-22)** — Every figure clickable by default: a figure
+  that is a sum opens the rows behind it in a DetailSheet. **Built:** Expenses
+  band (spent by category, largest entries, head-office share, biggest
+  category; Advances by client, by guard, repeat takers) and the Payroll band
+  (total, disbursed, still to pay, advances — each by client). **Next:**
+  Invoices, Clients, Attendance bands.
 - **DECIDED 2026-10-22: not wanted** — Saved views per user (named filter
   sets and share links). Built and removed the same day at Shayan's word
   ("not required"); pages keep remembering their own state for the session.

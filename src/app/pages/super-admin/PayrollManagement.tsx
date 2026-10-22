@@ -7,6 +7,7 @@ import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDo
 // jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
 // every screen with an Export or PDF button was paying for both on open.
 import Header from "../../components/Header";
+import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import BusyOverlay from "../../components/BusyOverlay";
@@ -2245,6 +2246,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const ZERO_SHELL: ShellTotals = { disbursed: 0, notDisbursed: 0, advance: 0, disbursedCount: 0, notDisbursedCount: 0 };
   const [fvScopes, setFvScopes] = useState<{ key: string; name: string; clientId: string | null; category: string | null }[]>([]);
   const [fvTotals, setFvTotals] = useState<Map<string, ShellTotals>>(new Map());
+  // Each band figure opens its make-up by client (2026-10-22: "every figure clickable").
+  const [bandSheet, setBandSheet] = useState<DetailContent | null>(null);
   const [fvExpanded, setFvExpanded] = useState<string | null>(null);
   const [fvLoading, setFvLoading] = useState(true);
   // Full payslip rows per scope, kept only so a sheet can be exported without a
@@ -2467,9 +2470,39 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               clients={shellScopes.length}
               clientsDone={shellScopes.filter((sc) => shellFullyDisbursed(sc.key)).length}
               period={formatPeriod(selectedPeriod)}
+              onOpen={(kind) => {
+                // By client, from the same per-client totals the cards below show.
+                const scopes = fvExpanded ? shellScopes.filter((sc) => sc.key === fvExpanded) : shellScopes;
+                const pick = (t: ShellTotals) =>
+                  kind === "total" ? t.disbursed + t.notDisbursed
+                  : kind === "disbursed" ? t.disbursed
+                  : kind === "owed" ? t.notDisbursed : t.advance;
+                const rows = scopes
+                  .map((sc) => ({ sc, t: fvTotals.get(sc.key) ?? ZERO_SHELL }))
+                  .filter(({ t }) => pick(t) !== 0)
+                  .sort((a, b) => pick(b.t) - pick(a.t));
+                const sum = rows.reduce((n, r) => n + pick(r.t), 0);
+                const title = { total: "Total salaries", disbursed: "Disbursed", owed: "Still to pay", advance: "Advances recovered" }[kind];
+                setBandSheet({
+                  kicker: `Payroll · ${formatPeriod(selectedPeriod)} · by client`,
+                  title,
+                  big: `PKR ${Math.round(sum).toLocaleString()}`,
+                  note: kind === "owed"
+                    ? (rows.length ? "Net still owed on each client's payslips. Open the client's card below to pay it." : "Every payslip in view is paid.")
+                    : kind === "advance" ? "Advances taken back from this month's payslips, by client." : undefined,
+                  rows: rows.map(({ sc, t }) => ({
+                    label: sc.name,
+                    value: Math.round(pick(t)).toLocaleString(),
+                    hint: kind === "owed" ? `${t.notDisbursedCount} payslip${t.notDisbursedCount === 1 ? "" : "s"} unpaid`
+                      : kind === "disbursed" ? `${t.disbursedCount} payslip${t.disbursedCount === 1 ? "" : "s"} paid`
+                      : kind === "total" ? `${t.disbursedCount + t.notDisbursedCount} payslips` : undefined,
+                  })),
+                });
+              }}
             />
           )}
         </Header>
+        <DetailSheet content={bandSheet} onClose={() => setBandSheet(null)} />
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {(focusPayslipMissing ||
             (focusPayslip && !loading && !filtered.some((r) => r.payslip_id === focusPayslip))) && (
@@ -4589,9 +4622,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
 
 /** Payroll band: how much of the month's payroll has gone out, and to whom. */
-function PayrollBand({ totals, clients, clientsDone, period }: {
+function PayrollBand({ totals, clients, clientsDone, period, onOpen }: {
   totals: { disbursed: number; notDisbursed: number; disbursedCount: number; notDisbursedCount: number; advance: number };
   clients: number; clientsDone: number; period: string;
+  /** Opens the figure's make-up by client. */
+  onOpen?: (kind: "total" | "disbursed" | "owed" | "advance") => void;
 }) {
   const total = totals.disbursed + totals.notDisbursed;
   const slips = totals.disbursedCount + totals.notDisbursedCount;
@@ -4611,16 +4646,17 @@ function PayrollBand({ totals, clients, clientsDone, period }: {
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         {[
-          { label: "Total salaries", v: total, sub: `${slips} payslips`, tone: "text-foreground" },
-          { label: "Disbursed", v: totals.disbursed, sub: `${totals.disbursedCount} payslips`, tone: "text-up" },
-          { label: "Still to pay", v: totals.notDisbursed, sub: `${totals.notDisbursedCount} payslips`, tone: totals.notDisbursed ? "text-heed" : "text-up" },
-          { label: "Advances", v: totals.advance, sub: "advances for the month", tone: "text-down" },
+          { kind: "total" as const, label: "Total salaries", v: total, sub: `${slips} payslips`, tone: "text-foreground" },
+          { kind: "disbursed" as const, label: "Disbursed", v: totals.disbursed, sub: `${totals.disbursedCount} payslips`, tone: "text-up" },
+          { kind: "owed" as const, label: "Still to pay", v: totals.notDisbursed, sub: `${totals.notDisbursedCount} payslips`, tone: totals.notDisbursed ? "text-heed" : "text-up" },
+          { kind: "advance" as const, label: "Advances", v: totals.advance, sub: "advances for the month", tone: "text-down" },
         ].map((t) => (
-          <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <button key={t.label} type="button" onClick={() => onOpen?.(t.kind)} disabled={!onOpen}
+            className="group text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 enabled:hover:border-brand-500/60">
             <span className="lbl">{t.label}</span>
-            <span className={`${fig} ${t.tone}`}><span className="cur">PKR</span>{Math.round(t.v).toLocaleString()}</span>
+            <span className={`${fig} ${t.tone} group-enabled:group-hover:underline`}><span className="cur">PKR</span>{Math.round(t.v).toLocaleString()}</span>
             <span className="text-xs text-muted-foreground">{t.sub}</span>
-          </div>
+          </button>
         ))}
       </div>
     </div>
