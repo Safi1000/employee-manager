@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, CircleAlert, Loader2, Plus } from "lucide-
 import Button from "./Button";
 import { supabase, STATUTORY_SCHEME_LABEL, type StatutoryScheme } from "../lib/supabase";
 import { formatDate } from "../lib/date";
+import SalesTaxReturns from "./SalesTaxReturns";
 
 /**
  * STATUTORY (2026-10-22). EOBI, salary tax (FBR), PESSI and IESSI as their own
@@ -27,11 +28,13 @@ const fmt = (n: number | null | undefined) => (n == null ? "—" : Math.round(Nu
 const monthLabel = (m: string) => new Date(`${m.slice(0, 7)}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
 export default function StatutoryPayments({
-  companyId, banks, canPay, onPay, refreshKey,
+  companyId, banks, canPay, canClassify = false, onPay, refreshKey,
 }: {
   companyId: string | null;
-  banks: { id: string; bank_name: string }[];
+  banks: { id: string; bank_name: string; account_number?: string | null }[];
   canPay: boolean;
+  /** clients.edit: classify which clients pay sales tax, and to whom. */
+  canClassify?: boolean;
   /** Opens "Pay a statutory liability", optionally for one scheme. */
   onPay: (scheme?: StatutoryScheme) => void;
   /** Bumped by the parent after a payment, so the tab re-reads. */
@@ -81,7 +84,7 @@ export default function StatutoryPayments({
   if (err) return <p className="text-sm text-muted-foreground py-8 text-center">{err}</p>;
 
   const owed = dues.reduce((n, d) => n + Math.max(0, d.due), 0);
-  const paid = remits.reduce((n, r) => n + r.amount, 0);
+  const paid = remits.filter((r) => r.paid_via !== "Expense").reduce((n, r) => n + r.amount, 0);
   const costTotal = asCost.reduce((n, c) => n + c.amount, 0);
 
   return (
@@ -89,7 +92,7 @@ export default function StatutoryPayments({
       {/* The four figures that say where statutory stands. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         <Tile label="Still owed" value={`PKR ${fmt(owed)}`} sub="withheld or accrued by payroll, not yet paid against" tone={owed > 0 ? "text-heed" : "text-up"} />
-        <Tile label="Paid as statutory" value={`PKR ${fmt(paid)}`} sub={`${remits.length} payment${remits.length === 1 ? "" : "s"} recorded here`} />
+        <Tile label="Paid as statutory" value={`PKR ${fmt(paid)}`} sub={`${remits.filter((r) => r.paid_via !== "Expense").length} payments recorded here`} />
         <Tile label="Paid but booked as cost" value={`PKR ${fmt(costTotal)}`} sub={asCost.length ? `${asCost.length} payments entered as expenses` : "none"} tone={asCost.length ? "text-down" : "text-up"} />
         <Tile label="Employer EOBI per guard" value={employerEobi == null ? "Not set" : `PKR ${fmt(employerEobi)}`}
           sub={employerEobi == null ? "payroll cannot generate a payslip with EOBI until it is" : "accrued at payroll"} tone={employerEobi == null ? "text-down" : ""} />
@@ -103,7 +106,7 @@ export default function StatutoryPayments({
               <h3 className="text-sm font-semibold text-danger-700 dark:text-danger-500">Paid, but entered as ordinary expenses</h3>
               <p className="text-xs text-muted-foreground">
                 These went to cost instead of settling what payroll withheld — so the month still reads as owed here, and the employee share is counted as cost twice.
-                Each is converted into a statutory payment (same date, same bank) once its split is confirmed.
+                From October&rsquo;s payroll on, pay EOBI and salary tax with &ldquo;Pay&rdquo; on this tab, not as an expense.
               </p>
             </div>
           </div>
@@ -119,6 +122,10 @@ export default function StatutoryPayments({
           </div>
         </section>
       )}
+
+      <SalesTaxReturns companyId={companyId} banks={banks} canEdit={canPay} canClassify={canClassify} />
+
+      <IncomeTaxDeducted companyId={companyId} refreshKey={refreshKey} />
 
       {SCHEMES.map((sc) => {
         const rows = dues.filter((d) => d.scheme === sc).sort((a, b) => b.period_month.localeCompare(a.period_month));
@@ -162,8 +169,11 @@ export default function StatutoryPayments({
                             <div className="text-foreground">{monthLabel(r.period_month)}</div>
                             {monthPays.map((p) => (
                               <div key={p.id} className="text-[11px] text-muted-foreground">
-                                Paid {formatDate(p.paid_on)} · {p.paid_via === "Bank" ? bankName.get(p.bank_account_id ?? "") ?? "bank" : "cash"}
-                                {p.reference ? ` · ${p.reference}` : ""} · {fmt(p.amount)}
+                                {p.paid_via === "Expense"
+                                  // 0548: paid before this screen existed, by an expense that stays as it is.
+                                  ? <>Settled {formatDate(p.paid_on)} by an expense already booked{p.notes ? ` — ${p.notes.replace(/ — 0548$/, "")}` : ""} · {fmt(p.amount)}</>
+                                  : <>Paid {formatDate(p.paid_on)} · {p.paid_via === "Bank" ? bankName.get(p.bank_account_id ?? "") ?? "bank" : "cash"}
+                                    {p.reference ? ` · ${p.reference}` : ""} · {fmt(p.amount)}</>}
                                 {p.cost_portion > 0 ? ` (${fmt(p.liability_portion)} against what was withheld, ${fmt(p.cost_portion)} employer cost)` : ""}
                               </div>
                             ))}
@@ -197,5 +207,100 @@ function Tile({ label, value, sub, tone = "" }: { label: string; value: string; 
       <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${tone}`}>{value}</span>
       <span className="text-xs text-muted-foreground">{sub}</span>
     </div>
+  );
+}
+
+/**
+ * INCOME TAX DEDUCTED (2026-10-22). Per person, per payslip: what payroll
+ * withheld as salary tax, from October 2026's payslips on — "from next
+ * payslip". The month's total is what "Pay Salary tax (FBR)" settles.
+ */
+const INCOME_TAX_FROM = "2026-10-01";
+
+function IncomeTaxDeducted({ companyId, refreshKey }: { companyId: string | null; refreshKey?: unknown }) {
+  type Row = { id: string; employee_id: string; period_month: string; final_salary: number | null; income_tax: number; status: string | null; name: string };
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let alive = true;
+    void (async () => {
+      const { data, error } = await supabase.from("payslips")
+        .select("id, employee_id, period_month, final_salary, income_tax, status")
+        .eq("company_id", companyId).gte("period_month", INCOME_TAX_FROM).gt("income_tax", 0)
+        .order("period_month", { ascending: false });
+      if (!alive) return;
+      if (error) { setDenied(true); setRows([]); return; }
+      const ps = (data ?? []) as Omit<Row, "name">[];
+      const ids = [...new Set(ps.map((p) => p.employee_id))];
+      const names = new Map<string, string>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data: em } = await supabase.from("employees").select("id, full_name").in("id", ids.slice(i, i + 200));
+        for (const e of (em ?? []) as { id: string; full_name: string }[]) names.set(e.id, e.full_name);
+      }
+      if (!alive) return;
+      setRows(ps.map((p) => ({ ...p, income_tax: Number(p.income_tax), final_salary: p.final_salary == null ? null : Number(p.final_salary), name: names.get(p.employee_id) ?? "—" }))
+        .sort((a, b) => b.period_month.localeCompare(a.period_month) || a.name.localeCompare(b.name)));
+    })();
+    return () => { alive = false; };
+  }, [companyId, refreshKey]);
+
+  const months = useMemo(() => [...new Set((rows ?? []).map((r) => r.period_month))], [rows]);
+
+  return (
+    <section className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground">Income tax deducted</h3>
+        <p className="text-xs text-muted-foreground">Salary tax withheld on each payslip, person by person, from October 2026&rsquo;s payslips on.</p>
+      </div>
+      {rows == null ? (
+        <p className="px-4 py-4 text-sm text-muted-foreground">Reading payslips…</p>
+      ) : denied ? (
+        <p className="px-4 py-4 text-sm text-muted-foreground">Payslips need payroll access to read.</p>
+      ) : months.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-muted-foreground">No income tax deducted yet — the list starts with October&rsquo;s payslips.</p>
+      ) : (
+        <div className="divide-y divide-border">
+          {months.map((m) => {
+            const mr = rows.filter((r) => r.period_month === m);
+            const isOpen = open === m || months.length === 1;
+            return (
+              <div key={m}>
+                <button type="button" className="w-full flex items-center gap-3 px-4 py-2.5 text-left" onClick={() => setOpen(open === m ? null : m)}>
+                  <span className="text-sm font-medium text-foreground flex-1">{monthLabel(m)} · {mr.length} {mr.length === 1 ? "person" : "people"}</span>
+                  <span className="font-ledger text-sm font-semibold">{fmt(mr.reduce((n, r) => n + r.income_tax, 0))}</span>
+                </button>
+                {isOpen && (
+                  <div className="overflow-x-auto px-4 pb-3">
+                    <table className="w-full text-sm">
+                      <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="text-left py-1 font-medium">Employee</th>
+                          <th className="text-right py-1 font-medium">Salary</th>
+                          <th className="text-right py-1 font-medium">Tax deducted</th>
+                          <th className="text-left py-1 pl-4 font-medium">Payslip</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {mr.map((r) => (
+                          <tr key={r.id}>
+                            <td className="py-1">{r.name}</td>
+                            <td className="py-1 text-right font-ledger text-muted-foreground">{fmt(r.final_salary)}</td>
+                            <td className="py-1 text-right font-ledger">{fmt(r.income_tax)}</td>
+                            <td className="py-1 pl-4 text-xs text-muted-foreground">{r.status ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

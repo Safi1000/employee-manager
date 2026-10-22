@@ -3531,6 +3531,7 @@ export default function Expenses() {
             companyId={treasuryCompanyId}
             banks={banks}
             canPay={canRemitStatutory}
+            canClassify={hasPermission(profile, "clients.edit")}
             onPay={(scheme) => { setRemitDefaults(scheme ? { scheme } : undefined); setRemitOpen(true); }}
             refreshKey={statutoryKey}
           />
