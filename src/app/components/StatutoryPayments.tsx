@@ -6,6 +6,8 @@ import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
 import { formatDate } from "../lib/date";
 import SalesTaxReturns from "./SalesTaxReturns";
+import Tabs from "./Tabs";
+import { usePageState } from "../lib/pageState";
 
 /**
  * STATUTORY (2026-10-22). EOBI, salary tax (FBR), PESSI and IESSI as their own
@@ -13,6 +15,10 @@ import SalesTaxReturns from "./SalesTaxReturns";
  * has been paid against it, what is still owed — and every payment that went
  * to cost as an ordinary expense instead of settling the liability, which is
  * why a month that has been paid can still read as owed.
+ *
+ * REDESIGN (2026-10-22): one section at a time — Overview (what is owed, by
+ * when, and the last payments), Sales tax, EOBI, Salary tax, PESSI / IESSI.
+ * Each scheme's section holds its rate, its people and its months together.
  *
  * Every figure is read from the database: statutory_liability_due (accrued,
  * remitted, due per scheme and month), statutory_remittances (each payment and
@@ -46,7 +52,10 @@ export default function StatutoryPayments({
   const [remits, setRemits] = useState<Remit[]>([]);
   const [asCost, setAsCost] = useState<AsCost[]>([]);
   const [rates, setRates] = useState<StatutoryRate[]>([]);
+  const [salesTax, setSalesTax] = useState<{ unpaid: number; unpaidN: number; drafts: number }>({ unpaid: 0, unpaidN: 0, drafts: 0 });
   const [err, setErr] = useState<string | null>(null);
+  type Section = "overview" | "sales" | "eobi" | "salary" | "social";
+  const [section, setSection] = usePageState<Section>("Statutory.section", "overview");
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -61,12 +70,13 @@ export default function StatutoryPayments({
     }
     const dueCalls = months.flatMap((m) => SCHEMES.map((sc) =>
       supabase.rpc("statutory_liability_due", { p_company_id: companyId, p_scheme: sc, p_period: m })));
-    const [dueRes, rRes, cRes, sRes] = await Promise.all([
+    const [dueRes, rRes, cRes, sRes, stRes] = await Promise.all([
       Promise.all(dueCalls),
       supabase.from("statutory_remittances").select("id, scheme, period_month, amount, liability_portion, cost_portion, paid_on, paid_via, reference, notes, bank_account_id")
         .eq("company_id", companyId).order("paid_on", { ascending: false }),
       supabase.rpc("statutory_booked_as_cost", { p_company_id: companyId }),
       supabase.from("statutory_rates").select("scheme, employee_amount, employer_amount, effective_from, reason").eq("company_id", companyId).order("effective_from", { ascending: false }),
+      supabase.from("sales_tax_returns").select("status, challan_amount").eq("company_id", companyId).neq("status", "paid"),
     ]);
     const failed = dueRes.find((r) => r.error);
     if (failed?.error) { setErr(failed.error.message); setDues([]); return; }
@@ -76,6 +86,12 @@ export default function StatutoryPayments({
     setRemits(((rRes.data ?? []) as Remit[]).map((r) => ({ ...r, amount: Number(r.amount), liability_portion: Number(r.liability_portion), cost_portion: Number(r.cost_portion) })));
     setAsCost(((cRes.data ?? []) as AsCost[]).map((c) => ({ ...c, amount: Number(c.amount) })));
     setRates(((sRes.data ?? []) as StatutoryRate[]).map((x) => ({ ...x, employee_amount: Number(x.employee_amount), employer_amount: Number(x.employer_amount) })));
+    const st = (stRes.data ?? []) as { status: string; challan_amount: number | null }[];
+    setSalesTax({
+      unpaid: st.filter((x) => x.status === "posted").reduce((n, x) => n + Number(x.challan_amount ?? 0), 0),
+      unpaidN: st.filter((x) => x.status === "posted").length,
+      drafts: st.filter((x) => x.status === "draft").length,
+    });
   }, [companyId]);
   useEffect(() => { void load(); }, [load, refreshKey]);
 
@@ -85,128 +101,218 @@ export default function StatutoryPayments({
   }
   if (err) return <p className="text-sm text-muted-foreground py-8 text-center">{err}</p>;
 
-  const owed = dues.reduce((n, d) => n + Math.max(0, d.due), 0);
-  const paid = remits.filter((r) => r.paid_via !== "Expense").reduce((n, r) => n + r.amount, 0);
+  const owedOf = (sc: StatutoryScheme) => dues.filter((d) => d.scheme === sc).reduce((n, d) => n + Math.max(0, d.due), 0);
+  // The earliest month still owed for a scheme, and — for EOBI — the 10th of
+  // the month after it, when its challan is due (DECIDED 2026-10-22).
+  const oldestOwed = (sc: StatutoryScheme) => dues.filter((d) => d.scheme === sc && d.due > 0.5).map((d) => d.period_month).sort()[0] ?? null;
+  const tenthAfter = (m: string) => { const d = new Date(`${m.slice(0, 7)}-01T00:00:00`); d.setMonth(d.getMonth() + 1); d.setDate(10); return d; };
   const costTotal = asCost.reduce((n, c) => n + c.amount, 0);
+  const schemeTable = (sc: StatutoryScheme) => (
+    <SchemeTable key={sc} sc={sc} dues={dues} remits={remits} bankName={bankName} canPay={canPay} onPay={onPay} />
+  );
+
+  type Card = { key: Section; title: string; amount: number; line: string; tone: string };
+  const eobiOldest = oldestOwed("eobi");
+  const cards: Card[] = [
+    {
+      key: "sales", title: "Sales tax", amount: salesTax.unpaid,
+      line: salesTax.unpaidN ? `${salesTax.unpaidN} challan${salesTax.unpaidN === 1 ? "" : "s"} made, unpaid · due the 15th`
+        : salesTax.drafts ? `${salesTax.drafts} return${salesTax.drafts === 1 ? "" : "s"} being filled · due the 15th` : "nothing open · next return due the 15th",
+      tone: salesTax.unpaid > 0 ? "text-heed" : "",
+    },
+    {
+      key: "eobi", title: "EOBI", amount: owedOf("eobi"),
+      line: eobiOldest ? `withheld from ${monthLabel(eobiOldest)} on · challan by ${tenthAfter(eobiOldest).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "nothing withheld and unpaid",
+      tone: owedOf("eobi") > 0 ? "text-heed" : "",
+    },
+    {
+      key: "salary", title: "Salary tax (FBR)", amount: owedOf("salary_tax"),
+      line: oldestOwed("salary_tax") ? `withheld from ${monthLabel(oldestOwed("salary_tax")!)} on` : "nothing withheld and unpaid",
+      tone: owedOf("salary_tax") > 0 ? "text-heed" : "",
+    },
+    {
+      key: "social", title: "PESSI / IESSI", amount: owedOf("pessi") + owedOf("iessi"),
+      line: statutoryRateOn(rates, "pessi", new Date().toISOString()) || statutoryRateOn(rates, "iessi", new Date().toISOString()) ? "per head, from their challans" : "rates not set yet",
+      tone: owedOf("pessi") + owedOf("iessi") > 0 ? "text-heed" : "",
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
-      {/* The four figures that say where statutory stands. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <Tile label="Still owed" value={`PKR ${fmt(owed)}`} sub="withheld or accrued by payroll, not yet paid against" tone={owed > 0 ? "text-heed" : "text-up"} />
-        <Tile label="Paid as statutory" value={`PKR ${fmt(paid)}`} sub={`${remits.filter((r) => r.paid_via !== "Expense").length} payments recorded here`} />
-        <Tile label="Paid but booked as cost" value={`PKR ${fmt(costTotal)}`} sub={asCost.length ? `${asCost.length} payments entered as expenses` : "none"} tone={asCost.length ? "text-down" : "text-up"} />
-        {(() => {
-          const eobi = statutoryRateOn(rates, "eobi", new Date().toISOString());
-          return (
-            <Tile label="EOBI per head" value={eobi ? `PKR ${fmt(eobi.employee_amount + eobi.employer_amount)}` : "Not set"}
-              sub={eobi ? `${fmt(eobi.employee_amount)} employee · ${fmt(eobi.employer_amount)} employer · from ${monthLabel(eobi.effective_from)}` : "payroll cannot make a payslip with EOBI until it is"}
-              tone={eobi ? "" : "text-down"} />
-          );
-        })()}
-      </div>
+      <Tabs<Section> value={section} onChange={setSection} items={[
+        { value: "overview", label: "Overview" },
+        { value: "sales", label: "Sales tax", count: salesTax.unpaidN || undefined },
+        { value: "eobi", label: "EOBI" },
+        { value: "salary", label: "Salary tax" },
+        { value: "social", label: "PESSI / IESSI" },
+      ]} />
 
-      {asCost.length > 0 && (
-        <section className="rounded-2xl border border-down/40 bg-danger-50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-down/30 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 text-danger-700 dark:text-danger-500 flex-shrink-0" />
-            <div>
-              <h3 className="text-sm font-semibold text-danger-700 dark:text-danger-500">Paid, but entered as ordinary expenses</h3>
-              <p className="text-xs text-muted-foreground">
-                These went to cost instead of settling what payroll withheld — so the month still reads as owed here, and the employee share is counted as cost twice.
-                From October&rsquo;s payroll on, pay EOBI and salary tax with &ldquo;Pay&rdquo; on this tab, not as an expense.
-              </p>
-            </div>
-          </div>
-          <div className="divide-y divide-border bg-card">
-            {asCost.map((c) => (
-              <div key={c.expense_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
-                <span className="text-muted-foreground whitespace-nowrap">{formatDate(c.expense_date)}</span>
-                <span className="flex-1 min-w-0 truncate text-foreground">{c.description ?? c.category}</span>
-                <span className="text-xs text-muted-foreground">{STATUTORY_SCHEME_LABEL[c.scheme as StatutoryScheme] ?? c.scheme} · should settle {c.liability_account}</span>
-                <span className="font-ledger font-semibold">{fmt(c.amount)}</span>
-              </div>
+      {section === "overview" && (
+        <>
+          {/* What is owed, per obligation, and by when. Each opens its section. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {cards.map((c) => (
+              <button key={c.key} type="button" onClick={() => setSection(c.key)}
+                className="text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 min-w-0 hover:border-brand-500/50 transition-colors">
+                <span className="lbl">{c.title} · owed</span>
+                <span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${c.tone}`}>PKR {fmt(c.amount)}</span>
+                <span className="text-xs text-muted-foreground">{c.line}</span>
+              </button>
             ))}
           </div>
-        </section>
-      )}
 
-      <PerHeadRates companyId={companyId} rates={rates} canEdit={canPay} canClassify={canClassify} onChanged={() => void load()} />
-
-      <SalesTaxReturns companyId={companyId} banks={banks} canEdit={canPay} canClassify={canClassify} />
-
-      <IncomeTaxDeducted companyId={companyId} refreshKey={refreshKey} />
-
-      {SCHEMES.map((sc) => {
-        const rows = dues.filter((d) => d.scheme === sc).sort((a, b) => b.period_month.localeCompare(a.period_month));
-        const scRemits = remits.filter((r) => r.scheme === sc);
-        const anything = rows.some((r) => r.accrued || r.remitted || r.due) || scRemits.length;
-        const balance = rows[0]?.liability_balance ?? 0;
-        return (
-          <section key={sc} className="rounded-2xl border border-border bg-card overflow-hidden">
-            <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-foreground">{STATUTORY_SCHEME_LABEL[sc]}</h3>
-                <p className="text-xs text-muted-foreground">{rows[0]?.liability_account ?? ""} · balance <span className="font-ledger text-foreground">{fmt(balance)}</span></p>
+          {asCost.length > 0 && (
+            <section className="rounded-2xl border border-down/40 bg-danger-50 overflow-hidden">
+              <div className="px-4 py-3 border-b border-down/30 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 text-danger-700 dark:text-danger-500 flex-shrink-0" />
+                <div>
+                  <h3 className="text-sm font-semibold text-danger-700 dark:text-danger-500">Paid, but entered as ordinary expenses · PKR {fmt(costTotal)}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    These went to cost instead of settling what payroll withheld — so the month still reads as owed, and the employee share is counted as cost twice.
+                    Pay EOBI and salary tax from their section here, not as an expense.
+                  </p>
+                </div>
               </div>
-              {canPay && (
-                <Button size="sm" variant="secondary" className="ml-auto" onClick={() => onPay(sc)}>
-                  <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Pay {STATUTORY_SCHEME_LABEL[sc]}
-                </Button>
-              )}
+              <div className="divide-y divide-border bg-card">
+                {asCost.map((c) => (
+                  <div key={c.expense_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
+                    <span className="text-muted-foreground whitespace-nowrap">{formatDate(c.expense_date)}</span>
+                    <span className="flex-1 min-w-0 truncate text-foreground">{c.description ?? c.category}</span>
+                    <span className="text-xs text-muted-foreground">{STATUTORY_SCHEME_LABEL[c.scheme as StatutoryScheme] ?? c.scheme} · should settle {c.liability_account}</span>
+                    <span className="font-ledger font-semibold">{fmt(c.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* The last payments, whichever scheme. */}
+          <section className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border flex items-center">
+              <h3 className="text-sm font-semibold text-foreground">Recent payments</h3>
+              <span className="ml-auto text-xs text-muted-foreground">EOBI, salary tax, PESSI, IESSI</span>
             </div>
-            {!anything ? (
-              <p className="px-4 py-4 text-sm text-muted-foreground">Nothing withheld or accrued by payroll for {STATUTORY_SCHEME_LABEL[sc]} yet.</p>
+            {remits.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-muted-foreground">None yet.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium">Month</th>
-                      <th className="text-right px-4 py-2 font-medium">Accrued by payroll</th>
-                      <th className="text-right px-4 py-2 font-medium">Paid against it</th>
-                      <th className="text-right px-4 py-2 font-medium">Still owed</th>
-                      <th className="text-left px-4 py-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {rows.filter((r) => r.accrued || r.remitted || r.due).map((r) => {
-                      const st = r.due <= 0.5 ? (r.accrued ? "paid" : "none") : r.remitted > 0 ? "part" : "open";
-                      const monthPays = scRemits.filter((x) => x.period_month.slice(0, 7) === r.period_month.slice(0, 7));
-                      return (
-                        <tr key={r.period_month} className={st === "open" ? "bg-warning-50/50" : undefined}>
-                          <td className="px-4 py-2 align-top">
-                            <div className="text-foreground">{monthLabel(r.period_month)}</div>
-                            {monthPays.map((p) => (
-                              <div key={p.id} className="text-[11px] text-muted-foreground">
-                                {p.paid_via === "Expense"
-                                  // 0548: paid before this screen existed, by an expense that stays as it is.
-                                  ? <>Settled {formatDate(p.paid_on)} by an expense already booked{p.notes ? ` — ${p.notes.replace(/ — 0548$/, "")}` : ""} · {fmt(p.amount)}</>
-                                  : <>Paid {formatDate(p.paid_on)} · {p.paid_via === "Bank" ? bankName.get(p.bank_account_id ?? "") ?? "bank" : "cash"}
-                                    {p.reference ? ` · ${p.reference}` : ""} · {fmt(p.amount)}</>}
-                                {p.cost_portion > 0 ? ` (${fmt(p.liability_portion)} against what was withheld, ${fmt(p.cost_portion)} employer cost)` : ""}
-                              </div>
-                            ))}
-                          </td>
-                          <td className="px-4 py-2 text-right font-ledger align-top">{fmt(r.accrued)}</td>
-                          <td className="px-4 py-2 text-right font-ledger align-top">{fmt(r.remitted)}</td>
-                          <td className={`px-4 py-2 text-right font-ledger align-top ${r.due > 0.5 ? "text-heed font-semibold" : "text-muted-foreground"}`}>{fmt(r.due)}</td>
-                          <td className="px-4 py-2 align-top">
-                            {st === "paid" && <span className="inline-flex items-center gap-1 text-xs text-success-700 dark:text-success-500"><CheckCircle2 className="w-3.5 h-3.5" /> Paid</span>}
-                            {st === "part" && <span className="inline-flex items-center gap-1 text-xs text-heed"><CircleAlert className="w-3.5 h-3.5" /> Part paid</span>}
-                            {st === "open" && <span className="inline-flex items-center gap-1 text-xs text-heed"><CircleAlert className="w-3.5 h-3.5" /> Owed</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="divide-y divide-border text-sm">
+                {remits.slice(0, 8).map((p) => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-4 py-2">
+                    <span className="text-muted-foreground whitespace-nowrap w-24">{formatDate(p.paid_on)}</span>
+                    <span className="flex-1 min-w-0 truncate text-foreground">
+                      {STATUTORY_SCHEME_LABEL[p.scheme as StatutoryScheme] ?? p.scheme} · {monthLabel(p.period_month)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {p.paid_via === "Expense" ? "settled by an earlier expense" : p.paid_via === "Bank" ? bankName.get(p.bank_account_id ?? "") ?? "bank" : "cash"}
+                    </span>
+                    <span className="font-ledger font-semibold">{fmt(p.amount)}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
-        );
-      })}
+        </>
+      )}
+
+      {section === "sales" && (
+        <SalesTaxReturns companyId={companyId} banks={banks} canEdit={canPay} canClassify={canClassify} />
+      )}
+
+      {section === "eobi" && (
+        <>
+          <PerHeadRates companyId={companyId} rates={rates} canEdit={canPay} canClassify={canClassify} onChanged={() => void load()} schemes={["eobi"]} chooser />
+          {schemeTable("eobi")}
+        </>
+      )}
+
+      {section === "salary" && (
+        <>
+          {schemeTable("salary_tax")}
+          <IncomeTaxDeducted companyId={companyId} refreshKey={refreshKey} />
+        </>
+      )}
+
+      {section === "social" && (
+        <>
+          <PerHeadRates companyId={companyId} rates={rates} canEdit={canPay} canClassify={canClassify} onChanged={() => void load()} schemes={["pessi", "iessi"]} chooser={false} />
+          {schemeTable("pessi")}
+          {schemeTable("iessi")}
+        </>
+      )}
     </div>
+  );
+}
+
+/** One scheme's months: what payroll withheld or accrued, what was paid against it, what is still owed. */
+function SchemeTable({ sc, dues, remits, bankName, canPay, onPay }: {
+  sc: StatutoryScheme; dues: Due[]; remits: Remit[]; bankName: Map<string, string>; canPay: boolean; onPay: (scheme?: StatutoryScheme) => void;
+}) {
+  const rows = dues.filter((d) => d.scheme === sc).sort((a, b) => b.period_month.localeCompare(a.period_month));
+  const scRemits = remits.filter((r) => r.scheme === sc);
+  const anything = rows.some((r) => r.accrued || r.remitted || r.due) || scRemits.length;
+  const balance = rows[0]?.liability_balance ?? 0;
+  return (
+    <section className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{STATUTORY_SCHEME_LABEL[sc]} by month</h3>
+          <p className="text-xs text-muted-foreground">{rows[0]?.liability_account ?? ""} · balance <span className="font-ledger text-foreground">{fmt(balance)}</span></p>
+        </div>
+        {canPay && (
+          <Button size="sm" variant="secondary" className="ml-auto" onClick={() => onPay(sc)}>
+            <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Pay {STATUTORY_SCHEME_LABEL[sc]}
+          </Button>
+        )}
+      </div>
+      {!anything ? (
+        <p className="px-4 py-4 text-sm text-muted-foreground">Nothing withheld or accrued for {STATUTORY_SCHEME_LABEL[sc]} yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium">Month</th>
+                <th className="text-right px-4 py-2 font-medium">Withheld / accrued</th>
+                <th className="text-right px-4 py-2 font-medium">Paid against it</th>
+                <th className="text-right px-4 py-2 font-medium">Still owed</th>
+                <th className="text-left px-4 py-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.filter((r) => r.accrued || r.remitted || r.due).map((r) => {
+                const st = r.due <= 0.5 ? (r.accrued ? "paid" : "none") : r.remitted > 0 ? "part" : "open";
+                const monthPays = scRemits.filter((x) => x.period_month.slice(0, 7) === r.period_month.slice(0, 7));
+                return (
+                  <tr key={r.period_month} className={st === "open" ? "bg-warning-50/50" : undefined}>
+                    <td className="px-4 py-2 align-top">
+                      <div className="text-foreground">{monthLabel(r.period_month)}</div>
+                      {monthPays.map((p) => (
+                        <div key={p.id} className="text-[11px] text-muted-foreground">
+                          {p.paid_via === "Expense"
+                            // 0548: paid before this screen existed, by an expense that stays as it is.
+                            ? <>Settled {formatDate(p.paid_on)} by an expense already booked{p.notes ? ` — ${p.notes.replace(/ — 0548$/, "")}` : ""} · {fmt(p.amount)}</>
+                            : <>Paid {formatDate(p.paid_on)} · {p.paid_via === "Bank" ? bankName.get(p.bank_account_id ?? "") ?? "bank" : "cash"}
+                              {p.reference ? ` · ${p.reference}` : ""} · {fmt(p.amount)}</>}
+                          {p.cost_portion > 0 ? ` (${fmt(p.liability_portion)} against what was withheld, ${fmt(p.cost_portion)} employer cost)` : ""}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="px-4 py-2 text-right font-ledger align-top">{fmt(r.accrued)}</td>
+                    <td className="px-4 py-2 text-right font-ledger align-top">{fmt(r.remitted)}</td>
+                    <td className={`px-4 py-2 text-right font-ledger align-top ${r.due > 0.5 ? "text-heed font-semibold" : "text-muted-foreground"}`}>{fmt(r.due)}</td>
+                    <td className="px-4 py-2 align-top">
+                      {st === "paid" && <span className="inline-flex items-center gap-1 text-xs text-success-700 dark:text-success-500"><CheckCircle2 className="w-3.5 h-3.5" /> Paid</span>}
+                      {st === "part" && <span className="inline-flex items-center gap-1 text-xs text-heed"><CircleAlert className="w-3.5 h-3.5" /> Part paid</span>}
+                      {st === "open" && <span className="inline-flex items-center gap-1 text-xs text-heed"><CircleAlert className="w-3.5 h-3.5" /> Owed</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -323,8 +429,12 @@ function IncomeTaxDeducted({ companyId, refreshKey }: { companyId: string | null
  * because sometimes a client refuses"); it sits in EOBI Payable until a
  * challan pays it. The soft flags only inform — nothing is enforced.
  */
-function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
+function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged, schemes, chooser }: {
   companyId: string | null; rates: StatutoryRate[]; canEdit: boolean; canClassify: boolean; onChanged: () => void;
+  /** Which schemes' rates this section shows. */
+  schemes: ("eobi" | "pessi" | "iessi")[];
+  /** EOBI's section: who it is deducted from, open. */
+  chooser: boolean;
 }) {
   type Emp = {
     id: string; full_name: string; client_id: string | null; category: string | null; lifecycle_state: string | null;
@@ -334,15 +444,15 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
   const [clientName, setClientName] = useState<Map<string, string>>(new Map());
   const [onlyChosen, setOnlyChosen] = useState(true);
   const [q, setQ] = useState("");
-  const [show, setShow] = useState(false);
+  const show = chooser;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const thisMonth = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
-  const [f, setF] = useState<{ scheme: "eobi" | "pessi" | "iessi"; emp: string; er: string; from: string; reason: string }>({ scheme: "eobi", emp: "", er: "", from: thisMonth(), reason: "" });
+  const [f, setF] = useState<{ scheme: "eobi" | "pessi" | "iessi"; emp: string; er: string; from: string; reason: string }>({ scheme: schemes[0], emp: "", er: "", from: thisMonth(), reason: "" });
 
   const loadEmps = useCallback(async () => {
-    if (!companyId) return;
+    if (!companyId || !chooser) return;
     const [e, c] = await Promise.all([
       supabase.from("employees")
         .select("id, full_name, client_id, category, lifecycle_state, date_of_birth, cnic_number, cnic_expiry, eobi_registration_number, eobi_deduct")
@@ -351,7 +461,7 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
     ]);
     if (!e.error) setEmps((e.data ?? []) as Emp[]);
     setClientName(new Map(((c.data ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name])));
-  }, [companyId]);
+  }, [companyId, chooser]);
   useEffect(() => { void loadEmps(); }, [loadEmps]);
 
   const setDeduct = async (ids: string[], v: boolean) => {
@@ -404,8 +514,8 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
   return (
     <section className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-        <h3 className="text-sm font-semibold text-foreground mr-2">Per-head rates</h3>
-        {(["eobi", "pessi", "iessi"] as const).map((sc) => {
+        <h3 className="text-sm font-semibold text-foreground mr-2">Per head</h3>
+        {schemes.map((sc) => {
           const r = statutoryRateOn(rates, sc, nowIso);
           return (
             <div key={sc} className="text-sm" title={r?.reason}>
@@ -417,11 +527,13 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
         })}
         {canEdit && (
           <button type="button" className="text-xs text-brand-700 dark:text-brand-500 hover:underline font-medium"
-            onClick={() => { setErr(null); setF({ scheme: "eobi", emp: "", er: "", from: thisMonth(), reason: "" }); setOpen(true); }}>Change a rate</button>
+            onClick={() => { setErr(null); setF({ scheme: schemes[0], emp: "", er: "", from: thisMonth(), reason: "" }); setOpen(true); }}>Change a rate</button>
         )}
-        <button type="button" className="ml-auto text-xs text-brand-700 dark:text-brand-500 hover:underline font-medium" onClick={() => setShow((v) => !v)}>
-          EOBI deducted from · {chosen.length} employees{flagged ? ` · ${flagged} flagged` : ""}
-        </button>
+        {chooser && (
+          <span className="ml-auto text-xs text-muted-foreground">
+            Deducted from <span className="font-semibold text-foreground">{chosen.length}</span> employees{flagged ? ` · ${flagged} flagged` : ""}
+          </span>
+        )}
       </div>
       {err && !open && <p className="px-4 pb-2 text-sm text-danger-700 dark:text-danger-500">{err}</p>}
       {show && (
@@ -487,9 +599,7 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged }: {
         <div className="flex flex-col gap-3">
           <p className="text-xs text-muted-foreground">A rate is never edited. The new one applies to payroll from its month; payslips already made keep the rate they were made at.</p>
           <ThemedSelect value={f.scheme} onChange={(e) => setF((x) => ({ ...x, scheme: e.target.value as typeof f.scheme }))} aria-label="Scheme">
-            <option value="eobi">EOBI</option>
-            <option value="pessi">PESSI</option>
-            <option value="iessi">IESSI</option>
+            {schemes.map((sc) => <option key={sc} value={sc}>{STATUTORY_SCHEME_LABEL[sc]}</option>)}
           </ThemedSelect>
           <div className="grid grid-cols-2 gap-3">
             <div>
