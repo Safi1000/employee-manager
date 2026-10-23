@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, CircleAlert, Plus, Fuel, Receipt, Gauge, Undo2, ListPlus, Trash2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, Plus, Fuel, Receipt, Gauge, Undo2, ListPlus, Trash2, Pencil, HelpCircle } from "lucide-react";
 import Button from "./Button";
 import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
@@ -46,6 +46,9 @@ type Dialog =
   | { kind: "reverse"; load: Load; card: CardRow }
   | { kind: "bills"; card: CardRow }
   | { kind: "book"; card: CardRow; gap: number }
+  | { kind: "edit"; card: CardRow }
+  | { kind: "delete"; card: CardRow }
+  | { kind: "partnerLoad"; card: CardRow; partnerId: string }
   | null;
 
 export default function FuelCards({
@@ -78,6 +81,10 @@ export default function FuelCards({
 
   const [branches, setBranches] = useState<Opt[]>([]);
   const [employees, setEmployees] = useState<Opt[]>([]);
+  // 0554: who holds each card (an office-staff employee, or a partner for an allowance card).
+  const [partners, setPartners] = useState<Opt[]>([]);
+  const [holders, setHolders] = useState<Map<string, { employee: string | null; partner: string | null; notes: string | null }>>(new Map());
+  const [showHelp, setShowHelp] = useState(false);
   const [clients, setClients] = useState<(Opt & { branch_id: string | null })[]>([]);
   const [categories, setCategories] = useState<Opt[]>([]);
 
@@ -102,6 +109,9 @@ export default function FuelCards({
       difference: r.difference == null ? null : Number(r.difference),
     })));
     setLoads(((l.data ?? []) as Load[]).map((x) => ({ ...x, amount: Number(x.amount) })));
+    const { data: hx } = await supabase.from("fuel_cards").select("id, holder_employee_id, holder_partner_id, notes").eq("company_id", companyId);
+    setHolders(new Map(((hx ?? []) as { id: string; holder_employee_id: string | null; holder_partner_id: string | null; notes: string | null }[])
+      .map((x) => [x.id, { employee: x.holder_employee_id, partner: x.holder_partner_id, notes: x.notes }])));
     const ms = monthStartISO();
     const { data: bx } = await supabase.from("expenses").select("fuel_card_id, client_id, amount")
       .eq("company_id", companyId).eq("payment_mode", "Card").gte("expense_date", ms);
@@ -120,10 +130,13 @@ export default function FuelCards({
     if (!companyId) return;
     void Promise.all([
       supabase.from("branches").select("id, name").eq("company_id", companyId).order("name"),
-      supabase.from("employees").select("id, full_name, lifecycle_state").eq("company_id", companyId).order("full_name"),
+      // Only office staff hold fuel cards (0554).
+      supabase.from("employees").select("id, full_name, lifecycle_state").eq("company_id", companyId).eq("category", "office_staff").order("full_name"),
       supabase.from("clients").select("id, name, branch_id").eq("company_id", companyId).order("name"),
       supabase.from("expense_categories").select("id, name").eq("company_id", companyId).order("name"),
-    ]).then(([b, e, cl, cat]) => {
+      supabase.from("partners").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name"),
+    ]).then(([b, e, cl, cat, pt]) => {
+      setPartners((pt.data ?? []) as Opt[]);
       setBranches((b.data ?? []) as Opt[]);
       setEmployees(((e.data ?? []) as { id: string; full_name: string; lifecycle_state: string | null }[])
         .filter((x) => !["fired", "terminated", "resigned", "left", "absconded"].includes(String(x.lifecycle_state ?? "")))
@@ -144,6 +157,14 @@ export default function FuelCards({
 
   const open = (d: Dialog, init: Record<string, string> = {}) => { setErr(null); setF(init); setDialog(d); };
   const close = () => { if (!busy) setDialog(null); };
+  const openEdit = (c: CardRow) => {
+    const h = holders.get(c.fuel_card_id);
+    open({ kind: "edit", card: c }, {
+      label: c.label, last4: c.card_last4 ?? "", branch: c.branch_id ?? "", notes: h?.notes ?? "",
+      holder: h?.partner ? `p:${h.partner}` : h?.employee ? `e:${h.employee}` : "",
+    });
+  };
+  const setDialogPartnerLoad = (c: CardRow, partnerId: string) => open({ kind: "partnerLoad", card: c, partnerId }, { date: todayISO() });
   const run = async (call: () => PromiseLike<{ error: { message: string } | null }>, moved: boolean) => {
     setBusy(true); setErr(null);
     const { error } = await call();
@@ -157,6 +178,9 @@ export default function FuelCards({
   const submit = async () => {
     if (!dialog) return;
     const amount = Number(f.amount);
+    // f.holder is "e:<employee id>" or "p:<partner id>" (0554).
+    const holderEmp = f.holder?.startsWith("e:") ? f.holder.slice(2) : null;
+    const holderPartner = f.holder?.startsWith("p:") ? f.holder.slice(2) : null;
     if (dialog.kind === "register") {
       const role = f.role === "allowance" ? "allowance" : "float";
       if (!f.label?.trim()) return setErr("Name the card.");
@@ -164,9 +188,33 @@ export default function FuelCards({
       if (f.last4 && !/^\d{4}$/.test(f.last4)) return setErr("Last four digits only — four numbers.");
       return run(() => supabase.rpc("register_fuel_card", {
         p_role: role, p_label: f.label.trim(), p_branch_id: f.branch || null,
-        p_holder_employee_id: f.holder || null, p_card_last4: f.last4 || null,
+        p_holder_employee_id: holderEmp, p_card_last4: f.last4 || null,
         p_provider: f.provider?.trim() || "Attock", p_notes: f.notes?.trim() || null,
+        p_holder_partner_id: role === "allowance" ? holderPartner : null,
       }), false);
+    }
+    if (dialog.kind === "edit") {
+      if (!f.label?.trim()) return setErr("Name the card.");
+      if (f.last4 && !/^\d{4}$/.test(f.last4)) return setErr("Last four digits only — four numbers.");
+      if (dialog.card.role === "allowance" && !f.holder) return setErr("Choose who holds the card.");
+      return run(() => supabase.rpc("update_fuel_card", {
+        p_fuel_card_id: dialog.card.fuel_card_id, p_label: f.label.trim(), p_card_last4: f.last4 || null,
+        p_holder_employee_id: holderEmp, p_holder_partner_id: dialog.card.role === "allowance" ? holderPartner : null,
+        p_branch_id: f.branch || null, p_notes: f.notes?.trim() || null,
+      }), false);
+    }
+    if (dialog.kind === "delete") {
+      return run(() => supabase.rpc("delete_fuel_card", { p_fuel_card_id: dialog.card.fuel_card_id }), false);
+    }
+    if (dialog.kind === "partnerLoad") {
+      // A partner's card: the load is a drawing on that partner (DECIDED 2026-10-23).
+      if (!(amount > 0)) return setErr("Enter the amount loaded.");
+      if (!f.bank) return setErr("Choose the bank it was loaded from.");
+      return run(() => supabase.rpc("record_partner_entry", {
+        p_partner_id: dialog.partnerId, p_date: f.date || todayISO(), p_type: "DRAWING",
+        p_description: `Fuel card load — ${dialog.card.label}${dialog.card.card_last4 ? ` ••${dialog.card.card_last4}` : ""}${f.note?.trim() ? ` · ${f.note.trim()}` : ""}`,
+        p_amount: amount, p_method: "BANK_TRANSFER", p_bank_account_id: f.bank, p_cash_location_id: null,
+      }), true);
     }
     if (dialog.kind === "load") {
       if (!(amount > 0)) return setErr("Enter the amount loaded.");
@@ -229,21 +277,35 @@ export default function FuelCards({
   };
 
   const field = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
+  // Office staff hold cards; a partner can hold an allowance card (0554).
+  const holderPicker = (role: "float" | "allowance") => (
+    <div>
+      <label className="block text-[11px] text-muted-foreground mb-1">{role === "allowance" ? "Held by *" : "Carried by (office staff)"}</label>
+      <ThemedSelect value={f.holder ?? ""} onChange={(e) => set("holder", e.target.value)}>
+        <option value="">{role === "allowance" ? "Select person" : "Nobody in particular"}</option>
+        {employees.map((e) => <option key={e.id} value={`e:${e.id}`}>{e.name} — office staff</option>)}
+        {role === "allowance" && partners.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.name} — partner</option>)}
+      </ThemedSelect>
+    </div>
+  );
   const label = "block text-[11px] text-muted-foreground mb-1";
 
   const status = (c: CardRow) => {
     if (c.balance < -0.005) return { ok: false, text: "Bastion holds this card below zero" };
-    if (!c.reading_as_of) return { ok: false, text: "Attock balance never entered" };
+    if (!c.reading_as_of) return { ok: false, text: "Never tallied with Attock" };
     if (Math.abs(c.difference ?? 0) > 0.5)
       return { ok: false, text: `Attock ${fmt(c.portal_balance)} on ${fmtDate(c.reading_as_of)} · Bastion ${fmt(c.balance_on_reading)}` };
-    return { ok: true, text: `Agrees with Attock on ${fmtDate(c.reading_as_of)}` };
+    return { ok: true, text: `Tallied with Attock on ${fmtDate(c.reading_as_of)}` };
   };
 
   const title =
     dialog?.kind === "register" ? "Register a fuel card"
     : dialog?.kind === "load" ? `Load — ${dialog.card.label}`
     : dialog?.kind === "bill" ? `Fuel bill — ${dialog.card.label}`
-    : dialog?.kind === "reading" ? `Attock balance — ${dialog.card.label}`
+    : dialog?.kind === "reading" ? `Tally with Attock — ${dialog.card.label}`
+    : dialog?.kind === "edit" ? `Edit card — ${dialog.card.label}`
+    : dialog?.kind === "delete" ? `Delete card — ${dialog.card.label}`
+    : dialog?.kind === "partnerLoad" ? `Load (partner drawing) — ${dialog.card.label}`
     : dialog?.kind === "reverse" ? `Reverse load — ${dialog.card.label}`
     : dialog?.kind === "bills" ? `Enter bills — ${dialog.card.label}`
     : dialog?.kind === "book" ? `Book unbilled fuel — ${dialog.card.label}` : "";
@@ -256,8 +318,13 @@ export default function FuelCards({
           <div className="text-xs text-muted-foreground">
             {billsOnly
               ? "Record each fuel bill against the card it was paid with — with its client, or as a general bill when it was not for one site."
-              : <>Company float on cards is an asset until it is spent; an allowance card is where a man&rsquo;s fixed allowance is paid.</>}
+              : <>Company float cards hold company money; allowance cards are personal. Only office staff and partners hold cards.</>}
           </div>
+          {!billsOnly && (
+            <button type="button" onClick={() => setShowHelp((v) => !v)} className="mt-1 inline-flex items-center gap-1 text-xs text-brand-700 dark:text-brand-500 hover:underline">
+              <HelpCircle className="w-3.5 h-3.5" /> {showHelp ? "Hide" : "How fuel cards work"}
+            </button>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-3">
           <div className="text-right">
@@ -273,6 +340,34 @@ export default function FuelCards({
           )}
         </div>
       </div>
+
+      {showHelp && !billsOnly && (
+        <div className="px-4 py-3 border-b border-border bg-muted/30 text-sm text-foreground grid gap-2 md:grid-cols-2">
+          <div>
+            <div className="font-semibold mb-1">Company float card</div>
+            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+              <li><span className="text-foreground">Balance</span> — company money sitting on the card. It is an asset, not an expense, until fuel is bought.</li>
+              <li><span className="text-foreground">Load</span> — money moved from a bank onto the card. The bank goes down, the card goes up; no expense yet.</li>
+              <li><span className="text-foreground">Bill / Enter bills</span> — fuel bought with the card, from the bills staff hand in. Each is a fuel expense on its date (for a client, or general) and comes off the card.</li>
+              <li><span className="text-foreground">Tally with Attock</span> — type the balance the Attock portal shows. Bastion compares it with its own balance for that day: green when they agree, red when not.</li>
+              <li><span className="text-foreground">No bill yet</span> — Attock shows more spent than the bills entered: fuel used without a bill. Chase the bills; whatever is still missing at month end, <span className="text-foreground">Book unbilled</span> records as one general fuel expense so the card agrees again.</li>
+            </ul>
+          </div>
+          <div>
+            <div className="font-semibold mb-1">Allowance card</div>
+            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+              <li>A person&rsquo;s own card — no balance is kept for it here.</li>
+              <li><span className="text-foreground">Office staff</span> (e.g. CFO): payroll pays the fixed fuel allowance onto the card.</li>
+              <li><span className="text-foreground">Partners</span> (CEO, MD): each load is a drawing on that partner — <span className="text-foreground">Load (drawing)</span> takes it from a bank and charges the partner&rsquo;s account.</li>
+            </ul>
+            <div className="font-semibold mt-3 mb-1">Cards</div>
+            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+              <li><span className="text-foreground">Edit</span> any card&rsquo;s name, number or holder. <span className="text-foreground">Delete</span> only a card nothing has been recorded on; a used card is deactivated instead.</li>
+              <li>Only the last four digits are kept — never the PIN.</li>
+            </ul>
+          </div>
+        </div>
+      )}
 
       {cards.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted-foreground">
@@ -347,8 +442,14 @@ export default function FuelCards({
                           </Button>
                           {!billsOnly && (
                             <Button size="sm" variant="secondary" onClick={() => open({ kind: "reading", card: c }, { date: todayISO() })}>
-                              <Gauge className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Attock balance
+                              <Gauge className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Tally with Attock
                             </Button>
+                          )}
+                          {!billsOnly && (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit</Button>
+                              <Button size="sm" variant="ghost" onClick={() => open({ kind: "delete", card: c })}><Trash2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Delete</Button>
+                            </>
                           )}
                         </div>
                       )}
@@ -384,14 +485,30 @@ export default function FuelCards({
           )}
           {!billsOnly && allowances.length > 0 && (
             <div className="border-t border-border">
-              <div className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Allowance cards — paid from payroll, not tracked</div>
+              <div className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Allowance cards — personal, no balance kept</div>
               <div className="divide-y divide-border">
-                {allowances.map((c) => (
-                  <div key={c.fuel_card_id} className={`flex items-center gap-3 px-4 py-2 text-sm ${c.is_active ? "" : "opacity-60"}`}>
-                    <span className="text-foreground">{c.holder_name ?? "—"}</span>
-                    <span className="text-muted-foreground truncate">{c.label} · {c.provider}{c.card_last4 ? ` ••${c.card_last4}` : ""}</span>
+                {allowances.map((c) => {
+                  const h = holders.get(c.fuel_card_id);
+                  return (
+                  <div key={c.fuel_card_id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm ${c.is_active ? "" : "opacity-60"}`}>
+                    <span className="text-foreground font-medium">{c.label}</span>
+                    <span className="text-muted-foreground truncate flex-1 min-w-0">
+                      {c.holder_name ?? "—"}{h?.partner ? " · partner" : " · office staff"} · {c.provider}{c.card_last4 ? ` ••${c.card_last4}` : ""}
+                    </span>
+                    {canEdit && h?.partner && c.is_active && (
+                      <Button size="sm" variant="secondary" onClick={() => setDialogPartnerLoad(c, h.partner!)}>
+                        <Fuel className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Load (drawing)
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => open({ kind: "delete", card: c })}><Trash2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Delete</Button>
+                      </>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -401,7 +518,7 @@ export default function FuelCards({
       <Modal isOpen={!!dialog} onClose={close} title={title} error={err} onDismissError={() => setErr(null)}
         footer={<>
           <Button variant="secondary" onClick={close}>Cancel</Button>
-          <Button onClick={submit} disabled={busy}>{busy ? "Saving…" : dialog?.kind === "reverse" ? "Reverse load" : dialog?.kind === "bills" ? "Record bills" : dialog?.kind === "book" ? "Book it" : "Save"}</Button>
+          <Button onClick={submit} disabled={busy}>{busy ? "Saving…" : dialog?.kind === "reverse" ? "Reverse load" : dialog?.kind === "bills" ? "Record bills" : dialog?.kind === "book" ? "Book it" : dialog?.kind === "delete" ? "Delete card" : dialog?.kind === "partnerLoad" ? "Record drawing" : "Save"}</Button>
         </>}>
         {dialog?.kind === "register" && (
           <div className="flex flex-col gap-3">
@@ -415,7 +532,7 @@ export default function FuelCards({
             </div>
             <p className="text-xs text-muted-foreground">
               {f.role === "allowance"
-                ? "A man's own card. Payroll pays his fixed allowance onto it from a bank; nothing is tracked on it after that."
+                ? "A person's own card. Office staff: payroll pays the fixed allowance onto it. Partner: each load is a drawing on him. No balance is kept."
                 : "The company's money on a card. Loads add to it, fuel bills spend it, and the Attock portal balance is checked against it."}
             </p>
             <div>
@@ -423,15 +540,7 @@ export default function FuelCards({
               <input className={field} value={f.label ?? ""} onChange={(e) => set("label", e.target.value)}
                 placeholder={f.role === "allowance" ? "e.g. Shayan — fuel" : "e.g. Office bike — ISB"} />
             </div>
-            {f.role === "allowance" && (
-              <div>
-                <label className={label}>Held by *</label>
-                <ThemedSelect value={f.holder ?? ""} onChange={(e) => set("holder", e.target.value)}>
-                  <option value="">Select employee</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </ThemedSelect>
-              </div>
-            )}
+            {holderPicker(f.role === "allowance" ? "allowance" : "float")}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={label}>Provider</label>
@@ -451,6 +560,69 @@ export default function FuelCards({
                 </ThemedSelect>
               </div>
             )}
+          </div>
+        )}
+
+        {dialog?.kind === "edit" && (
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className={label}>Name *</label>
+              <input className={field} value={f.label ?? ""} onChange={(e) => set("label", e.target.value)} />
+            </div>
+            {holderPicker(dialog.card.role)}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Last 4 digits</label>
+                <input className={field} inputMode="numeric" maxLength={4} value={f.last4 ?? ""} onChange={(e) => set("last4", e.target.value)} />
+              </div>
+              <div>
+                <label className={label}>Region</label>
+                <ThemedSelect value={f.branch ?? ""} onChange={(e) => set("branch", e.target.value)}>
+                  <option value="">Keep as is</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </ThemedSelect>
+              </div>
+            </div>
+            <div>
+              <label className={label}>Note</label>
+              <input className={field} value={f.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {dialog?.kind === "delete" && (
+          <p className="text-sm text-foreground">
+            Delete <span className="font-semibold">{dialog.card.label}</span>{dialog.card.card_last4 ? ` (••${dialog.card.card_last4})` : ""}? Only a card nothing has been recorded on can be deleted —
+            if it has been loaded, billed, tallied or paid onto, deactivate it instead.
+          </p>
+        )}
+
+        {dialog?.kind === "partnerLoad" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Money put on {dialog.card.holder_name ?? "the partner"}&rsquo;s card is a drawing on him: the bank goes down and his partner account is charged. No balance is kept on the card.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Amount *</label>
+                <input className={field} inputMode="decimal" value={f.amount ?? ""} onChange={(e) => set("amount", e.target.value)} />
+              </div>
+              <div>
+                <label className={label}>Date loaded *</label>
+                <input type="date" className={field} value={f.date ?? ""} onChange={(e) => set("date", e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className={label}>From bank *</label>
+              <ThemedSelect value={f.bank ?? ""} onChange={(e) => set("bank", e.target.value)}>
+                <option value="">Select bank</option>
+                {activeBanks.map((b) => <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number}</option>)}
+              </ThemedSelect>
+            </div>
+            <div>
+              <label className={label}>Note</label>
+              <input className={field} value={f.note ?? ""} onChange={(e) => set("note", e.target.value)} />
+            </div>
           </div>
         )}
 
@@ -532,7 +704,8 @@ export default function FuelCards({
         {dialog?.kind === "reading" && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              Type what the Attock portal shows. Bastion compares it with its own balance on that date; a difference turns the card red until it is explained.
+              Open the Attock portal and type the balance it shows for this card, with the date. Bastion compares it with its own balance on that date
+              (PKR {fmt(dialog.card.balance)} today): when they agree the card shows green; when Attock shows less, the difference is fuel used without a bill yet.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
