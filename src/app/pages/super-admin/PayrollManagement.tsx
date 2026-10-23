@@ -1043,10 +1043,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (categoryScope) {
         if ((e.category ?? "client") !== categoryScope) return false;
       } else {
-        // Reliever panel only shows reliever-category staff; the main payroll
-        // panel hides them so they aren't double-managed.
+        // Reliever panel only shows reliever-category staff. Since 2026-10-23 the
+        // separate reliever payroll is gone — relievers are paid in the Payroll
+        // Run's "Relievers" group and disbursed here with everyone else.
         if (relieversOnly && e.category !== "reliever") return false;
-        if (!relieversOnly && e.category === "reliever") return false;
       }
       if (
         q &&

@@ -25,6 +25,7 @@ const AttendanceManagement = lazyPage(() => import("./pages/super-admin/Attendan
 const AttendanceBoard = lazyPage(() => import("./pages/super-admin/AttendanceBoard"));
 const PayrollManagement = lazyPage(() => import("./pages/super-admin/PayrollManagement"));
 const PayrollRun = lazyPage(() => import("./pages/super-admin/PayrollRun"));
+const ReliefPool = lazyPage(() => import("./pages/super-admin/ReliefPool"));
 const AttendanceRun = lazyPage(() => import("./pages/super-admin/AttendanceRun"));
 const PayrollAdjustments = lazyPage(() => import("./pages/super-admin/PayrollAdjustments"));
 const LeaveBalances = lazyPage(() => import("./pages/super-admin/LeaveBalances"));
@@ -188,10 +189,17 @@ export const router = createBrowserRouter([
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       // Recruitment page deleted — intake is set on the employee form itself.
       { path: "recruitment", element: <Navigate to="/super-admin/employees" replace /> },
-      // Relievers: one thin panel (per-day cost nets vs client), separate from salaried Payroll.
-      { path: "relievers", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
-      { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers" replace /> },
-      { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
+      // Relievers (DECIDED 2026-10-23): the pool board — who is where, the gaps,
+      // days per client — and their attendance. Pay is in the Payroll Run, under
+      // "Relievers", like every other group.
+      { path: "relievers", element: guard(["attendance.view", "attendance.edit"], (
+        <TabHub tabs={[
+          { key: "pool", label: "Pool board", render: () => <ReliefPool /> },
+          { key: "attendance", label: "Attendance", render: () => <AttendanceManagement relieversOnly /> },
+        ]} />
+      )) },
+      { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers?tab=attendance" replace /> },
+      { path: "relievers/payroll", element: <Navigate to="/super-admin/payroll-run" replace /> },
       { path: "accounting", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Accounting />) },
       // Financial Reports, rebuilt (Overview, Client profit, Statements,
       // Ledgers, Scenarios). The Partnership Report below is a separate page.
