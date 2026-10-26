@@ -128,7 +128,8 @@ export default function LeaveBalances() {
           <p>
             Every balance opens at zero on 1 September 2026. The quota is the contract's monthly leaves; a contract
             with none earns none. Tiers on days present: 1–8 → nothing · 9–16 → half · 17–24 → three quarters ·
-            25+ → full quota, rounded down to whole days. A named override on a guard, with a reason, replaces the
+            25+ → full quota, rounded down to whole days. A 2-leave quota, from October 2026: 15 days present → 1,
+            16 or more → 2, fewer → none (four and every other quota keep the tiers). A named override on a guard, with a reason, replaces the
             contract's quota. Leave marks are paid from the balance; the rest are unpaid.
             Absences are unpaid and do not touch the balance — they only lower the tier. At 15 earning stops: what
             would go past it is lost, and shown as lost.
