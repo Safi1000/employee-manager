@@ -1171,6 +1171,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     return new Map([...m].map(([g, v]) => [g, v.site]));
   }, [postings]);
+  const siteNameOf = useCallback((employeeId: string) => {
+    const sid = siteByGuard.get(employeeId) ?? lastSiteInPeriod.get(employeeId);
+    return sid ? sites.find((x) => x.id === sid)?.name ?? null : null;
+  }, [siteByGuard, lastSiteInPeriod, sites]);
 
   const groups = useMemo<ClientBucket[] | null>(() => {
     if (!siteGrouped) return null;
@@ -1453,9 +1457,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         amountPaid: Math.round(Number(r.amount_paid ?? 0)),
         paymentMode: r.payment_mode ?? "",
         status: r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
+        site: siteNameOf(r.employee.id),
       })),
     );
-  }, [filtered, statutoryRates]);
+  }, [filtered, statutoryRates, siteNameOf]);
 
   // afterNet = the Payroll Management page for a Finance-Verified client. Persist
   // the payable with a default so it's saved before any payment: create a payslip

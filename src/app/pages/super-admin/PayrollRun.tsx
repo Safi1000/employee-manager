@@ -8,6 +8,8 @@ import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
 import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
+import { generatePayrollSheetsPdf } from "../../lib/payrollSheetPdf";
+import { brandingFromCompany } from "../../lib/pdfBranding";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { isSeparatedState } from "../../lib/employmentWindow";
 import { PageStateScope } from "../../lib/pageState";
@@ -68,7 +70,7 @@ const addTotals = (a: Totals, b: Totals): Totals => ({
 });
 
 export default function PayrollRun() {
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
   // Payroll run sign-off (Send to Finance / Finance Verify) is gated on
   // payroll.approve (super_admin + SSA implicit). NOTE: the phase table these
   // write is not yet under backend RLS (see 0313 recommendation) — FE-only.
@@ -142,6 +144,9 @@ export default function PayrollRun() {
   const [pendingExport, setPendingExport] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPicked, setExportPicked] = useState<Set<string>>(new Set());
+  // PDF salary sheets (2026-10-26): by site — a page per site with signature
+  // boxes for cash — or the whole client on one list; Excel as before.
+  const [exportFormat, setExportFormat] = useState<"pdf_site" | "pdf_client" | "excel">("pdf_site");
   // Finance Verify is irreversible → confirm first. { scope } = one, { all:true } = bulk.
   const [confirmFV, setConfirmFV] = useState<{ scope?: Scope; all?: boolean } | null>(null);
   // Per-scope payslip totals for the month, keyed like `verified`/`phaseByKey`.
@@ -340,9 +345,36 @@ export default function PayrollRun() {
         ((cls ?? []) as any[]).map((c) => [c.id, c.employee_id_prefix ?? null]),
       );
 
+      // Each guard's site for the month, for the PDF salary sheets: his open
+      // posting, else the last one he held in the month (a leaver).
+      const [py, pm] = period.split("-").map(Number);
+      const monthEnd = `${period.slice(0, 7)}-${String(new Date(py, pm, 0).getDate()).padStart(2, "0")}`;
+      const { data: deps } = await supabase.from("deployments")
+        .select("guard_id, start_date, end_date, site:site_id(name)")
+        .not("site_id", "is", null).lte("start_date", monthEnd)
+        .or(`end_date.is.null,end_date.gte.${period}`).range(0, 4999);
+      const siteOf = new Map<string, { name: string; open: boolean; start: string }>();
+      for (const d of (deps ?? []) as any[]) {
+        const cur = siteOf.get(d.guard_id);
+        const cand = { name: d.site?.name ?? "", open: !d.end_date, start: d.start_date };
+        if (!cur || (cand.open && !cur.open) || (cand.open === cur.open && cand.start > cur.start)) siteOf.set(d.guard_id, cand);
+      }
+
+      // The roster leaves out leavers; one who has a payslip this month is still
+      // paid this month and belongs on the sheet he signs.
+      const roster = [...((rosterEmps ?? []) as any[])];
+      const onRoster = new Set(roster.map((e) => e.id));
+      const leaverIds = [...psByEmp.keys()].filter((id) => !onRoster.has(id));
+      if (leaverIds.length) {
+        const { data: lv } = await supabase.from("employees")
+          .select("id, full_name, employee_code, guard_code, display_number, client_id, category, lifecycle_state, base_salary, allowance")
+          .in("id", leaverIds);
+        roster.push(...((lv ?? []) as any[]));
+      }
+
       const rowsOut = new Map<string, PayrollExportRow[]>();
       const indexOut = new Map<string, string[]>();
-      for (const e of ((rosterEmps ?? []) as any[])) {
+      for (const e of roster) {
         const key = e.category === "reliever" ? "cat:reliever" : e.client_id ?? `cat:${e.category}`;
         const r = psByEmp.get(e.id);
         const arr = rowsOut.get(key) ?? [];
@@ -369,6 +401,7 @@ export default function PayrollRun() {
           amountPaid: Math.round(Number(r?.amount_paid ?? 0)),
           paymentMode: r?.payment_mode ?? "",
           status: !r ? "No payslip yet" : r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
+          site: siteOf.get(e.id)?.name || null,
         });
         rowsOut.set(key, arr);
         const idx = indexOut.get(key) ?? [];
@@ -586,7 +619,12 @@ export default function PayrollRun() {
       .filter((sheet) => sheet.rows.length > 0);
 
   const runExport = (keys: string[]) => {
-    exportPayrollSheets(buildSheets(keys), fmtMonth(month));
+    const sheets = buildSheets(keys);
+    if (exportFormat === "excel") { exportPayrollSheets(sheets, fmtMonth(month)); return; }
+    generatePayrollSheetsPdf({
+      branding: brandingFromCompany(company), monthLabel: fmtMonth(month),
+      clients: sheets, mode: exportFormat === "pdf_site" ? "site" : "client",
+    });
   };
   // Held in a ref so the queued-export effect above does not have to list
   // runExport (and therefore every map it closes over) as a dependency.
@@ -627,7 +665,7 @@ export default function PayrollRun() {
     return (
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); exportScope(s); }}
+        onClick={(e) => { e.stopPropagation(); setExportPicked(new Set([s.key])); setExportOpen(true); }}
         disabled={n === 0 || pendingExport === s.key}
         title={n === 0 ? "Nobody is on this scope to export" : `Export ${s.name} — ${n} employee${n === 1 ? "" : "s"}`}
         aria-label={`Export ${s.name}'s sheet`}
@@ -975,8 +1013,21 @@ export default function PayrollRun() {
           one that was never selected. */}
       <Modal isOpen={exportOpen} onClose={() => setExportOpen(false)} title="Export payroll sheets" size="md">
         <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              ["pdf_site", "PDF — by site", "A page per site, signature box for every guard paid in cash"],
+              ["pdf_client", "PDF — whole client", "One list per client, site on each row"],
+              ["excel", "Excel", "One worksheet per client, every column"],
+            ] as const).map(([k, label, note]) => (
+              <button key={k} type="button" onClick={() => setExportFormat(k)}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors ${exportFormat === k ? "border-brand-500 bg-brand-500/10" : "border-border hover:border-brand-500/60"}`}>
+                <span className="block text-sm font-medium text-foreground">{label}</span>
+                <span className="block text-[11px] text-muted-foreground leading-snug">{note}</span>
+              </button>
+            ))}
+          </div>
           <p className="text-sm text-muted-foreground">
-            One worksheet per client, in a single workbook, for {fmtMonth(month)}.
+            {exportFormat === "excel" ? "One worksheet per client, in a single workbook" : `${fmtMonth(month)}: salaries already paid from the office (bank, cheque, card) print as PAID with no box.`}{exportFormat === "excel" ? ` for ${fmtMonth(month)}.` : ""}
             {tab !== "finance_verify" && (
               <>
                 {" "}
@@ -1027,9 +1078,14 @@ export default function PayrollRun() {
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={exportPicked.size === 0}
-              onClick={() => { runExport([...exportPicked]); setExportOpen(false); }}>
+              onClick={() => {
+                const keys = [...exportPicked];
+                const one = keys.length === 1 ? scopes.find((sc) => sc.key === keys[0]) : null;
+                setExportOpen(false);
+                if (one) exportScope(one); else runExport(keys);
+              }}>
               <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Export {exportPicked.size} sheet{exportPicked.size === 1 ? "" : "s"}
+              Export {exportPicked.size} {exportPicked.size === 1 ? "client" : "clients"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setExportOpen(false)}>Cancel</Button>
           </div>

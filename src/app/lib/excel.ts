@@ -539,6 +539,8 @@ export type PayrollExportRow = {
   amountPaid: number;
   paymentMode: string;
   status: string;
+  /** The site the guard stood at this month (open posting, else his last one in the month). For the PDF sheets. */
+  site?: string | null;
 };
 
 export type PayrollExportSheet = { name: string; rows: PayrollExportRow[] };
