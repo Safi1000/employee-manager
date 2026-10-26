@@ -709,10 +709,10 @@ export default function PayrollRun() {
           } catch { /* ignore */ }
         }}
       >
-        {/* The month, search and export stay pinned while the client list
-            scrolls (asked 2026-10-05). The Review totals scroll away with the
-            page (asked 2026-10-26) — pinned, they sat over the list. */}
-        <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-4 pb-4 mb-2 bg-background">
+        {/* Nothing here is pinned any more (2026-10-26). Pinned, this bar and
+            the Review totals floated mid-screen over an open payslip, which
+            scrolled underneath them cut in half. It scrolls with the page. */}
+        <div className="pt-4 pb-4 mb-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="font-display text-lg font-bold tracking-tight">{TABS.find((t) => t.key === tab)?.label} · {TABS.find((t) => t.key === tab)?.count}</span>
           <div className="flex flex-wrap items-center gap-3">
