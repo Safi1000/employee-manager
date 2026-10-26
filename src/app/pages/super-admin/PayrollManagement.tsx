@@ -362,6 +362,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
   /** guard_id -> site_id of their open posting. The employee row does not carry it. */
   const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
+  const [postings, setPostings] = useState<{ guard_id: string; site_id: string; start_date: string; end_date: string | null }[]>([]);
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = usePageState<"all" | "Cleared" | "Pending">("PayrollManagement.statusFilter", "all");
   const [disbursedFilter, setDisbursedFilter] = usePageState<"all" | "yes" | "no">("PayrollManagement.disbursedFilter", "all");
@@ -1134,6 +1135,30 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // A guard stands at ONE site, read off their open posting — the employee row
   // does not carry it. Anyone with no open posting lands in a last bucket that
   // sorts after every real site so it never hides one behind it.
+  // A guard with no open posting — a leaver — is placed at the site he last
+  // stood at in the month being paid, so each site's total is its whole cost
+  // for the month (2026-10-26). Display only: no figure changes.
+  // Only the postings that closed inside or after the month — a few dozen, not
+  // the whole history (which would run into the 1,000-row read cap).
+  useEffect(() => {
+    if (!siteGrouped || !selectedPeriod) return;
+    const ps = selectedPeriod.slice(0, 7) + "-01";
+    const pe = selectedPeriod.slice(0, 7) + "-" + String(daysInMonth(selectedPeriod)).padStart(2, "0");
+    let live = true;
+    void supabase.from("deployments").select("guard_id, site_id, start_date, end_date")
+      .not("site_id", "is", null).not("end_date", "is", null).gte("end_date", ps).lte("start_date", pe)
+      .then(({ data }) => { if (live) setPostings((data ?? []) as typeof postings); });
+    return () => { live = false; };
+  }, [siteGrouped, selectedPeriod]);
+  const lastSiteInPeriod = useMemo(() => {
+    const m = new Map<string, { site: string; start: string }>();
+    for (const d of postings) {
+      const cur = m.get(d.guard_id);
+      if (!cur || d.start_date > cur.start) m.set(d.guard_id, { site: d.site_id, start: d.start_date });
+    }
+    return new Map([...m].map(([g, v]) => [g, v.site]));
+  }, [postings]);
+
   const groups = useMemo<ClientBucket[] | null>(() => {
     if (!siteGrouped) return null;
     const siteById = new Map(sites.map((x) => [x.id, x]));
@@ -1161,10 +1186,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     const bucketSites = (rows: RowState[], noPostingLabel: string): SiteBucket[] => {
       const byId = new Map<string, SiteBucket>();
       for (const row of rows) {
-        const sid = siteByGuard.get(row.employee.id) ?? "";
+        const sid = siteByGuard.get(row.employee.id) ?? lastSiteInPeriod.get(row.employee.id) ?? "";
         const b = byId.get(sid) ?? { id: sid, name: sid ? siteLabel(sid) : noPostingLabel, rows: [] };
         b.rows.push(row);
         byId.set(sid, b);
+      }
+      // Leavers at the bottom of their site; the order is otherwise kept.
+      for (const b of byId.values()) {
+        b.rows = [...b.rows.filter((r) => !isSeparatedState(r.employee.lifecycle_state)),
+                  ...b.rows.filter((r) => isSeparatedState(r.employee.lifecycle_state))];
       }
       return [...byId.values()].sort((a, b) =>
         a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name));
@@ -1209,7 +1239,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
     return [...byClient.values()].sort((a, b) =>
       a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name));
-  }, [siteGrouped, sortedRows, sites, siteByGuard, clients, clientScopeId]);
+  }, [siteGrouped, sortedRows, sites, siteByGuard, lastSiteInPeriod, clients, clientScopeId]);
 
   /**
    * What the table body renders: the plain row list, or the client / site /
@@ -1217,7 +1247,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
    */
   type BodyItem =
     | { kind: "client"; key: string; id: string; name: string; count: number; net: number; sites: number; open: boolean }
-    | { kind: "site"; key: string; id: string; name: string; count: number; net: number; open: boolean }
+    | { kind: "site"; key: string; id: string; name: string; count: number; left: number; net: number; open: boolean }
     // depth says how far in the person sits: 0 with no grouping at all, 1 under
     // a client header, 2 under a client AND a site. Carried on the item rather
     // than recomputed at render time, because the renderer sees a flat list and
@@ -1264,6 +1294,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             id: sKey,
             name: site.name,
             count: site.rows.length,
+            left: site.rows.filter((r) => isSeparatedState(r.employee.lifecycle_state)).length,
             net: netOf(site.rows),
             open: sOpen,
           });
@@ -3097,7 +3128,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                   <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
                                   <span className="text-sm text-foreground truncate flex-1">{item.name}</span>
                                   <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-                                    {item.count} employee{item.count === 1 ? "" : "s"} · PKR {item.net.toLocaleString()}
+                                    {item.count} employee{item.count === 1 ? "" : "s"}{item.left ? ` · ${item.left} left` : ""} · PKR {item.net.toLocaleString()}
                                   </span>
                                 </button>
                               </td>
