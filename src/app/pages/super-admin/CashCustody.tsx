@@ -87,7 +87,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   onReady?: (api: { addLocation: () => void; recordTransfer: () => void; openTransactions: () => void }) => void;
   // Push the three summary figures up so the page can render the cards above the
   // tab bar (same slot as the Bank Accounts cards). Presentation only.
-  onSummary?: (s: { totalCash: number; totalPartnerOwed: number; freeCash: number }) => void;
+  onSummary?: (s: { totalCash: number; holders: number; unattributed: number }) => void;
 } = {}) {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
@@ -645,8 +645,10 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   // screen's per-custodian fold disagrees with cash_in_hand(). Every custodian's held cash,
   // summed, is Total Cash in Hand.
   const custodyRecon = useMemo(() => {
+    // 2026-10-27 (0566): a partner's cash is not company cash — it is a drawing
+    // in his partnership ledger — so it is not part of Cash in Hand.
     const custodians = locationsWithBalance
-      .filter((l) => l.is_active && l.location_type !== "BANK")
+      .filter((l) => l.is_active && l.location_type !== "BANK" && !l.custodian_partner_id)
       .map((l) => ({ loc: l, held: heldCash(l) }))
       .sort((a, b) => b.held - a.held);
     const sumHeld = custodians.reduce((s, c) => s + c.held, 0);
@@ -660,27 +662,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   // Custodian/petty locations are a BREAKDOWN of Cash in Hand (Σ custodian held
   // already equals it), so they are not added either.
   const totalCash = useMemo(() => cashInHand, [cashInHand]);
-  const totalPartnerOwed = useMemo(
-    () => Array.from(partnerStats.values()).filter((s) => s.balance > 0).reduce((s, v) => s + v.balance, 0),
-    [partnerStats],
-  );
-  const freeCash = totalCash - totalPartnerOwed - investorLiabilities;
-
   // Report the summary figures to the page (cards live above the tab bar).
   useEffect(() => {
-    onSummary?.({ totalCash, totalPartnerOwed, freeCash });
+    onSummary?.({ totalCash, holders: custodyRecon.custodians.filter((c) => Math.round(c.held) !== 0).length, unattributed: custodyRecon.discrepancy });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalCash, totalPartnerOwed, freeCash]);
-
-  // Partners shown in the summary (branch-scoped logins see only their branch),
-  // owner (COMPANY) first then regional partners by name.
-  const summaryPartners = useMemo(() => {
-    const list = branchScope ? partners.filter((p) => p.branch_id === branchScope) : partners;
-    return [...list].sort((a, b) => {
-      if (a.scope !== b.scope) return a.scope === "COMPANY" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [partners, branchScope]);
+  }, [totalCash, custodyRecon]);
 
   const openAddLoc = () => {
     setEditLoc(null);
@@ -840,196 +826,62 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             cash. They are one table now, with the reconciliation check as its
             footer. The Transfers tab is gone too; transfers are recorded from the
             header button and read back in the Transaction Log. */}
-        <div className="space-y-4">
-          <div className="bg-card rounded-2xl border border-border overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Cash Holdings</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Where company cash sits right now. Each custodian's held cash is opening balance
-                plus what they have taken in, less what they have paid out — and the sum of them
-                must equal Total Cash in Hand. Bank balances live on the Bank Accounts tab.
-              </p>
+        {/* Redesigned 2026-10-27. Company cash only: who holds it, how much, and
+            whether every rupee is attributed. A partner's cash is not company
+            cash (0566) — it is a drawing in his partnership ledger, read on
+            Partnership → Statements — so partners are not listed here, though
+            they stay selectable wherever cash is recorded or spent. The old
+            "Cash vs Liabilities" and "Partners Summary" blocks read hand-typed
+            partner entries and disagreed with the ledger; they are gone. */}
+        <section className="bg-card rounded-2xl border border-border overflow-hidden">
+          <div className="px-5 pt-4 pb-3 flex flex-wrap items-end gap-3">
+            <div>
+              <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Who holds the cash</h3>
+              <p className="text-xs text-muted-foreground">Office staff holding company cash. Opening, plus what they took in, less what they paid out.</p>
             </div>
-
-            {Math.round(custodyRecon.discrepancy) !== 0 && (
-              <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200 rounded-xl text-sm">
-                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
-                <div>
-                  <span className="font-medium">Discrepancy: {fmt(Math.abs(custodyRecon.discrepancy))}</span> {custodyRecon.discrepancy > 0
-                    ? "of Cash in Hand is not attributed to any custodian yet. Assign it via custodian opening balances or record the movements against a custodian."
-                    : "more is attributed to custodians than the Total Cash in Hand — check for an over-attribution."}
-                </div>
-              </div>
-            )}
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Location</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Type</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Holder</th>
-                    <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Opening</th>
-                    <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Held Cash</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
-                    <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {/* Treasury total first — the figure every custodian row rolls up to. */}
-                  <tr className="bg-muted/30">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {typeIcon("PETTY_CASH")}
-                        <span className="text-sm text-foreground">Cash in Hand</span>
+            <span className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-full border ${Math.round(custodyRecon.discrepancy) === 0 ? "bg-up/10 text-up border-up/40" : "bg-heed/10 text-heed border-heed/40"}`}>
+              {Math.round(custodyRecon.discrepancy) === 0 ? "✓ Every rupee is with someone" : `${fmt(Math.abs(custodyRecon.discrepancy))} ${custodyRecon.discrepancy > 0 ? "not with anyone" : "over-attributed"}`}
+            </span>
+          </div>
+          {custodyRecon.custodians.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-muted-foreground">No cash custodians yet. Add one from the header.</div>
+          ) : (
+            <ul className="divide-y divide-border border-t border-border">
+              {custodyRecon.custodians.map(({ loc, held }) => {
+                const share = cashInHand > 0 ? Math.max(0, held) / cashInHand : 0;
+                return (
+                  <li key={loc.id} className="px-5 py-3 flex items-center gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-medium text-foreground truncate">{loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.name}</span>
+                        {Number(loc.opening_balance) !== 0 && <span className="text-[11px] text-muted-foreground">opening {fmt(loc.opening_balance)}</span>}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">Cash / Treasury</td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">—</td>
-                    <td className="px-6 py-4 text-right text-sm font-ledger text-muted-foreground/70">—</td>
-                    <td className={`px-6 py-4 text-right text-sm font-ledger ${cashInHand < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(cashInHand)}</td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground/70">—</td>
-                    <td className="px-6 py-4 text-right">
-                      <span className="text-xs text-muted-foreground/70" title="The company treasury total — derived, not editable">Derived</span>
-                    </td>
-                  </tr>
-
-                  {/* Banks are managed on the Bank Accounts tab — only cash custodians here. */}
-                  {locationsWithBalance.filter((l) => l.location_type !== "BANK").length === 0 && (
-                    <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground text-sm">No cash custodians yet. Add one with "Add Location" above and set its office-staff holder.</td></tr>
-                  )}
-                  {locationsWithBalance.filter((l) => l.location_type !== "BANK").map((loc) => (
-                    <tr key={loc.id} className="hover:bg-muted/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          {typeIcon(loc.location_type)}
-                          <span className="text-sm text-foreground">{loc.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{typeLabel(loc.location_type)}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">
-                        {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
-                      </td>
-                      <td className="px-6 py-4 text-right text-sm font-ledger text-muted-foreground">{fmt(loc.opening_balance)}</td>
-                      {(() => {
-                        const shown = heldCash(loc);
-                        return <td className={`px-6 py-4 text-right text-sm font-ledger ${shown < 0 ? "text-danger-600" : "text-foreground"}`}>{fmt(shown)}</td>;
-                      })()}
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${loc.is_active ? "bg-success-50 text-success-700 dark:text-success-500" : "bg-muted text-muted-foreground"}`}>
-                          {loc.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                            <Pencil className="w-4 h-4" strokeWidth={1.5} />
-                          </button>
-                          {canDelete && (
-                            <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded-lg hover:bg-danger-50 text-muted-foreground hover:text-danger-600 transition-colors">
-                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {/* The reconciliation check, sitting under the numbers it checks. */}
-                <tfoot>
-                  <tr className="border-t border-border bg-muted/50">
-                    <td className="px-6 py-3 text-sm font-medium text-foreground" colSpan={4}>Sum of custodians</td>
-                    <td className="px-6 py-3 text-right text-sm font-ledger font-semibold text-foreground">{fmt(custodyRecon.sumHeld)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                  <tr className="bg-muted/50">
-                    <td className="px-6 py-2 text-sm text-muted-foreground" colSpan={4}>Total Cash in Hand</td>
-                    <td className="px-6 py-2 text-right text-sm font-ledger text-foreground">{fmt(cashInHand)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                  <tr className="bg-muted/50">
-                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700 dark:text-success-500"}`} colSpan={4}>{Math.round(custodyRecon.discrepancy) !== 0 ? "Unattributed — should be 0" : "✓ Every rupee is attributed to a custodian"}</td>
-                    <td className={`px-6 py-2 text-right text-sm font-ledger font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-700 dark:text-warning-500" : "text-success-700 dark:text-success-500"}`}>{fmt(custodyRecon.discrepancy)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                      <div className="mt-1.5 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className={held < 0 ? "h-full bg-down" : "h-full bg-brand-500"} style={{ width: `${Math.min(100, share * 100)}%` }} />
+                      </div>
+                    </div>
+                    <span className={`font-ledger text-base font-semibold w-32 text-right ${held < 0 ? "text-down" : "text-foreground"}`}>{fmt(held)}</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                        <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                      </button>
+                      {canDelete && (
+                        <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded-lg hover:bg-danger-50 text-muted-foreground hover:text-danger-600 transition-colors">
+                          <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="px-5 py-3 border-t border-border bg-muted/40 flex items-center gap-3 text-sm">
+            <span className="font-medium text-foreground">Cash in Hand</span>
+            <span className="text-xs text-muted-foreground">the sum of the above</span>
+            <span className="ml-auto font-ledger text-lg font-bold text-foreground">{fmt(cashInHand)}</span>
           </div>
-
-          <div className="bg-card rounded-2xl border border-border p-6">
-            <h3 className="font-display text-lg font-bold tracking-tight text-foreground mb-1">Cash vs Liabilities</h3>
-            <p className="text-xs text-muted-foreground mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-foreground">Total Cash in Hand</span>
-                <span className="text-sm font-ledger font-semibold text-foreground">{fmt(totalCash)}</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground ml-4">− Undrawn partner entitlements (positive balances)</span>
-                <span className="text-sm font-ledger text-warning-700">({fmt(totalPartnerOwed)})</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
-                <span className="text-sm font-ledger text-warning-700">({fmt(investorLiabilities)})</span>
-              </div>
-              <div className="band on-dark flex items-center justify-between py-3.5 rounded-xl px-4 mt-1">
-                <span className="text-sm font-semibold text-foreground">= Free company cash</span>
-                <span className={`font-ledger text-xl font-semibold ${freeCash >= 0 ? "text-up" : "text-down"}`}>{fmt(freeCash)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Partners Summary. The old Reconciliation tab repeated Net Balance in a
-              second "Partner Balances" table whose only addition was the cash-impact
-              wording — that is the last column here instead. */}
-          <div className="bg-card rounded-2xl border border-border overflow-x-auto">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display text-lg font-bold tracking-tight text-foreground">Partners Summary</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Running balance per partner. Positive = company owes the partner (cash tied up); negative (red) = overdrawn.
-              </p>
-            </div>
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Partner</th>
-                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Allocated</th>
-                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Contributed</th>
-                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Drawn</th>
-                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Net Balance</th>
-                  <th className="text-right px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Cash Impact</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {summaryPartners.length === 0 && (
-                  <tr><td colSpan={6} className="px-6 py-8 text-center text-muted-foreground text-sm">No partners.</td></tr>
-                )}
-                {summaryPartners.map((p) => {
-                  const s = partnerStats.get(p.id) ?? { allocated: 0, drawn: 0, contributed: 0, balance: 0 };
-                  return (
-                    <tr key={p.id} className="hover:bg-muted/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <p className="text-sm text-foreground font-medium">{p.name}</p>
-                        <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded-full text-xs font-semibold ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700 dark:text-brand-500" : "bg-info-50 text-info-700 dark:text-info-500"}`}>
-                          {p.scope === "COMPANY" ? "Owner" : (branches.find((b) => b.id === p.branch_id)?.name ?? "Branch")}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right text-sm font-ledger text-success-600">{fmt(s.allocated)}</td>
-                      <td className="px-6 py-4 text-right text-sm font-ledger text-brand-600">{fmt(s.contributed)}</td>
-                      <td className="px-6 py-4 text-right text-sm font-ledger text-danger-600">{fmt(s.drawn)}</td>
-                      <td className={`px-6 py-4 text-right text-sm font-ledger font-semibold ${s.balance < 0 ? "text-danger-700" : "text-foreground"}`}>{fmt(s.balance)}</td>
-                      <td className={`px-6 py-4 text-right text-sm font-ledger ${s.balance > 0 ? "text-warning-600" : "text-success-600"}`}>
-                        {s.balance > 0 ? `(${fmt(s.balance)}) tied up` : s.balance < 0 ? "— overdrawn" : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
+        </section>
       </div>
 
       {/* ── Transactions Modal — mirrors the Bank Accounts "Transaction Log":

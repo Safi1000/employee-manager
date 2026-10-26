@@ -310,7 +310,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   const custodyApiRef = useRef<{ addLocation: () => void; recordTransfer: () => void; openTransactions: () => void } | null>(null);
   // Cash Custody summary figures, reported up by the panel so the cards render
   // above the tab bar (same slot as the Bank Accounts cards).
-  const [custodySummary, setCustodySummary] = useState<{ totalCash: number; totalPartnerOwed: number; freeCash: number } | null>(null);
+  const [custodySummary, setCustodySummary] = useState<{ totalCash: number; holders: number; unattributed: number } | null>(null);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -2550,12 +2550,14 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-success-700 dark:text-success-500"><span className="cur">PKR</span>{Math.round(custodySummary.totalCash).toLocaleString()}</p>
             </div>
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
-              <p className="lbl mb-1">Owed to Partners (Undrawn)</p>
-              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{Math.round(custodySummary.totalPartnerOwed).toLocaleString()}</p>
+              <p className="lbl mb-1">Held by</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground">{custodySummary.holders} <span className="text-sm font-normal text-muted-foreground">office staff</span></p>
             </div>
-            <div className="bg-card p-4 md:p-4 rounded-2xl border border-brand-500/60">
-              <p className="lbl mb-1">Free Company Cash</p>
-              <p className={`font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl ${custodySummary.freeCash < 0 ? "text-danger-500" : "text-on-fill"}`}><span className="cur">PKR</span>{Math.round(custodySummary.freeCash).toLocaleString()}</p>
+            <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
+              <p className="lbl mb-1">Not with anyone</p>
+              <p className={`font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl ${Math.round(custodySummary.unattributed) === 0 ? "text-success-700 dark:text-success-500" : "text-heed"}`}>
+                {Math.round(custodySummary.unattributed) === 0 ? "✓ 0" : <><span className="cur">PKR</span>{Math.round(custodySummary.unattributed).toLocaleString()}</>}
+              </p>
             </div>
           </div>
         )}
