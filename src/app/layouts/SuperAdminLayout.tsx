@@ -119,7 +119,7 @@ export default function SuperAdminLayout() {
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   // The partnership RUN — drafting, reviewing and posting a month — as opposed
   // to the partnership REPORT, which reads one back.
-  const PARTNERSHIP_RUN: LinkDef = { to: "/super-admin/partnership-run", label: "Partnership Run", icon: Play, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const PARTNERSHIP: LinkDef = { to: "/super-admin/partnership", label: "Partnership", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   // PROFIT_DIST is deliberately absent: the /profit-distribution route was
   // removed because the screen maintained a share model no ledger function
   // reads. A LinkDef pointing at a removed route is worse than no link.
@@ -157,7 +157,6 @@ export default function SuperAdminLayout() {
   // pushed into a group, "Participation Rules" only ever appeared in the hidden
   // Profit-Share group. A link to a removed route is worse than no link.
   const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
-  const PARTNERSHIP_REPORT: LinkDef = { to: "/super-admin/partnership-report", label: "Partnership Report", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -274,14 +273,8 @@ export default function SuperAdminLayout() {
     // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
     REPORTS,
     ACCOUNTANT,
-    // Its own Finance entry rather than a tab inside Financial Reports: it is a
-    // report about partners, not about the P&L, and burying it behind another
-    // report's tab strip is what kept it hard to find.
-    PARTNERSHIP_REPORT,
-    // The run itself, beside the report it is a run of. One door: this is the
-    // only way to draft, review, post or reverse a month, and it is in the nav
-    // rather than behind a route only a typed URL reaches.
-    PARTNERSHIP_RUN,
+    // One door for the partnership (2026-10-26): months, partners, statements.
+    PARTNERSHIP,
     // REGIONAL_SCORECARD ("Regional Operating Expenses") is hidden from the nav
     // by request. The route still exists (routes.tsx) so a saved link resolves;
     // it just isn't listed. Re-add it here to bring it back.

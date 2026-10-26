@@ -586,7 +586,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                       ? "Their share of their region's profit after its head-office charge, cash basis, as the partnership run computes it."
                       : "The equity share: what is left of every region's profit after the regional partners, cash basis.",
                     rows: r.parts.map((x) => ({ label: x.region, value: fmt(x.amount), hint: x.sharePct != null && r.kind === "regional" ? `${x.sharePct}%` : undefined })),
-                    link: { to: "/super-admin/partnership-run", label: "Open Partnership Run" },
+                    link: { to: "/super-admin/partnership?tab=months", label: "Open Partnership Run" },
                   })}>
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="text-sm text-foreground font-medium group-hover:underline truncate">{r.name}
@@ -600,7 +600,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   </Hit>
                 ))}
                 {pp.undeclared.length > 0 && (
-                  <Link to="/super-admin/partnership-run" className="text-xs text-heed hover:underline">
+                  <Link to="/super-admin/partnership?tab=months" className="text-xs text-heed hover:underline">
                     {pp.undeclared.join(", ")}: profit not declared for {month} yet — counts as nothing until it is.
                   </Link>
                 )}

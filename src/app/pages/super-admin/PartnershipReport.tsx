@@ -639,7 +639,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     <>
       <Header
         title={
-          partnershipOnly ? "Partnership Report" : (
+          partnershipOnly ? "Partnership" : (
           <span className="inline-flex items-center gap-4">
             Financial Reports
             {/* Basis toggle — compact segmented control (white active thumb on a
@@ -672,7 +672,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
           )
         }
         subtitle={partnershipOnly
-          ? "Regional and equity partner allocation, and each partner's running account"
+          ? "Who the partners are, their shares, and the policy the months are divided by"
           : "P&L, client statements and cash flow"}
         actions={
           topTab === "cashflow" || activeTab === "rmd" || activeTab === "clients" || activeTab === "cover" ? undefined : (

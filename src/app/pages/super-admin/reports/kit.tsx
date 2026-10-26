@@ -125,7 +125,7 @@ export const SOURCE_ROUTES: Record<string, { label: string; href: string }> = {
   payslips_disbursement: { label: "Payroll", href: "/super-admin/payroll" },
   payroll_adjustments: { label: "Payroll", href: "/super-admin/payroll" },
   advances: { label: "Expenses — advances", href: "/super-admin/expenses" },
-  partner_account_entries: { label: "Partnership Report", href: "/super-admin/partnership-report" },
+  partner_account_entries: { label: "Partnership Report", href: "/super-admin/partnership?tab=statements" },
   custody_transfers: { label: "Cash custody", href: "/super-admin/accounting?tab=cash-custody" },
 };
 

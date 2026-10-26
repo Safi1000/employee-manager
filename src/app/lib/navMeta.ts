@@ -34,6 +34,7 @@ const SECTION_OF: Record<string, string> = {
   expenses: "Finance",
   reports: "Finance",
   accountant: "Finance",
+  "partnership": "Finance",
   "partnership-report": "Finance",
   "partnership-run": "Finance",
   "period-close": "Finance",
@@ -68,7 +69,7 @@ export function sectionOf(pathname: string): string | null {
  * bar says so on these pages instead of promising "ISB/RWP only".
  */
 const COMPANY_WIDE = new Set([
-  "tasks", "accountant", "partnership-run", "period-close", "treasury", "partners",
+  "tasks", "accountant", "partnership", "partnership-run", "period-close", "treasury", "partners",
   "project-financing", "access-governance", "users", "governance", "audit-log",
   "reversals", "settings", "billing", "my-profile",
 ]);

@@ -207,12 +207,18 @@ export const router = createBrowserRouter([
       // 2026-10-20: the accountant's working page, granted per person from
       // Access & Governance (accountant.view).
       { path: "accountant", element: guard(["accountant.view"], <Accountant />) },
-      // Partnership Report is its own page under Finance now, not a tab of
-      // Financial Reports. Same component, pinned to that one report.
-      { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipReport key="partnership" standalone="partnership" />) },
-      // Partnership Run — draft / review / post. The database has been able to
-      // do this since 0361; nothing could reach it until now.
-      { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
+      // Partnership (redesigned 2026-10-26): one page — Months (draft, check,
+      // post, and every posted month in full), Partners (shares and policy) and
+      // Statements (each partner's ledger). The two old pages redirect here.
+      { path: "partnership", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], (
+        <TabHub tabs={[
+          { key: "months", label: "Months", render: () => <PartnershipRun /> },
+          { key: "partners", label: "Partners", render: () => <PartnershipReport key="partnership" standalone="partnership" /> },
+          { key: "statements", label: "Statements", render: () => <Partners /> },
+        ]} />
+      )) },
+      { path: "partnership-report", element: <Navigate to="/super-admin/partnership?tab=partners" replace /> },
+      { path: "partnership-run", element: <Navigate to="/super-admin/partnership?tab=months" replace /> },
       // Everyone (0496): requesting is open; ExpensesEntry shows the ledger only to expenses.view/edit.
       { path: "expenses", element: <ExpensesEntry /> },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"], <Invoices />) },
