@@ -48,6 +48,7 @@ import { bankCovers, canReadBankBalances, loadBankOptions } from "../../lib/bank
 import SecurityDeposits from "../../components/SecurityDeposits";
 import FuelCards from "../../components/FuelCards";
 import BankReconciliation from "../../components/BankReconciliation";
+import VendorCredits from "../../components/VendorCredits";
 import { tallyDate, useReconStatus } from "../../lib/reconStatus";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { CashCustodyPanel } from "./CashCustody";
@@ -5307,6 +5308,18 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                 </div>
               );
             })()}
+            {payableVendorGroup.key !== "no-vendor" && (
+              <VendorCredits
+                companyId={treasuryCompanyId}
+                vendorId={payableVendorGroup.key}
+                bills={payableVendorGroup.items.map((i) => ({ id: i.id, description: i.description ?? null, amount: Number(i.amount), expense_date: i.expense_date, payable_status: i.payable_status ?? null }))}
+                paidByVendorPayment={new Set(payableVendorGroup.items.filter((i) => paidByExpense.has(i.id)).map((i) => i.id))}
+                banks={banks}
+                custodians={custodians}
+                canEdit={canEditAccounting}
+                onChanged={() => { void loadAll(); }}
+              />
+            )}
           </div>
         )}
       </Modal>
