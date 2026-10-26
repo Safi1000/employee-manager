@@ -285,6 +285,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     new Map()
   );
   const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
+  // Which period the per-period maps (payslips, advances, attendance) were
+  // loaded for. Between a period switch and its load finishing, the rows carry
+  // the NEW period with the OLD period's data — on 26 Oct 2026 the auto-save
+  // wrote that mix over 30 of Nova's paid August payslips. Nothing may be
+  // saved unless this equals selectedPeriod.
+  const [loadedPeriod, setLoadedPeriod] = useState<string | null>(null);
+  const loadSeqRef = useRef(0);
   const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
   const { profile } = useAuth();
@@ -470,6 +477,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   }, []);
 
   const loadPeriodData = async (period: string) => {
+    const seq = ++loadSeqRef.current;
+    setLoadedPeriod(null);
     const start = period;
     const end = endOfMonthStr(period);
     const [yStr, mStr] = period.split("-");
@@ -503,6 +512,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       supabase.from("payroll_adjustments").select("id, employee_id, amount, reason, settlement, status").eq("original_period_month", period),
       supabase.rpc("leave_period_summary", { p_period_start: period }),
     ]);
+    // A newer load (another period) has started: this one's data is stale.
+    if (seq !== loadSeqRef.current) return;
     setLeaveSummary(new Map(((lsRes.data ?? []) as any[]).map((r) => [r.employee_id, {
       present_days: Number(r.present_days), tier: Number(r.tier), quota: Number(r.quota), earned: Number(r.earned),
       lost: Number(r.lost), opening: Number(r.opening), available: Number(r.available), taken: Number(r.taken),
@@ -572,6 +583,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         inner.set(key, (inner.get(key) ?? 0) + 1);
         per.set(r.employee_id, inner);
       }
+      if (seq !== loadSeqRef.current) return;
       setRelieverPerClient(per);
     } else {
       setRelieverPerClient(new Map());
@@ -596,6 +608,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     });
     setPriorLeavesByMonth(histMap);
     setRowEdits(new Map());
+    setLoadedPeriod(period);
     // Selection is intentionally preserved here (item 1) so switching away and
     // back keeps the chosen payslip. It's cleared explicitly when the user picks
     // a different period.
@@ -1451,15 +1464,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const autoSavedPeriodRef = useRef<string | null>(null);
   useEffect(() => {
     if (!afterNet || loading) return;
+    // Only once this period's own data is in (see loadedPeriod).
+    if (loadedPeriod !== selectedPeriod) return;
     if (autoSavedPeriodRef.current === selectedPeriod) return;
     autoSavedPeriodRef.current = selectedPeriod;
-    const missing = filtered.filter((r) => !r.payslip_id);
+    const missing = filtered.filter((r) => !r.payslip_id && r.period_month === selectedPeriod);
     if (missing.length === 0) return;
     (async () => {
       try {
         const { error: upErr } = await supabase
           .from("payslips")
-          .upsert(missing.map((r) => buildPayslipPayload(r)), { onConflict: "employee_id,period_month" });
+          // CREATE ONLY. ignoreDuplicates makes this an insert that skips any
+          // payslip already there — an automatic save must never overwrite one.
+          .upsert(missing.map((r) => buildPayslipPayload(r)), { onConflict: "employee_id,period_month", ignoreDuplicates: true });
         if (upErr) throw upErr;
         await loadPeriodData(selectedPeriod);
       } catch (e: any) {
@@ -1467,7 +1484,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [afterNet, loading, selectedPeriod, filtered]);
+  }, [afterNet, loading, selectedPeriod, loadedPeriod, filtered]);
 
   const updateEdit = (employeeId: string, patch: Partial<RowState>) => {
     setRowEdits((prev) => {
@@ -1499,6 +1516,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
    * be saved at all until one side is corrected.
    */
   const assertPaidNotOverAccrued = (row: RowState) => {
+    // Every payslip write passes through here. A row whose period's data has
+    // not finished loading is a mix of two months and is never saved.
+    if (row.period_month !== loadedPeriod) {
+      throw new Error("This month is still loading — nothing was saved. Try again in a moment.");
+    }
     const paid = Math.round(row.amount_paid ?? 0);
     const net = Math.round(row.net_salary ?? 0);
     if (paid <= net) return;
