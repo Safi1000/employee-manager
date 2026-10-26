@@ -34,7 +34,6 @@ import { useAuth } from "./lib/auth";
 const Accounting = lazyPage(() => import("./pages/super-admin/Accounting"));
 const FinancialReports = lazyPage(() => import("./pages/super-admin/FinancialReports"));
 const Accountant = lazyPage(() => import("./pages/super-admin/Accountant"));
-const PartnershipReport = lazyPage(() => import("./pages/super-admin/PartnershipReport"));
 const ExpensesEntry = lazyPage(() => import("./pages/super-admin/ExpensesEntry"));
 const Invoices = lazyPage(() => import("./pages/super-admin/Invoices"));
 const Cashflow = lazyPage(() => import("./pages/super-admin/CashFlow"));
@@ -53,8 +52,9 @@ const ChartOfAccounts = lazyPage(() => import("./pages/super-admin/ChartOfAccoun
 const PeriodClose = lazyPage(() => import("./pages/super-admin/PeriodClose"));
 const AuditLog = lazyPage(() => import("./pages/super-admin/AuditLog"));
 const Reversals = lazyPage(() => import("./pages/super-admin/Reversals"));
-const Partners = lazyPage(() => import("./pages/super-admin/Partners"));
 const PartnershipRun = lazyPage(() => import("./pages/super-admin/PartnershipRun"));
+const PartnershipPartners = lazyPage(() => import("./pages/super-admin/PartnershipPartners"));
+const PartnershipStatements = lazyPage(() => import("./pages/super-admin/PartnershipStatements"));
 const ProjectFinancing = lazyPage(() => import("./pages/super-admin/ProjectFinancing"));
 const Treasury = lazyPage(() => import("./pages/super-admin/Treasury"));
 const FieldOps = lazyPage(() => import("./pages/super-admin/FieldOps"));
@@ -88,8 +88,8 @@ function PartnershipPage() {
   return (
     <TabHub tabs={[
       { key: "months", label: "Months", render: () => <PartnershipRun /> },
-      { key: "partners", label: "Partners", render: () => <PartnershipReport key="partnership" standalone="partnership" /> },
-      { key: "statements", label: "Statements", render: () => <Partners /> },
+      { key: "partners", label: "Partners", render: () => <PartnershipPartners /> },
+      { key: "statements", label: "Statements", render: () => <PartnershipStatements /> },
     ]} />
   );
 }
@@ -256,7 +256,7 @@ export const router = createBrowserRouter([
       { path: "assets", element: <Navigate to="/super-admin/assets-issuance?tab=register" replace /> },
       { path: "alerts", element: <Alerts /> },
       { path: "governance", element: <Navigate to="/super-admin/access-governance?tab=governance" replace /> },
-      { path: "partners", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Partners />) },
+      { path: "partners", element: <Navigate to="/super-admin/partnership?tab=statements" replace /> },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
       { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
       // PROFIT DISTRIBUTION: ROUTE REMOVED. The screen maintained

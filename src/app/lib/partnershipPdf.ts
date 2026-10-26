@@ -91,3 +91,38 @@ export function generatePartnershipMonthPdf(o: {
   drawBrandedFooter(doc, o.branding, "System-generated from the partnership run as posted.");
   void savePdf(doc, `Partnership ${o.monthLabel}.pdf`);
 }
+
+export type LedgerLine = { entry_date: string; particulars: string; cash_paid: number; remuneration: number; balance: number };
+
+/** A partner's account over a range, line by line, as partner_ledger gives it. */
+export function generatePartnerLedgerPdf(o: {
+  branding: PdfBranding; partnerName: string; rangeLabel: string; opening: number; rows: LedgerLine[]; closing: number;
+}) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  let y = drawBrandedHeader(doc, o.branding, "Partner account", `${o.partnerName}  ·  ${o.rangeLabel}`) + 6;
+  const head = () => {
+    doc.setFillColor(241, 245, 249); doc.rect(14, y - 4.5, 182, 7, "F");
+    doc.setFontSize(8); doc.setTextColor(100);
+    doc.text("Date", 16, y); doc.text("Particulars", 38, y);
+    doc.text("Paid / drawn", 140, y, { align: "right" }); doc.text("Profit share", 168, y, { align: "right" }); doc.text("Balance", 194, y, { align: "right" });
+    y += 7;
+  };
+  head();
+  doc.setFontSize(9); doc.setTextColor(40);
+  doc.text("Opening balance", 38, y); doc.text(acct(o.opening), 194, y, { align: "right" }); y += 6;
+  for (const r of o.rows) {
+    if (y > 278) { doc.addPage(); y = 20; head(); doc.setFontSize(9); doc.setTextColor(40); }
+    let p = r.particulars ?? "";
+    while (p.length > 3 && doc.getTextWidth(p) > 82) p = p.slice(0, -2);
+    if (p !== (r.particulars ?? "")) p += "…";
+    doc.text(r.entry_date, 16, y); doc.text(p, 38, y);
+    if (Number(r.cash_paid)) doc.text(acct(r.cash_paid), 140, y, { align: "right" });
+    if (Number(r.remuneration)) doc.text(acct(r.remuneration), 168, y, { align: "right" });
+    doc.text(acct(r.balance), 194, y, { align: "right" });
+    y += 5.5;
+  }
+  y += 2; doc.setDrawColor(200); doc.line(14, y, 196, y); y += 6;
+  doc.setFontSize(11); doc.setTextColor(0); doc.text("Closing balance", 38, y); doc.text(acct(o.closing), 194, y, { align: "right" });
+  drawBrandedFooter(doc, o.branding, "System-generated from the partner ledger.");
+  void savePdf(doc, `${o.partnerName} account ${o.rangeLabel}.pdf`);
+}
