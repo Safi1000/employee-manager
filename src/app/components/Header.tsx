@@ -98,8 +98,14 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
     const parent = el?.parentElement;
     if (!el || !band || !fig || !parent) return;
     const scrolls = (n: Element) => /(auto|scroll)/.test(getComputedStyle(n).overflowY);
-    const inside = scrolls(parent);
-    const targets = (inside ? [parent] : Array.from(parent.children).filter((c) => c !== el && scrolls(c))) as HTMLElement[];
+    // 2026-10-27: a scrolling sibling wins over a scrollable parent. Inside a
+    // TabHub the tab's container is overflow-auto but never actually scrolls —
+    // the page's own body below the band does (Payroll Management) — so
+    // listening to the parent left the band pinned at full height.
+    const sibs = (Array.from(parent.children).filter((c) => c !== el && scrolls(c)) as HTMLElement[])
+      .sort((a, b) => b.offsetHeight - a.offsetHeight); // the page body, not a small box
+    const inside = sibs.length === 0 && scrolls(parent);
+    const targets = (inside ? [parent] : sibs) as HTMLElement[];
     if (targets.length === 0) return;
     const beside = inside ? null : targets[0];
     const saved = beside ? { marginTop: beside.style.marginTop, paddingTop: beside.style.paddingTop } : null;
