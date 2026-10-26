@@ -31,7 +31,9 @@ import { GROUPS, KNOWN } from "../accountant/AccountsGrid";
 
 export type SiteTile = { clientId: string; name: string; regionId: string | null; region: string; contracted: number; onPost: number; present: number; onLeave: number; absent: number; marked: number };
 export type AgeRow = { clientId: string; name: string; regionId: string | null; buckets: [number, number, number, number] };
-export type ClientDot = { clientId: string; name: string; regionId: string | null; region: string; revenue: number; net: number; guards: number };
+export type ClientDot = { clientId: string; name: string; regionId: string | null; region: string; revenue: number; net: number; guards: number;
+  /** Payroll + direct expenses booked to the client (before overhead). 0 = no cost recorded. */
+  direct: number };
 export type RegionCard = { regionId: string; name: string; revenue: number; net: number; trend: number[]; charged: boolean | null };
 
 export type CommandData = {
@@ -307,14 +309,14 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
       }
 
       // Client map + regions
-      const stmt = ok<{ client_id: string | null; client_name: string; branch_id: string | null; region_name: string; revenue: number; net: number }[]>(7);
+      const stmt = ok<{ client_id: string | null; client_name: string; branch_id: string | null; region_name: string; revenue: number; net: number; direct_payroll: number; direct_expenses: number }[]>(7);
       const contractedOf = (id: string) => Number(cover?.find((c) => c.client_id === id)?.contracted ?? 0);
       const clientMap = stmt
         ? {
             month: pStart,
             rows: stmt
               .filter((r) => r.client_id && Number(r.revenue) > 0 && inScope(r.branch_id))
-              .map((r) => ({ clientId: r.client_id!, name: r.client_name, regionId: r.branch_id, region: r.region_name, revenue: Number(r.revenue), net: Number(r.net), guards: contractedOf(r.client_id!) })),
+              .map((r) => ({ clientId: r.client_id!, name: r.client_name, regionId: r.branch_id, region: r.region_name, revenue: Number(r.revenue), net: Number(r.net), guards: contractedOf(r.client_id!), direct: Number(r.direct_payroll ?? 0) + Number(r.direct_expenses ?? 0) })),
           }
         : null;
       const modes = ok<{ branch_id: string; apportioned: boolean }[]>(8);

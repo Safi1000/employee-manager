@@ -154,13 +154,18 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   }, [cm]);
 
   // ---- client map ----
+  // ---- client margins (2026-10-26: replaced the scatter) ----
+  // A client whose month has no cost recorded, or so little that the margin is
+  // 50%+, is not "very profitable" — its payroll is not in yet. Those are set
+  // apart and kept out of the headline, so the ranking is only of margins
+  // that mean something.
   const dots = (c?.clientMap?.rows ?? []).filter((r) => r.revenue > 0);
-  const maxRev = Math.max(1, ...dots.map((r) => r.revenue)) * 1.1;
-  const margins = dots.map((r) => r.net / r.revenue);
-  // Clamp the scale: a client with no payroll recorded reads ~100% and would
-  // squash everyone else into a strip. Outliers sit on the edge; the sheet has
-  // the real figure.
-  const mHi = Math.min(0.6, Math.max(0.25, ...margins)), mLo = Math.max(-0.3, Math.min(0, ...margins));
+  const incomplete = (r: (typeof dots)[number]) => r.direct <= 0 || r.net / r.revenue >= 0.5;
+  const ranked = dots.filter((r) => !incomplete(r)).sort((a, b) => b.net - a.net);
+  const pending = dots.filter(incomplete).sort((a, b) => b.revenue - a.revenue);
+  const rkRev = ranked.reduce((n, r) => n + r.revenue, 0), rkNet = ranked.reduce((n, r) => n + r.net, 0);
+  const maxRev = Math.max(1, ...ranked.map((r) => r.revenue));
+  const [showPending, setShowPending] = useState(false);
 
   // ---- timeline ----
   const dues = d.alerts.filter((a) => a.days_remaining <= 30).slice(0, 10);
@@ -422,39 +427,59 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
         )}
 
         {d.show("client_map") && d.can.reports && dots.length > 0 && c?.clientMap && (
-          <Card kicker={`Client map · ${new Date(`${c.clientMap.month}T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}`} title="Who earns, who costs" className="flex-[1_1_460px]"
-            aside={<span className="text-xs text-muted-foreground">Size = contracted guards</span>}>
-            <div className="flex gap-2">
-              <div className="flex flex-col justify-between text-[11px] text-muted-foreground py-1 pb-6 text-right w-9">
-                <span>{pct(mHi).replace(".0", "")}</span><span>{pct((mHi + mLo) / 2).replace(".0", "")}</span><span>{pct(mLo).replace(".0", "")}</span>
+          <Card kicker={`Client margins · ${new Date(`${c.clientMap.month}T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}`}
+            title={ranked.length ? <>{pct(rkRev ? rkNet / rkRev : 0)} margin on {mil(rkRev)}</> : "No client has its cost recorded yet"}
+            className="flex-[1_1_460px]"
+            aside={<Link to="/super-admin/reports" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Client profit</Link>}>
+            <p className="text-xs text-muted-foreground -mt-1">After payroll, direct costs, regional overhead and head office — best net first.</p>
+            <ul className="flex flex-col divide-y divide-border">
+              {ranked.map((r) => {
+                const m = r.net / r.revenue;
+                const costW = Math.max(0, Math.min(100, ((r.revenue - Math.max(0, r.net)) / maxRev) * 100));
+                const netW = Math.max(0, (Math.max(0, r.net) / maxRev) * 100);
+                return (
+                  <li key={r.clientId}>
+                    <button type="button" className="w-full py-1.5 text-left hover:bg-muted/40 rounded-md px-1"
+                      onClick={() => setSheet({
+                        kicker: `${r.region} · revenue basis`, title: r.name, big: `${pct(m)} margin`,
+                        note: "Last full month, with regional overhead and head office as currently set — the same client P&L Financial Reports shows.",
+                        rows: [{ label: "Revenue", value: fmt(r.revenue) }, { label: "Payroll & direct cost", value: fmt(r.direct) }, { label: "Net", value: fmt(r.net) }, { label: "Contracted guards", value: fmt(r.guards) }],
+                        link: { to: "/super-admin/reports", label: "Open client profit" },
+                      })}>
+                      <div className="flex items-baseline gap-2 text-sm">
+                        <span className="truncate text-foreground">{r.name}</span>
+                        <span className="text-[11px] text-muted-foreground truncate">{r.region}</span>
+                        <span className={`ml-auto font-ledger text-xs font-semibold ${m < 0 ? "text-down" : m < 0.1 ? "text-heed" : "text-up"}`}>{pct(m)}</span>
+                        <span className="font-ledger text-xs text-muted-foreground w-20 text-right">{mil(r.revenue)}</span>
+                      </div>
+                      <div className="mt-1 flex h-1.5 rounded-full overflow-hidden bg-muted">
+                        <div className="bg-foreground/25" style={{ width: `${costW}%` }} />
+                        <div className={m < 0 ? "bg-down" : m < 0.1 ? "bg-heed" : "bg-up"} style={{ width: `${netW}%` }} />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {pending.length > 0 && (
+              <div className="rounded-xl border border-dashed border-border px-3 py-2">
+                <button type="button" onClick={() => setShowPending(!showPending)} className="w-full flex items-center gap-2 text-left text-xs">
+                  <span className="text-muted-foreground"><span className="font-semibold text-foreground">{pending.length} client{pending.length === 1 ? "" : "s"}</span> · cost not recorded yet — margin not meaningful</span>
+                  <span className="ml-auto font-ledger text-muted-foreground">{mil(pending.reduce((n, r) => n + r.revenue, 0))}</span>
+                </button>
+                {showPending && (
+                  <ul className="mt-1.5 flex flex-col gap-0.5 text-xs">
+                    {pending.map((r) => (
+                      <li key={r.clientId} className="flex gap-2">
+                        <span className="truncate text-foreground">{r.name}</span>
+                        <span className="text-muted-foreground truncate">{r.region}{r.direct <= 0 ? " · no payroll or cost" : " · cost looks partial"}</span>
+                        <span className="ml-auto font-ledger text-muted-foreground">{mil(r.revenue)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                <div className="relative h-[270px] border-l border-b border-border rounded-tr-[10px] bg-[linear-gradient(to_bottom,color-mix(in_srgb,var(--color-success-500)_9%,var(--card))_0,color-mix(in_srgb,var(--color-success-500)_9%,var(--card))_var(--split),color-mix(in_srgb,var(--color-danger-500)_8%,var(--card))_var(--split))]"
-                  style={{ ["--split" as string]: `${(1 - (0.1 - mLo) / (mHi - mLo)) * 100}%` }}>
-                  <span className="absolute right-2 top-1.5 text-[11px] font-semibold text-success-700 dark:text-success-500">10%+ margin</span>
-                  <span className="absolute right-2 bottom-1.5 text-[11px] font-semibold text-danger-700 dark:text-danger-500">Under 10% — look closer</span>
-                  {dots.map((r) => {
-                    const m = r.net / r.revenue;
-                    const x = 4 + (r.revenue / maxRev) * 90;
-                    const y = 100 - (((Math.min(mHi, Math.max(mLo, m)) - mLo) / (mHi - mLo)) * 88 + 6);
-                    const size = 14 + Math.sqrt(Math.max(1, r.guards)) * 4;
-                    const col = m >= 0.15 ? "#3d4a2b" : m >= 0.1 ? "#e9a73c" : "#a3392a";
-                    return (
-                      <button key={r.clientId} type="button" title={`${r.name}: revenue ${fmt(r.revenue)}, margin ${pct(m)}`} aria-label={`${r.name}, margin ${pct(m)}`}
-                        onClick={() => setSheet({
-                          kicker: `${r.region} · revenue basis`, title: r.name, big: `${pct(m)} margin`,
-                          note: "Last full month, with regional overhead and head office as currently set — the same client P&L Financial Reports shows.",
-                          rows: [{ label: "Revenue", value: fmt(r.revenue) }, { label: "Net", value: fmt(r.net) }, { label: "Contracted guards", value: fmt(r.guards) }],
-                          link: { to: "/super-admin/reports", label: "Open client profit" },
-                        })}
-                        className="absolute rounded-full border-2 border-card -translate-x-1/2 -translate-y-1/2 hover:scale-110 hover:z-10 transition-transform"
-                        style={{ left: `${x}%`, top: `${y}%`, width: size, height: size, background: col }} />
-                    );
-                  })}
-                </div>
-                <div className="flex justify-between text-[11px] text-muted-foreground"><span>Revenue →</span><span className="font-ledger">{mil(maxRev)}</span></div>
-              </div>
-            </div>
+            )}
           </Card>
         )}
       </div>
