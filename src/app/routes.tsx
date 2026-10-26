@@ -30,6 +30,7 @@ const AttendanceRun = lazyPage(() => import("./pages/super-admin/AttendanceRun")
 const PayrollAdjustments = lazyPage(() => import("./pages/super-admin/PayrollAdjustments"));
 const LeaveBalances = lazyPage(() => import("./pages/super-admin/LeaveBalances"));
 import TabHub from "./pages/super-admin/_TabHub";
+import { useAuth } from "./lib/auth";
 const Accounting = lazyPage(() => import("./pages/super-admin/Accounting"));
 const FinancialReports = lazyPage(() => import("./pages/super-admin/FinancialReports"));
 const Accountant = lazyPage(() => import("./pages/super-admin/Accountant"));
@@ -77,6 +78,21 @@ const Billing = lazyPage(() => import("./pages/super-admin/Billing"));
 
 const Companies = lazyPage(() => import("./pages/super-super-admin/Companies"));
 const CompanyDetail = lazyPage(() => import("./pages/super-super-admin/CompanyDetail"));
+
+// Partnership: a partner's own login sees only the month page, scoped to
+// what partnership_month_view (0557) gives it. Partners and Statements are
+// management pages and are not offered to partner logins.
+function PartnershipPage() {
+  const { profile } = useAuth();
+  if (profile?.user_type === "partner") return <PartnershipRun />;
+  return (
+    <TabHub tabs={[
+      { key: "months", label: "Months", render: () => <PartnershipRun /> },
+      { key: "partners", label: "Partners", render: () => <PartnershipReport key="partnership" standalone="partnership" /> },
+      { key: "statements", label: "Statements", render: () => <Partners /> },
+    ]} />
+  );
+}
 
 const guard = (perms: string[], el: React.ReactNode) => (
   <RequirePermission any={perms}>{el}</RequirePermission>
@@ -211,11 +227,7 @@ export const router = createBrowserRouter([
       // post, and every posted month in full), Partners (shares and policy) and
       // Statements (each partner's ledger). The two old pages redirect here.
       { path: "partnership", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], (
-        <TabHub tabs={[
-          { key: "months", label: "Months", render: () => <PartnershipRun /> },
-          { key: "partners", label: "Partners", render: () => <PartnershipReport key="partnership" standalone="partnership" /> },
-          { key: "statements", label: "Statements", render: () => <Partners /> },
-        ]} />
+        <PartnershipPage />
       )) },
       { path: "partnership-report", element: <Navigate to="/super-admin/partnership?tab=partners" replace /> },
       { path: "partnership-run", element: <Navigate to="/super-admin/partnership?tab=months" replace /> },
