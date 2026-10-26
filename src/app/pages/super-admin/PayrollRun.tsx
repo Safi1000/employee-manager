@@ -709,8 +709,9 @@ export default function PayrollRun() {
           } catch { /* ignore */ }
         }}
       >
-        {/* Tabs, filters and (on Review) the KPI cards stay pinned while the
-            client list scrolls under them (asked 2026-10-05). */}
+        {/* The month, search and export stay pinned while the client list
+            scrolls (asked 2026-10-05). The Review totals scroll away with the
+            page (asked 2026-10-26) — pinned, they sat over the list. */}
         <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-4 pb-4 mb-2 bg-background">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="font-display text-lg font-bold tracking-tight">{TABS.find((t) => t.key === tab)?.label} · {TABS.find((t) => t.key === tab)?.count}</span>
@@ -756,11 +757,12 @@ export default function PayrollRun() {
             )}
           </div>
         </div>
+        </div>
         {!loading && tab === "review" && (<>
                 {/* Summary cards — scoped to the expanded client, else all Review
                     clients. Review doesn't disburse, so we show what's payable:
                     Total Salaries (net) and Total Advance. */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
                     <p className="lbl mb-1.5">Total Salaries</p>
                     <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-success-700 dark:text-success-500">
@@ -777,7 +779,6 @@ export default function PayrollRun() {
                   </div>
                 </div>
         </>)}
-        </div>
 
         {err && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
