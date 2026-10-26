@@ -5715,6 +5715,33 @@ function HistoryBody({
   }, []);
   const custodianOf = (t: BankTransaction) =>
     t.kind === "withdraw_to_cash" && t.reference_id ? holders.get(t.reference_id) ?? null : null;
+  // 2026-10-26: money in from a client classified for sales tax (PRA / FBR /
+  // AJK) is taxable — flagged on its line. A receipt's reference is its
+  // invoice payment, a cleared cheque's is the cheque; both name the client.
+  const [taxBySource, setTaxBySource] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const cl = await supabase.from("clients").select("id, sales_tax_authority").not("sales_tax_authority", "is", null);
+      const auth = new Map(((cl.data ?? []) as { id: string; sales_tax_authority: string }[]).map((c) => [c.id, c.sales_tax_authority]));
+      if (auth.size === 0) return;
+      const ids = [...auth.keys()];
+      const [ip, ch] = await Promise.all([
+        supabase.from("invoice_payments").select("id, client_id").in("client_id", ids),
+        supabase.from("cheques").select("id, client_id").in("client_id", ids),
+      ]);
+      const m = new Map<string, string>();
+      for (const r of [...((ip.data ?? []) as { id: string; client_id: string | null }[]), ...((ch.data ?? []) as { id: string; client_id: string | null }[])]) {
+        const a = r.client_id ? auth.get(r.client_id) : undefined;
+        if (a) m.set(r.id, a);
+      }
+      if (alive) setTaxBySource(m);
+    })();
+    return () => { alive = false; };
+  }, []);
+  const taxOf = (t: BankTransaction) =>
+    (t.kind === "receipt" || t.kind === "cheque") && Number(t.account_delta) > 0 && t.reference_id
+      ? taxBySource.get(t.reference_id) ?? null : null;
   const describe = (t: BankTransaction) => {
     const who = custodianOf(t);
     if (!who) return t.description ?? "—";
@@ -5724,7 +5751,7 @@ function HistoryBody({
   };
   const q = query.trim().toLowerCase();
   const filtered = transactions.filter((t) => {
-    if (q && !`${t.description ?? ""} ${kindLabel[t.kind] ?? t.kind} ${custodianOf(t) ?? ""}`.toLowerCase().includes(q)) return false;
+    if (q && !`${t.description ?? ""} ${kindLabel[t.kind] ?? t.kind} ${custodianOf(t) ?? ""} ${taxOf(t) ? `taxable ${taxOf(t)}` : ""}`.toLowerCase().includes(q)) return false;
     if (bankFilter !== "all") {
       if (bankFilter === "__cash__") {
         if (Number(t.cash_delta) === 0) return false;
@@ -5971,11 +5998,19 @@ function HistoryBody({
                 const cd = Number(t.cash_delta);
                 const ad = Number(t.account_delta);
                 return (
-                  <tr key={t.id} className={nested ? "bg-muted/10" : undefined}>
+                  <tr key={t.id} className={taxOf(t) ? "bg-heed/10" : nested ? "bg-muted/10" : undefined}>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
                     </td>
-                    <td className="px-3 py-2 text-xs text-foreground">{kindLabel[t.kind]}</td>
+                    <td className="px-3 py-2 text-xs text-foreground">
+                      {kindLabel[t.kind]}
+                      {taxOf(t) && (
+                        <span className="ml-1.5 inline-block rounded-full border border-heed/40 bg-heed/15 px-1.5 py-0.5 text-[10px] font-semibold text-heed"
+                          title="Received from a client classified for sales tax — counts toward the 15th-to-15th window">
+                          Taxable · {taxOf(t)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-xs text-foreground">
                       {bank ? (
                         <>
