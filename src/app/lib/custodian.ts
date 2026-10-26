@@ -90,6 +90,16 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
         .not("custodian_location_id", "is", null)
     : empty;
 
+  // A vendor's refund of a bill paid twice, handed to a custodian (0562) — cash
+  // into their hands; custodian_held_operational adds it too (0563).
+  const { data: vendorRefunds } = withBalances
+    ? await supabase
+        .from("vendor_credit_settlements")
+        .select("amount, custodian_location_id")
+        .eq("kind", "refund")
+        .eq("paid_via", "Cash")
+    : empty;
+
   // Most-recent active custodian location per person (employee or partner).
   const locByPerson = new Map<string, { id: string; opening: number }>();
   for (const l of (locs ?? []) as any[]) {
@@ -134,6 +144,9 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
   }
   for (const dp of (cashDeposits ?? []) as any[]) {
     if (dp.cash_location_id && heldByLoc.has(dp.cash_location_id)) heldByLoc.set(dp.cash_location_id, (heldByLoc.get(dp.cash_location_id) ?? 0) - Number(dp.amount ?? 0));
+  }
+  for (const r of (vendorRefunds ?? []) as any[]) {
+    if (r.custodian_location_id && heldByLoc.has(r.custodian_location_id)) heldByLoc.set(r.custodian_location_id, (heldByLoc.get(r.custodian_location_id) ?? 0) + Number(r.amount ?? 0));
   }
 
   const opt = (id: string, name: string, kind: "employee" | "partner"): CustodianOption => {

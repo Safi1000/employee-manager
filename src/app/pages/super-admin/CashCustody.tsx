@@ -169,7 +169,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
         { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }, { data: payrollCash },
-        { data: cashAdvances }, { data: cashDeposits }, { data: vendorCash }, { data: partnerCash },
+        { data: cashAdvances }, { data: cashDeposits }, { data: vendorCash }, { data: partnerCash }, { data: vendorRefunds },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -202,6 +202,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         // posting credits (drawing) or debits (contribution) that custodian's cash
         // sub-account, so the held figure moves by the same amount (custodian.ts).
         supabase.from("partner_account_entries").select("id, amount, type, date, description, cash_location_id, partner_id").eq("company_id", companyId).eq("payment_method", "CASH").in("type", ["DRAWING", "CONTRIBUTION"]).not("cash_location_id", "is", null),
+        // A vendor's cash refund of a bill paid twice (0562) — cash into the custodian's hands.
+        supabase.from("vendor_credit_settlements").select("id, amount, custodian_location_id, settled_on, credit:credit_id(vendor:vendor_id(name))").eq("company_id", companyId).eq("kind", "refund").eq("paid_via", "Cash"),
       ]);
       // Cash expenses and cash vendor payments leave a custodian the same way.
       const cashOuts = [
@@ -224,6 +226,10 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       for (const p of (cashPays ?? []) as any[]) {
         if (!p.custodian_location_id) continue;
         inBy.set(p.custodian_location_id, (inBy.get(p.custodian_location_id) ?? 0) + Number(p.amount ?? 0));
+      }
+      for (const r of (vendorRefunds ?? []) as any[]) {
+        if (!r.custodian_location_id) continue;
+        inBy.set(r.custodian_location_id, (inBy.get(r.custodian_location_id) ?? 0) + Number(r.amount ?? 0));
       }
       setCashInByLoc(inBy);
       const outBy = new Map<string, number>();
@@ -379,6 +385,13 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           kind: drawing ? "cash_paid" : "cash_received",
           detail: `${drawing ? "Partner drawing" : "Partner contribution"} · ${who}${pe.description ? ` — ${pe.description}` : ""}`,
           cashIn: drawing ? 0 : amt, cashOut: drawing ? amt : 0,
+        });
+      }
+      for (const r of (vendorRefunds ?? []) as any[]) {
+        if (!r.custodian_location_id || !custodianLocIds.has(r.custodian_location_id)) continue;
+        raw.push({
+          id: `vr-${r.id}`, date: r.settled_on, locationId: r.custodian_location_id, employeeId: empByLoc.get(r.custodian_location_id) ?? null,
+          kind: "cash_received", detail: `Refund · ${r.credit?.vendor?.name ?? "vendor"} (bill paid twice)`, cashIn: Number(r.amount), cashOut: 0,
         });
       }
       // Text written with the permanent employee code (GGS-…) shows the code of
