@@ -794,13 +794,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // EOBI (0552): the dated rate's employee share, from the employees ticked
   // for it on the Statutory tab. One rate for the company — never per client.
   // Payroll books no employer share; that is a cost only when a challan pays.
-  const [statutoryRates, setStatutoryRates] = useState<StatutoryRate[]>([]);
+  // null until loaded: computing EOBI before the dated rate arrives fell back
+  // to the old per-client amount and then jumped — the roster flickered.
+  const [statutoryRates, setStatutoryRates] = useState<StatutoryRate[] | null>(null);
   useEffect(() => {
     void supabase.from("statutory_rates").select("scheme, employee_amount, employer_amount, effective_from")
       .then(({ data }) => setStatutoryRates(((data ?? []) as StatutoryRate[]).map((r) => ({ ...r, employee_amount: Number(r.employee_amount), employer_amount: Number(r.employer_amount) }))));
   }, []);
   const eobiByEmployee = useMemo(() => {
     const m = new Map<string, number>();
+    if (statutoryRates == null) return m;
     for (const e of employees) {
       m.set(e.id, resolveEobiAmount(e as { eobi_deduct?: boolean }, e.client_id ? clientById.get(e.client_id) : null, statutoryRates, selectedPeriod));
     }
@@ -874,6 +877,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   }, [employees, clientCarryEnabled, allowedLeavesByEmployee, clientCarryStart, priorLeavesByMonth, selectedPeriod]);
 
   const rows = useMemo<RowState[]>(() => {
+    // EOBI comes from the dated rate (0551): no roster until it has loaded.
+    if (statutoryRates == null) return [];
     const daysThisPeriod = daysInMonth(selectedPeriod);
     return employees.map((emp) => {
       const existing = payslipsMap.get(emp.id);
@@ -1032,7 +1037,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       merged.net_salary = Math.max(0, deductible - merged.advance + merged.adjustment_carried);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary]);
+  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary, statutoryRates]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1367,11 +1372,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const onTotalsRef = useRef(onTotals);
   onTotalsRef.current = onTotals;
   useEffect(() => {
-    if (!onTotalsRef.current) return;
+    if (!onTotalsRef.current || statutoryRates == null) return;
     let disbursedCount = 0, notDisbursedCount = 0;
     for (const r of filtered) (Math.round(r.amount_paid || 0) > 0 || Math.round(r.net_salary || 0) <= 0 ? disbursedCount++ : notDisbursedCount++);
     onTotalsRef.current({ ...payrollTotals, disbursedCount, notDisbursedCount });
-  }, [payrollTotals, filtered]);
+  }, [payrollTotals, filtered, statutoryRates]);
 
   // Same shape as onTotals, and for the same reason — see the prop's comment.
   // `filtered` is the roster this screen is showing, already through every
@@ -1379,7 +1384,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const onRowsRef = useRef(onRows);
   onRowsRef.current = onRows;
   useEffect(() => {
-    if (!onRowsRef.current) return;
+    if (!onRowsRef.current || statutoryRates == null) return;
     onRowsRef.current(
       filtered.map((r) => ({
         employeeCode: empDisplay(r.employee),
@@ -1406,7 +1411,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         status: r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
       })),
     );
-  }, [filtered]);
+  }, [filtered, statutoryRates]);
 
   // afterNet = the Payroll Management page for a Finance-Verified client. Persist
   // the payable with a default so it's saved before any payment: create a payslip
@@ -3029,7 +3034,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </tr>
                   </thead>
                   <tbody>
-                    {loading && (
+                    {(loading || statutoryRates == null) && (
                       <tr>
                         <td colSpan={bodyColCount} className="px-6 py-10 text-center text-muted-foreground">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
@@ -3037,7 +3042,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </td>
                       </tr>
                     )}
-                    {!loading && filtered.length === 0 && (
+                    {!loading && statutoryRates != null && filtered.length === 0 && (
                       <tr>
                         <td colSpan={bodyColCount} className="px-6 py-10 text-center text-muted-foreground text-sm">
                           No employees match the current filters.
