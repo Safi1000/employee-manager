@@ -26,7 +26,8 @@ type CardRow = {
   is_active: boolean; balance: number; loaded: number; billed: number;
   reading_as_of: string | null; portal_balance: number | null; balance_on_reading: number | null; difference: number | null;
 };
-type Load = { id: string; fuel_card_id: string; bank_account_id: string; amount: number; loaded_on: string; note: string | null };
+/** 0572: a top-up comes from a bank or from a custodian's cash — exactly one. */
+type Load = { id: string; fuel_card_id: string; bank_account_id: string | null; custodian_location_id: string | null; amount: number; loaded_on: string; note: string | null };
 type Opt = { id: string; name: string };
 
 const todayISO = () => {
@@ -49,6 +50,7 @@ type Dialog =
   | { kind: "edit"; card: CardRow }
   | { kind: "delete"; card: CardRow }
   | { kind: "partnerLoad"; card: CardRow; partnerId: string }
+  | { kind: "min"; card: CardRow }
   | null;
 
 export default function FuelCards({
@@ -71,7 +73,11 @@ export default function FuelCards({
   // This month's bills per card: with a client, general (no client), and how many.
   const [monthBills, setMonthBills] = useState<Map<string, { client: number; general: number; n: number }>>(new Map());
   // "Enter bills": several of operations' bills typed in one go.
-  type BillLine = { date: string; amount: string; client: string; note: string; err?: string; done?: boolean };
+  // 2026-10-28: the monthly FUEL SHEET is written here, not in Excel — a line
+  // per trip with its route and km; the amount is km × petrol price ÷ km per
+  // litre, the sheet's own formula (its "Avg" column is price ÷ 30). A line
+  // with no km takes a typed amount (a plain bill).
+  type BillLine = { date: string; amount: string; client: string; note: string; km: string; price: string; err?: string; done?: boolean };
   const [lines, setLines] = useState<BillLine[]>([]);
   const [missing, setMissing] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>(null);
@@ -83,7 +89,9 @@ export default function FuelCards({
   const [employees, setEmployees] = useState<Opt[]>([]);
   // 0554: who holds each card (an office-staff employee, or a partner for an allowance card).
   const [partners, setPartners] = useState<Opt[]>([]);
-  const [holders, setHolders] = useState<Map<string, { employee: string | null; partner: string | null; notes: string | null }>>(new Map());
+  const [holders, setHolders] = useState<Map<string, { employee: string | null; partner: string | null; notes: string | null; min: number | null }>>(new Map());
+  // 0572: cash custodians a card can be topped up from.
+  const [custodians, setCustodians] = useState<Opt[]>([]);
   const [showHelp, setShowHelp] = useState(false);
   const [clients, setClients] = useState<(Opt & { branch_id: string | null })[]>([]);
   const [categories, setCategories] = useState<Opt[]>([]);
@@ -96,7 +104,7 @@ export default function FuelCards({
     if (!companyId) return;
     const [c, l] = await Promise.all([
       supabase.rpc("fuel_card_balances", { p_company_id: companyId }),
-      supabase.from("fuel_card_loads").select("id, fuel_card_id, bank_account_id, amount, loaded_on, note")
+      supabase.from("fuel_card_loads").select("id, fuel_card_id, bank_account_id, custodian_location_id, amount, loaded_on, note")
         .eq("company_id", companyId).order("loaded_on", { ascending: false }).limit(200),
     ]);
     // Before 0542 is applied the function does not exist: show nothing rather than an error.
@@ -109,9 +117,9 @@ export default function FuelCards({
       difference: r.difference == null ? null : Number(r.difference),
     })));
     setLoads(((l.data ?? []) as Load[]).map((x) => ({ ...x, amount: Number(x.amount) })));
-    const { data: hx } = await supabase.from("fuel_cards").select("id, holder_employee_id, holder_partner_id, notes").eq("company_id", companyId);
-    setHolders(new Map(((hx ?? []) as { id: string; holder_employee_id: string | null; holder_partner_id: string | null; notes: string | null }[])
-      .map((x) => [x.id, { employee: x.holder_employee_id, partner: x.holder_partner_id, notes: x.notes }])));
+    const { data: hx } = await supabase.from("fuel_cards").select("id, holder_employee_id, holder_partner_id, notes, min_balance").eq("company_id", companyId);
+    setHolders(new Map(((hx ?? []) as { id: string; holder_employee_id: string | null; holder_partner_id: string | null; notes: string | null; min_balance: number | null }[])
+      .map((x) => [x.id, { employee: x.holder_employee_id, partner: x.holder_partner_id, notes: x.notes, min: x.min_balance == null ? null : Number(x.min_balance) }])));
     const ms = monthStartISO();
     const { data: bx } = await supabase.from("expenses").select("fuel_card_id, client_id, amount")
       .eq("company_id", companyId).eq("payment_mode", "Card").gte("expense_date", ms);
@@ -135,7 +143,10 @@ export default function FuelCards({
       supabase.from("clients").select("id, name, branch_id").eq("company_id", companyId).order("name"),
       supabase.from("expense_categories").select("id, name").eq("company_id", companyId).order("name"),
       supabase.from("partners").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name"),
-    ]).then(([b, e, cl, cat, pt]) => {
+      supabase.from("cash_locations").select("id, name, custodian_employee_id, custodian_partner_id, is_active").eq("company_id", companyId).order("name"),
+    ]).then(([b, e, cl, cat, pt, loc]) => {
+      setCustodians(((loc.data ?? []) as { id: string; name: string; custodian_employee_id: string | null; custodian_partner_id: string | null; is_active: boolean | null }[])
+        .filter((x) => x.is_active !== false && (x.custodian_employee_id || x.custodian_partner_id)).map((x) => ({ id: x.id, name: x.name })));
       setPartners((pt.data ?? []) as Opt[]);
       setBranches((b.data ?? []) as Opt[]);
       setEmployees(((e.data ?? []) as { id: string; full_name: string; lifecycle_state: string | null }[])
@@ -148,10 +159,18 @@ export default function FuelCards({
 
   const activeBanks = useMemo(() => banks.filter((b) => b.active !== false && b.owner_type === "company"), [banks]);
   const bankName = useMemo(() => new Map(banks.map((b) => [b.id, `${b.bank_name} · ${b.account_number}`])), [banks]);
+  const custodianName = useMemo(() => new Map(custodians.map((x) => [x.id, x.name])), [custodians]);
+  const sourceOf = (l: Load) => (l.custodian_location_id ? `${custodianName.get(l.custodian_location_id) ?? "custodian"}'s cash` : bankName.get(l.bank_account_id ?? "") ?? "bank");
   const floats = cards.filter((c) => c.role === "float");
   const allowances = cards.filter((c) => c.role === "allowance");
   const floatTotal = floats.reduce((s, c) => s + c.balance, 0);
   const fuelCategory = categories.find((c) => /fuel/i.test(c.name))?.id ?? "";
+  /** A sheet line's amount: from km and price when both are given, else as typed. */
+  const kmpl = Number(f.kmpl) > 0 ? Number(f.kmpl) : 30;
+  const lineAmount = (l: BillLine) => {
+    const km = Number(l.km), pr = Number(l.price);
+    return km > 0 && pr > 0 ? Math.round((km * pr / kmpl) * 100) / 100 : Number(l.amount) || 0;
+  };
 
   if (missing) return null;
 
@@ -216,8 +235,21 @@ export default function FuelCards({
         p_amount: amount, p_method: "BANK_TRANSFER", p_bank_account_id: f.bank, p_cash_location_id: null,
       }), true);
     }
+    if (dialog.kind === "min") {
+      const v = f.min?.trim() ? Number(f.min) : null;
+      if (v != null && !(v >= 0)) return setErr("Enter the minimum as a number, or leave it empty for none.");
+      return run(() => supabase.rpc("set_fuel_card_min_balance", { p_fuel_card_id: dialog.card.fuel_card_id, p_min_balance: v }), false);
+    }
     if (dialog.kind === "load") {
-      if (!(amount > 0)) return setErr("Enter the amount loaded.");
+      if (!(amount > 0)) return setErr("Enter the amount topped up.");
+      if ((f.source ?? "cash") === "cash") {
+        // 0572: cash → card. The custodian's cash goes down, the card goes up; no expense.
+        if (!f.custodian) return setErr("Choose whose cash paid for the top-up.");
+        return run(() => supabase.rpc("load_fuel_card_from_cash", {
+          p_fuel_card_id: dialog.card.fuel_card_id, p_custodian_location_id: f.custodian, p_amount: amount,
+          p_loaded_on: f.date || todayISO(), p_note: f.note?.trim() || null,
+        }), true);
+      }
       if (!f.bank) return setErr("Choose the bank it was loaded from.");
       return run(() => supabase.rpc("load_fuel_card", {
         p_fuel_card_id: dialog.card.fuel_card_id, p_bank_account_id: f.bank, p_amount: amount,
@@ -241,21 +273,22 @@ export default function FuelCards({
       }), false);
     }
     if (dialog.kind === "bills") {
-      const todo = lines.map((l, i) => ({ l, i })).filter(({ l }) => !l.done && (l.amount || l.note));
+      const todo = lines.map((l, i) => ({ l, i })).filter(({ l }) => !l.done && (l.amount || l.note || l.km));
       if (todo.length === 0) return setErr("Type at least one bill.");
       if (!fuelCategory) return setErr("The expense category \"Transportation & Fuel\" is missing.");
       setBusy(true); setErr(null);
       const next = [...lines];
       // One at a time, oldest first, so the card's balance check sees each bill in turn.
       for (const { l, i } of [...todo].sort((a, b) => a.l.date.localeCompare(b.l.date))) {
-        const amt = Number(l.amount);
-        if (!(amt > 0)) { next[i] = { ...l, err: "Enter the amount." }; continue; }
+        const amt = lineAmount(l);
+        if (!(amt > 0)) { next[i] = { ...l, err: "Enter the km and petrol price, or the amount." }; continue; }
+        const kmNote = Number(l.km) > 0 && Number(l.price) > 0 ? ` · ${l.km} km @ ${l.price}` : "";
         const cl = clients.find((x) => x.id === l.client);
         const { error } = await supabase.rpc("record_fuel_card_bill", {
           p_fuel_card_id: dialog.card.fuel_card_id, p_amount: amt, p_bill_date: l.date || todayISO(),
           p_category_id: fuelCategory, p_client_id: l.client || null,
           p_branch_id: cl?.branch_id ?? dialog.card.branch_id ?? null,
-          p_description: l.note.trim() || null,
+          p_description: (l.note.trim() + kmNote).trim() || null,
         });
         next[i] = error ? { ...l, err: friendlyDbError(error) } : { ...l, err: undefined, done: true };
       }
@@ -263,7 +296,7 @@ export default function FuelCards({
       setBusy(false);
       await load();
       if (billsOnly) onMoved();
-      if (next.every((l) => l.done || (!l.amount && !l.note))) setDialog(null);
+      if (next.every((l) => l.done || (!l.amount && !l.note && !l.km))) setDialog(null);
       else setErr("Some bills were not recorded — each says why. The rest are in.");
       return;
     }
@@ -300,14 +333,15 @@ export default function FuelCards({
 
   const title =
     dialog?.kind === "register" ? "Register a fuel card"
-    : dialog?.kind === "load" ? `Load — ${dialog.card.label}`
+    : dialog?.kind === "load" ? `Top up — ${dialog.card.label}`
+    : dialog?.kind === "min" ? `Minimum balance — ${dialog.card.label}`
     : dialog?.kind === "bill" ? `Fuel bill — ${dialog.card.label}`
     : dialog?.kind === "reading" ? `Tally with Attock — ${dialog.card.label}`
     : dialog?.kind === "edit" ? `Edit card — ${dialog.card.label}`
     : dialog?.kind === "delete" ? `Delete card — ${dialog.card.label}`
     : dialog?.kind === "partnerLoad" ? `Load (partner drawing) — ${dialog.card.label}`
     : dialog?.kind === "reverse" ? `Reverse load — ${dialog.card.label}`
-    : dialog?.kind === "bills" ? `Enter bills — ${dialog.card.label}`
+    : dialog?.kind === "bills" ? `Fuel sheet — ${dialog.card.label}`
     : dialog?.kind === "book" ? `Book unbilled fuel — ${dialog.card.label}` : "";
 
   return (
@@ -347,7 +381,7 @@ export default function FuelCards({
             <div className="font-semibold mb-1">Company float card</div>
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
               <li><span className="text-foreground">Balance</span> — company money sitting on the card. It is an asset, not an expense, until fuel is bought.</li>
-              <li><span className="text-foreground">Load</span> — money moved from a bank onto the card. The bank goes down, the card goes up; no expense yet.</li>
+              <li><span className="text-foreground">Top up</span> — money moved from someone&rsquo;s cash or a bank onto the card. The cash or bank goes down, the card goes up; no expense yet.</li>
               <li><span className="text-foreground">Bill / Enter bills</span> — fuel bought with the card, from the bills staff hand in. Each is a fuel expense on its date (for a client, or general) and comes off the card.</li>
               <li><span className="text-foreground">Tally with Attock</span> — type the balance the Attock portal shows. Bastion compares it with its own balance for that day: green when they agree, red when not.</li>
               <li><span className="text-foreground">No bill yet</span> — Attock shows more spent than the bills entered: fuel used without a bill. Chase the bills; whatever is still missing at month end, <span className="text-foreground">Book unbilled</span> records as one general fuel expense so the card agrees again.</li>
@@ -399,6 +433,14 @@ export default function FuelCards({
                       <div className="text-right">
                         <div className="font-ledger text-sm font-semibold text-foreground whitespace-nowrap">{fmt(c.balance)}</div>
                         <div className="text-[11px] text-muted-foreground whitespace-nowrap">loaded {fmt(c.loaded)} · spent {fmt(c.billed)}</div>
+                        {(() => {
+                          // 0572: office petrol is on the card only, so it must not run dry.
+                          const min = holders.get(c.fuel_card_id)?.min ?? null;
+                          if (min == null) return !billsOnly ? <div className="text-[11px] text-muted-foreground whitespace-nowrap">no minimum set</div> : null;
+                          return c.balance < min - 0.005
+                            ? <div className="text-[11px] font-semibold text-danger-700 dark:text-danger-500 whitespace-nowrap">Below minimum {fmt(min)} — top up {fmt(min - c.balance)}</div>
+                            : <div className="text-[11px] text-muted-foreground whitespace-nowrap">minimum {fmt(min)}</div>;
+                        })()}
                       </div>
                       {(() => {
                         // This month, and the fuel Attock shows spent beyond the bills (0547).
@@ -427,16 +469,16 @@ export default function FuelCards({
                       {canEdit && c.is_active && (
                         <div className="flex flex-wrap gap-2">
                           {!billsOnly && (
-                            <Button size="sm" variant="secondary" onClick={() => open({ kind: "load", card: c }, { date: todayISO() })}>
-                              <Fuel className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Load
+                            <Button size="sm" variant="secondary" onClick={() => open({ kind: "load", card: c }, { date: todayISO(), source: "cash" })}>
+                              <Fuel className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Top up
                             </Button>
                           )}
                           <Button size="sm" variant="secondary" onClick={() => open({ kind: "bill", card: c }, { date: todayISO(), category: fuelCategory, branch: c.branch_id ?? "" })}>
                             <Receipt className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Bill
                           </Button>
                           <Button size="sm" variant="secondary" onClick={() => {
-                            setLines(Array.from({ length: 5 }, () => ({ date: todayISO(), amount: "", client: "", note: "" })));
-                            open({ kind: "bills", card: c });
+                            setLines(Array.from({ length: 5 }, () => ({ date: todayISO(), amount: "", client: "", note: "", km: "", price: "" })));
+                            open({ kind: "bills", card: c }, { kmpl: "30" });
                           }}>
                             <ListPlus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Enter bills
                           </Button>
@@ -447,6 +489,7 @@ export default function FuelCards({
                           )}
                           {!billsOnly && (
                             <>
+                              <Button size="sm" variant="ghost" onClick={() => open({ kind: "min", card: c }, { min: holders.get(c.fuel_card_id)?.min != null ? String(holders.get(c.fuel_card_id)?.min) : "" })}>Minimum</Button>
                               <Button size="sm" variant="ghost" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit</Button>
                               <Button size="sm" variant="ghost" onClick={() => open({ kind: "delete", card: c })}><Trash2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Delete</Button>
                             </>
@@ -463,7 +506,7 @@ export default function FuelCards({
                             {cardLoads.map((l) => (
                               <li key={l.id} className="flex items-center gap-3 px-3 py-1.5">
                                 <span className="text-muted-foreground whitespace-nowrap">{fmtDate(l.loaded_on)}</span>
-                                <span className="text-muted-foreground truncate flex-1">from {bankName.get(l.bank_account_id) ?? "bank"}{l.note ? ` · ${l.note}` : ""}</span>
+                                <span className="text-muted-foreground truncate flex-1">from {sourceOf(l)}{l.note ? ` · ${l.note}` : ""}</span>
                                 <span className="font-ledger text-foreground">{fmt(l.amount)}</span>
                                 {canEdit && (
                                   <button type="button" className="text-muted-foreground hover:text-foreground" title="Reverse this load"
@@ -515,7 +558,7 @@ export default function FuelCards({
         </>
       )}
 
-      <Modal isOpen={!!dialog} onClose={close} title={title} error={err} onDismissError={() => setErr(null)}
+      <Modal isOpen={!!dialog} onClose={close} title={title} error={err} onDismissError={() => setErr(null)} size={dialog?.kind === "bills" ? "lg" : "md"}
         footer={<>
           <Button variant="secondary" onClick={close}>Cancel</Button>
           <Button onClick={submit} disabled={busy}>{busy ? "Saving…" : dialog?.kind === "reverse" ? "Reverse load" : dialog?.kind === "bills" ? "Record bills" : dialog?.kind === "book" ? "Book it" : dialog?.kind === "delete" ? "Delete card" : dialog?.kind === "partnerLoad" ? "Record drawing" : "Save"}</Button>
@@ -628,7 +671,7 @@ export default function FuelCards({
 
         {dialog?.kind === "load" && (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">The bank goes down and the card goes up — no expense is recorded until fuel is bought.</p>
+            <p className="text-sm text-muted-foreground">The cash or bank goes down and the card goes up — a top-up is not an expense. The fuel becomes an expense as it is billed on the card.</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={label}>Amount *</label>
@@ -640,15 +683,44 @@ export default function FuelCards({
               </div>
             </div>
             <div>
-              <label className={label}>From bank *</label>
-              <ThemedSelect value={f.bank ?? ""} onChange={(e) => set("bank", e.target.value)}>
-                <option value="">Select bank</option>
-                {activeBanks.map((b) => <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number}</option>)}
+              <label className={label}>Paid from *</label>
+              <ThemedSelect value={f.source ?? "cash"} onChange={(e) => set("source", e.target.value)}>
+                <option value="cash">Cash — someone's custody</option>
+                <option value="bank">Bank</option>
               </ThemedSelect>
             </div>
+            {(f.source ?? "cash") === "cash" ? (
+              <div>
+                <label className={label}>Whose cash *</label>
+                <ThemedSelect value={f.custodian ?? ""} onChange={(e) => set("custodian", e.target.value)}>
+                  <option value="">Select person</option>
+                  {custodians.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </ThemedSelect>
+              </div>
+            ) : (
+              <div>
+                <label className={label}>From bank *</label>
+                <ThemedSelect value={f.bank ?? ""} onChange={(e) => set("bank", e.target.value)}>
+                  <option value="">Select bank</option>
+                  {activeBanks.map((b) => <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number}</option>)}
+                </ThemedSelect>
+              </div>
+            )}
             <div>
               <label className={label}>Note</label>
               <input className={field} value={f.note ?? ""} onChange={(e) => set("note", e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {dialog?.kind === "min" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Office petrol is paid on the card only, so the card must not run dry. Below this figure the card is flagged for a top-up. Leave it empty for no minimum.
+            </p>
+            <div>
+              <label className={label}>Minimum balance (PKR)</label>
+              <input className={field} inputMode="decimal" value={f.min ?? ""} onChange={(e) => set("min", e.target.value)} />
             </div>
           </div>
         )}
@@ -727,40 +799,66 @@ export default function FuelCards({
         {dialog?.kind === "bills" && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              Operations&rsquo; bills, one per line. Give each a client, or leave it General for fuel that was not for one site (the office bike, a general run).
+              The month&rsquo;s fuel sheet, a line per trip: date, route, km and the petrol price that day — the amount is worked out as on the sheet.
+              Give a line a client only when it is for one client; a run to several sites stays General. A plain bill with no km: type its amount.
               The card holds PKR {fmt(dialog.card.balance)}.
             </p>
+            <div className="flex items-center gap-2 text-sm">
+              <label className="text-muted-foreground">km per litre</label>
+              <input className={`${field} w-20`} inputMode="decimal" value={f.kmpl ?? "30"} onChange={(e) => set("kmpl", e.target.value)} />
+              <span className="text-xs text-muted-foreground">(the sheet uses 30)</span>
+            </div>
+            <div className="hidden md:grid grid-cols-[8rem_minmax(0,1fr)_4.5rem_5.5rem_6rem_12rem_2rem] gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <span>Date</span><span>Route</span><span>Km</span><span>Petrol price</span><span className="text-right">Amount</span><span>Client</span><span />
+            </div>
             <div className="flex flex-col gap-2">
               {lines.map((l, i) => {
                 const upd = (patch: Partial<BillLine>) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, ...patch, err: undefined } : x)));
+                const computed = Number(l.km) > 0 && Number(l.price) > 0;
                 return (
-                  <div key={i} className={`grid grid-cols-[7.5rem_6rem_1fr_auto] gap-2 items-start ${l.done ? "opacity-50" : ""}`}>
-                    <input type="date" className={field} value={l.date} disabled={l.done} onChange={(e) => upd({ date: e.target.value })} />
-                    <input className={field} inputMode="decimal" placeholder="Amount" value={l.amount} disabled={l.done} onChange={(e) => upd({ amount: e.target.value })} />
-                    <div className="flex flex-col gap-1 min-w-0">
+                  <div key={i} className={l.done ? "opacity-50" : ""}>
+                    <div className="grid grid-cols-2 md:grid-cols-[8rem_minmax(0,1fr)_4.5rem_5.5rem_6rem_12rem_2rem] gap-2 items-center">
+                      <input type="date" className={field} value={l.date} disabled={l.done} onChange={(e) => upd({ date: e.target.value })} />
+                      <input className={`${field} col-span-2 md:col-span-1`} placeholder="GGS – Emaar – PCI & back" value={l.note} disabled={l.done} onChange={(e) => upd({ note: e.target.value })} />
+                      <input className={field} inputMode="decimal" placeholder="km" value={l.km} disabled={l.done} onChange={(e) => upd({ km: e.target.value })} />
+                      <input className={field} inputMode="decimal" placeholder="Rs/litre" value={l.price} disabled={l.done} onChange={(e) => upd({ price: e.target.value })} />
+                      {computed
+                        ? <span className="font-ledger text-sm text-right text-foreground pr-1">{lineAmount(l).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        : <input className={`${field} text-right`} inputMode="decimal" placeholder="Amount" value={l.amount} disabled={l.done} onChange={(e) => upd({ amount: e.target.value })} />}
                       <ThemedSelect value={l.client} disabled={l.done} onChange={(e) => upd({ client: e.target.value })}>
-                        <option value="">General — no client</option>
+                        <option value="">General</option>
                         {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </ThemedSelect>
-                      <input className={field} placeholder="Site / purpose, e.g. visit to site X" value={l.note} disabled={l.done} onChange={(e) => upd({ note: e.target.value })} />
-                      {l.err && <span className="text-[11px] text-danger-700 dark:text-danger-500">{l.err}</span>}
-                      {l.done && <span className="text-[11px] text-success-700 dark:text-success-500">Recorded</span>}
+                      <button type="button" className="p-2 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={l.done}
+                        onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} title="Remove this line">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    <button type="button" className="p-2 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={l.done}
-                      onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} title="Remove this line">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {l.err && <span className="text-[11px] text-danger-700 dark:text-danger-500">{l.err}</span>}
+                    {l.done && <span className="text-[11px] text-success-700 dark:text-success-500">Recorded</span>}
                   </div>
                 );
               })}
             </div>
             <button type="button" className="self-start text-sm text-brand-700 dark:text-brand-500 hover:underline"
-              onClick={() => setLines((ls) => [...ls, { date: ls[ls.length - 1]?.date ?? todayISO(), amount: "", client: "", note: "" }])}>
-              + Another bill
+              onClick={() => setLines((ls) => {
+                // The next trip is usually the next day at the same price.
+                const last = ls[ls.length - 1];
+                return [...ls, { date: last?.date ?? todayISO(), amount: "", client: "", note: "", km: "", price: last?.price ?? "" }];
+              })}>
+              + Another line
             </button>
-            <p className="text-xs text-muted-foreground">
-              Total {fmt(lines.filter((l) => !l.done).reduce((n, l) => n + (Number(l.amount) || 0), 0))} — each is a fuel expense on its date and comes off the card.
-            </p>
+            {(() => {
+              const open = lines.filter((l) => !l.done);
+              const total = open.reduce((n, l) => n + lineAmount(l), 0);
+              const km = open.reduce((n, l) => n + (Number(l.km) || 0), 0);
+              return (
+                <p className="text-xs text-muted-foreground">
+                  {km ? `${km.toLocaleString()} km · ` : ""}Total <span className="font-ledger text-foreground">{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  {" "}— each line is a fuel expense on its date and comes off the card{total > dialog.card.balance + 0.005 ? <span className="text-danger-700 dark:text-danger-500 font-semibold"> · more than the card holds — top it up first</span> : null}.
+                </p>
+              );
+            })()}
           </div>
         )}
 
@@ -780,7 +878,7 @@ export default function FuelCards({
         {dialog?.kind === "reverse" && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-foreground">
-              PKR {fmt(dialog.load.amount)} loaded {fmtDate(dialog.load.loaded_on)} from {bankName.get(dialog.load.bank_account_id) ?? "the bank"} goes back to that bank.
+              PKR {fmt(dialog.load.amount)} loaded {fmtDate(dialog.load.loaded_on)} from {sourceOf(dialog.load)} goes back there.
               Refused if the card no longer holds it.
             </p>
             <div>

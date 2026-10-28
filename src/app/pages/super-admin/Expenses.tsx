@@ -282,6 +282,8 @@ const serviceSplit = (start: string, end: string, amount: number) => {
 
 type ExpenseForm = {
   category_id: string;
+  /** 2026-10-28: ticked to say a cash "Transportation & Fuel" expense is a fare, ride or toll — not petrol. */
+  not_fuel?: boolean;
   pl_category: "cost_of_services" | "operating_expense";
   client_id: string;
   branch_id: string;
@@ -343,6 +345,18 @@ type DeferredRow = {
 // stuck (2026-10-22 — five such October entries read "Stuck").
 const thisMonthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
 const nextRunLabel = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+/**
+ * OFFICE PETROL IS ON THE CARD ONLY (Shayan, 28 Oct 2026): "from now onwards
+ * no office petrol is reimbursed if it is through cash only allowed to expense
+ * it through card". From 29 Oct a cash "Transportation & Fuel" expense is
+ * refused unless it is marked as a fare, ride or toll. Petrol is a bill on the
+ * fuel card (Accounting → Fuel Cards), topped up from cash or bank.
+ */
+const CARD_ONLY_FUEL_FROM = "2026-10-29";
+const FUEL_CATEGORY_NAME = "Transportation & Fuel";
+const CASH_PETROL_REFUSED =
+  "Office petrol is paid on the fuel card only — record it as a bill on the card (Accounting → Fuel Cards). Cash petrol is no longer reimbursed. If this is a fare, ride or toll, tick that box.";
+
 const awaitsNextRun = (d: { is_stale: boolean; expense_date: string }) => d.is_stale && d.expense_date >= thisMonthStart();
 const isStuck = (d: { is_stale: boolean; expense_date: string }) => d.is_stale && !awaitsNextRun(d);
 
@@ -450,6 +464,9 @@ export default function Expenses() {
   const [advances, setAdvances] = useState<AdvanceRow[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const fuelCategoryId = categories.find((c) => c.name === FUEL_CATEGORY_NAME)?.id ?? null;
+  const isCashPetrol = (f: ExpenseForm) =>
+    !!fuelCategoryId && f.category_id === fuelCategoryId && f.payment_mode === "Cash" && f.expense_date >= CARD_ONLY_FUEL_FROM && !f.not_fuel;
   // 0520. The scheme a category pays, or null for an ordinary expense.
   const statutorySchemeOf = (categoryId: string | null | undefined) =>
     STATUTORY_CATEGORY_SCHEME[categories.find((c) => c.id === categoryId)?.name ?? ""] ?? null;
@@ -1369,6 +1386,7 @@ export default function Expenses() {
     setFormError(null);
     const amount = Number(form.amount);
     if (!form.category_id) { setFormError("Pick a category."); return; }
+    if (isCashPetrol(form)) { setFormError(CASH_PETROL_REFUSED); return; }
     if (statutorySchemeOf(form.category_id)) {
       setFormError("EOBI, salary tax, PESSI and IESSI are paid with \"Pay a statutory liability\", not added as an expense.");
       return;
@@ -1681,6 +1699,10 @@ export default function Expenses() {
     if (!selected) return;
     const amount = Number(editForm.amount);
     if (!editForm.category_id) { setFormError("Pick a category."); return; }
+    // Refused only when the edit makes it cash petrol — an older entry left as it was passes.
+    if (isCashPetrol(editForm) && !(selected.payment_mode === "Cash" && selected.category_id === editForm.category_id && selected.expense_date === editForm.expense_date)) {
+      setFormError(CASH_PETROL_REFUSED); return;
+    }
     if (!amount || amount <= 0 || !editForm.expense_date) return;
     if (editForm.payment_mode === "Bank" && !editForm.bank_account_id) {
       setFormError("Select a bank account for Bank payment.");
@@ -5350,6 +5372,15 @@ export default function Expenses() {
               ))}
             </div>
           </div>
+          {state.payment_mode === "Cash" && !!fuelCategoryId && state.category_id === fuelCategoryId && state.expense_date >= CARD_ONLY_FUEL_FROM && (
+            <div className={`col-span-2 rounded-xl border px-3 py-2.5 text-sm ${state.not_fuel ? "border-border bg-muted/30" : "border-danger-200 bg-danger-50 text-danger-700"}`}>
+              <p className="mb-1.5">Office petrol is paid on the fuel card only — record it as a bill on the card (Accounting → Fuel Cards). Cash petrol is not reimbursed.</p>
+              <label className="inline-flex items-center gap-2 text-foreground">
+                <input type="checkbox" checked={!!state.not_fuel} onChange={(e) => setState({ ...state, not_fuel: e.target.checked })} />
+                This is a fare, ride or toll — not petrol
+              </label>
+            </div>
+          )}
           {state.payment_mode === "Cash" && (
             <div className="col-span-2">
               <label className="block text-sm text-foreground mb-1">Paid By (Office Staff) *</label>
