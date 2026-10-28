@@ -455,10 +455,10 @@ export default function FieldOps() {
   );
 
   /** The attendance summary, cut to the same region as the client list. */
-  const visibleAttendance = useMemo<AttendanceSummary | null>(() => {
+  const cutAttendance = useCallback((regionId: string | null, orphans = false): AttendanceSummary | null => {
     if (!attendance) return null;
-    if (!regionFilter) return attendance;
-    const rows = attendance.clients.filter((c) => c.branch_id === regionFilter);
+    if (!regionId && !orphans) return attendance;
+    const rows = attendance.clients.filter((c) => (orphans ? !c.branch_id : c.branch_id === regionId));
     return {
       date: attendance.date,
       clients: rows,
@@ -476,7 +476,8 @@ export default function FieldOps() {
       ),
       unconfirmed: rows.filter((c) => !c.confirmed),
     };
-  }, [attendance, regionFilter]);
+  }, [attendance]);
+  const visibleAttendance = useMemo(() => cutAttendance(regionFilter), [cutAttendance, regionFilter]);
 
   const rowsForPdf = useMemo(
     () =>
@@ -500,33 +501,62 @@ export default function FieldOps() {
     [prevTasks, regionFilter],
   );
 
-  /** 2026-10-28: the daily report, the attendance report, or both in one PDF. */
+  /**
+   * 2026-10-28: the daily report, the attendance report, or both in one PDF.
+   * Under "All regions" each region is printed whole — its updates, tasks,
+   * clients and attendance — before the next one starts (Shayan: "first
+   * complete one region everything then next … dont merge it all").
+   */
   const exportPdf = async (which: "daily" | "attendance" | "both") => {
-    const daily = which !== "attendance" ? {
-      reportDate: date,
-      regionLabel,
-      clients: visibleClients.map((c) => ({
-        client_name: c.name,
-        details: details.get(c.id) ?? null,
-        no_report: noReport.has(c.id),
-        urgent: urgent.has(c.id),
-      })),
-      regions: regionBlocks.map((blk) => ({
-        label: blk.label,
-        tasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), done: !!t.done_at })),
-        otherUpdates: otherUpdates.get(blk.key) ?? null,
-      })),
-      // Only tasks set since status existed (0568/0569, 28 Oct 2026) — an
-      // earlier task could not be updated, so "pending" would be false.
-      openFromYesterday: prevVisible.filter((t) => t.status === "pending" && shiftDay(date, -1) >= "2026-10-28").map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
-      previousTasks: prevVisible.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: shiftDay(date, -1) < "2026-10-28" && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note })),
-      previousDate: shiftDay(date, -1),
-      attendance: visibleAttendance,
-    } : undefined;
-    const attendancePart = which !== "daily" && visibleAttendance
-      ? { summary: visibleAttendance, regionLabel, regionNames: Object.fromEntries(regions.map((r) => [r.id, r.name])) }
-      : undefined;
-    generateOperationsPdf(company, { daily, attendance: attendancePart });
+    const prevDay = shiftDay(date, -1);
+    const regionNames = Object.fromEntries(regions.map((r) => [r.id, r.name]));
+    const partFor = (regionId: string | null, label: string | null, orphans = false) => {
+      const inRegion = (b: string | null) => (orphans ? !b : !regionId || b === regionId);
+      const cls = clients.filter((c) => inRegion(c.branch_id));
+      const blocks = orphans ? regionBlocks.filter((blk) => blk.beforeSplit)
+        : regionBlocks.filter((blk) => !blk.beforeSplit && (!regionId || blk.key === regionId));
+      // Before-split tasks (no region) go with the region in view, or to their
+      // own part under "All regions".
+      const prev = prevTasks.filter((t) => (regionId ? t.branch_id === regionId || t.branch_id === null : inRegion(t.branch_id)));
+      const att = cutAttendance(regionId, orphans);
+      const daily = which !== "attendance" ? {
+        reportDate: date,
+        regionLabel: label,
+        clients: cls.map((c) => ({
+          client_name: c.name,
+          details: details.get(c.id) ?? null,
+          no_report: noReport.has(c.id),
+          urgent: urgent.has(c.id),
+        })),
+        regions: blocks.map((blk) => ({
+          label: blk.label,
+          tasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), done: !!t.done_at })),
+          otherUpdates: otherUpdates.get(blk.key) ?? null,
+        })),
+        // Only tasks set since status existed (0568/0569, 28 Oct 2026) — an
+        // earlier task could not be updated, so "pending" would be false.
+        openFromYesterday: prev.filter((t) => t.status === "pending" && prevDay >= "2026-10-28").map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+        previousTasks: prev.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: prevDay < "2026-10-28" && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note })),
+        previousDate: prevDay,
+        attendance: att,
+      } : undefined;
+      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames } : undefined;
+      return { daily, attendance: attendancePart };
+    };
+    let parts;
+    if (regionFilter) {
+      parts = [partFor(regionFilter, regionLabel)];
+    } else {
+      parts = regions
+        .filter((r) => !r.is_head_office || clients.some((c) => c.branch_id === r.id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((r) => partFor(r.id, r.name))
+        .filter((pt) => (pt.daily && (pt.daily.clients.length || pt.daily.previousTasks.length || pt.daily.regions.some((x) => x.tasks.length || (x.otherUpdates ?? "").trim()))) || pt.attendance);
+      const orphan = partFor(null, BEFORE_SPLIT_LABEL, true);
+      if ((orphan.daily && (orphan.daily.clients.length || orphan.daily.previousTasks.length || orphan.daily.regions.length)) || orphan.attendance) parts.push(orphan);
+    }
+    const daily = parts.some((pt) => pt.daily);
+    generateOperationsPdf(company, parts, regionLabel);
     if (!daily) return;
     setBusy(true);
     const { data: userData } = await supabase.auth.getUser();
@@ -679,20 +709,23 @@ export default function FieldOps() {
                   </div>
                   <ul className="divide-y divide-border">
                     {prevVisible.map((t) => (
-                      <li key={t.id} className="py-2 flex flex-col md:flex-row md:items-center gap-2 text-sm">
-                        <span className="flex-1 min-w-0 text-foreground">{t.title}
-                          <span className="ml-2 text-xs text-muted-foreground">{staffName(t.assignee_employee_id) ?? "General"}</span>
+                      <li key={t.id} className="py-2 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_9rem_16rem] md:items-center gap-2 text-sm">
+                        {/* A grid, not a flex row: the select stretches to its
+                            cell, so it can no longer claim the row and squeeze
+                            the title to one word a line. */}
+                        <span className="min-w-0 text-foreground break-words">{t.title}
+                          <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">{staffName(t.assignee_employee_id) ?? "General"}</span>
                         </span>
                         <ThemedSelect value={t.status ?? "pending"} disabled={!canWriteReports} aria-label={`Status: ${t.title}`}
                           onChange={(e) => void setTaskProgress(t.id, { status: e.target.value as TaskStatus })}
-                          className={`w-full md:w-36 ${t.status === "completed" ? "text-up" : t.status === "in_progress" ? "text-heed" : ""}`}>
+                          className={`w-full ${t.status === "completed" ? "text-up" : t.status === "in_progress" ? "text-heed" : ""}`}>
                           <option value="pending">Pending</option>
                           <option value="in_progress">In progress</option>
                           <option value="completed">Completed</option>
                         </ThemedSelect>
                         <input defaultValue={t.status_note ?? ""} disabled={!canWriteReports} placeholder="Remark (optional)"
                           onBlur={(e) => { const v = e.target.value.trim(); if (v !== (t.status_note ?? "")) void setTaskProgress(t.id, { status_note: v || null }); }}
-                          className="w-full md:w-64 px-3 py-1.5 border border-border rounded-md text-sm bg-card" />
+                          className="w-full px-3 py-1.5 border border-border rounded-md text-sm bg-card" />
                       </li>
                     ))}
                   </ul>

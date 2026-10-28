@@ -467,31 +467,37 @@ function footer(doc: jsPDF, b: PdfBranding, ref: string) {
 
 const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/")}`;
 
+type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string> } };
+
 /**
- * One PDF: the daily report, the attendance report, or both (each starting on
- * its own page under its own letterhead). The file name says which.
+ * One PDF of one or more parts — a part is one region's daily report and/or
+ * attendance report, each under its own letterhead on a new page. Under "All
+ * regions" the caller passes one part per region, so a region is printed whole
+ * before the next begins. The file name says which reports it holds.
  */
-export function generateOperationsPdf(
-  company: Company | null | undefined,
-  parts: { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string> } },
-) {
+export function generateOperationsPdf(company: Company | null | undefined, parts: Part[], fileRegion: string | null = null) {
   const b = brandingFromCompany(company);
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const p = new Page(doc, b);
   let first = true;
-  const day = parts.daily?.reportDate ?? parts.attendance?.summary.date ?? "";
-  if (parts.daily) {
-    letterhead(p, "Daily Operations Report", parts.daily.reportDate, parts.daily.regionLabel, refOf("DOR", parts.daily.reportDate));
-    first = false;
-    drawDaily(p, parts.daily);
+  const day = parts.map((pt) => pt.daily?.reportDate ?? pt.attendance?.summary.date).find(Boolean) ?? "";
+  for (const pt of parts) {
+    if (pt.daily) {
+      if (!first) doc.addPage();
+      letterhead(p, "Daily Operations Report", pt.daily.reportDate, pt.daily.regionLabel, refOf("DOR", pt.daily.reportDate));
+      first = false;
+      drawDaily(p, pt.daily);
+    }
+    if (pt.attendance) {
+      const a = pt.attendance;
+      if (!first) doc.addPage();
+      letterhead(p, "Attendance Report", a.summary.date, a.regionLabel, refOf("ATR", a.summary.date));
+      first = false;
+      drawAttendanceSection(p, a.summary, a.regionNames ?? {});
+    }
   }
-  if (parts.attendance) {
-    const a = parts.attendance;
-    if (!first) doc.addPage();
-    letterhead(p, "Attendance Report", a.summary.date, a.regionLabel, refOf("ATR", a.summary.date));
-    drawAttendanceSection(p, a.summary, a.regionNames ?? {});
-  }
-  footer(doc, b, parts.daily ? refOf("DOR", day) : refOf("ATR", day));
-  const kind = parts.daily && parts.attendance ? "Daily and attendance report" : parts.daily ? "Daily operations report" : "Attendance report";
-  void savePdf(doc, `${kind} ${day}.pdf`);
+  const anyDaily = parts.some((pt) => pt.daily), anyAtt = parts.some((pt) => pt.attendance);
+  footer(doc, b, anyDaily ? refOf("DOR", day) : refOf("ATR", day));
+  const kind = anyDaily && anyAtt ? "Daily and attendance report" : anyDaily ? "Daily operations report" : "Attendance report";
+  void savePdf(doc, `${kind}${fileRegion ? ` ${fileRegion}` : ""} ${day}.pdf`);
 }

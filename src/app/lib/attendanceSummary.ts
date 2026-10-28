@@ -1,3 +1,4 @@
+import { guardDisplayCode } from "./guardCode";
 import { supabase } from "./supabase";
 import { hiddenFromAttendance } from "./employmentWindow";
 
@@ -83,7 +84,7 @@ export async function loadAttendanceSummary(
         .from("deployments")
         .select(
           "guard_id, client_id, site_id, start_date, end_date, " +
-            "employees:guard_id(category, join_date, last_working_day, termination_date, exit_date, lifecycle_state, full_name, employee_code)",
+            "employees:guard_id(category, join_date, last_working_day, termination_date, exit_date, lifecycle_state, full_name, employee_code, guard_code, display_number, client_id)",
         )
         .range(0, 9999)
         // The dated segment containing the date — a guard separated last week is
@@ -99,11 +100,11 @@ export async function loadAttendanceSummary(
         .select("client_id, site_id, group_key, supervisor_name, confirmed_at")
         .eq("attendance_date", date),
       supabase.from("sites").select("id, client_id, name"),
-      supabase.from("clients").select("id, name, branch_id").eq("company_id", companyId),
+      supabase.from("clients").select("id, name, branch_id, employee_id_prefix").eq("company_id", companyId),
     ]);
 
   const clientById = new Map(
-    ((cliRows ?? []) as any[]).map((c) => [c.id as string, c as { id: string; name: string; branch_id: string | null }]),
+    ((cliRows ?? []) as any[]).map((c) => [c.id as string, c as { id: string; name: string; branch_id: string | null; employee_id_prefix: string | null }]),
   );
   const clientOfSite = new Map(((siteRows ?? []) as any[]).map((s) => [s.id as string, s.client_id as string]));
   const siteName = new Map(((siteRows ?? []) as any[]).map((s) => [s.id as string, (s.name ?? "—") as string]));
@@ -194,7 +195,11 @@ export async function loadAttendanceSummary(
     site.deployed += 1;
     const st = statusByGuard.get(d.guard_id);
     if (st) row.marked += 1;
-    const who = { name: (d.employees?.full_name as string) ?? "—", code: (d.employees?.employee_code as string | null) ?? null };
+    // The code the client knows the guard by (NOVA-080), not the GGS code —
+    // the client-prefixed display code every other screen shows.
+    const e = d.employees ?? {};
+    const code = guardDisplayCode(e, clientById.get(e.client_id ?? cid)?.employee_id_prefix ?? null) || null;
+    const who = { name: (e.full_name as string) ?? "—", code };
     if (st === "absent") { row.absent += 1; row.absentees.push(who); }
     else if (st === "rotation_leave" || st === "leave") { row.leave += 1; row.onLeave.push(who); }
     else if (st && EXCEPTION.has(st)) row.other += 1;
