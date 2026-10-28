@@ -509,7 +509,9 @@ export default function FieldOps() {
         tasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), done: !!t.done_at })),
         otherUpdates: otherUpdates.get(blk.key) ?? null,
       })),
-      openFromYesterday: prevVisible.filter((t) => !t.done_at).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+      // Only tasks set since the done tick existed (0568, 28 Oct 2026) — an
+      // earlier task was never tickable, so "not done" would be false.
+      openFromYesterday: prevVisible.filter((t) => !t.done_at && shiftDay(date, -1) >= "2026-10-28").map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
       attendance: visibleAttendance,
     } : undefined;
     const attendancePart = which !== "daily" && visibleAttendance ? { summary: visibleAttendance, regionLabel } : undefined;
