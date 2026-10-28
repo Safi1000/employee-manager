@@ -8,7 +8,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { useRegion } from "../../lib/region";
 import { formatDate } from "../../lib/date";
-import { generateDailyOperationsReportPdf } from "../../lib/dailyReportPdf";
+import { generateOperationsPdf } from "../../lib/dailyBriefPdf";
 import { describeUnconfirmed, loadAttendanceSummary, type AttendanceSummary } from "../../lib/attendanceSummary";
 import { usePageState } from "../../lib/pageState";
 
@@ -74,11 +74,13 @@ type TaskRow = {
   sort_order: number;
   /** The region (0517); null only on rows written before the split. */
   branch_id: string | null;
+  /** 0568: ticked done — usually the day after it was set. */
+  done_at: string | null;
 };
 /** Map key for the region-less rows written before 0517. */
 const BEFORE_SPLIT = "";
 const BEFORE_SPLIT_LABEL = "All regions (before the split)";
-const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id";
+const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at";
 type StaffRow = { id: string; full_name: string; employee_code: string | null };
 type Tab = "reports" | "attendance";
 
@@ -149,6 +151,10 @@ export default function FieldOps() {
   const [otherSavedAt, setOtherSavedAt] = useState<Map<string, number>>(new Map());
   /** client_id -> "no report" flag, for the selected day. */
   const [noReport, setNoReport] = useState<Set<string>>(new Set());
+  /** 0568: client_id -> ticked urgent, for the selected day. */
+  const [urgent, setUrgent] = useState<Set<string>>(new Set());
+  /** 0568: the PREVIOUS day's tasks — ticked done here, and listed in the PDF when not. */
+  const [prevTasks, setPrevTasks] = useState<TaskRow[]>([]);
   /** The day's Next Day Tasks, in the order they were added. */
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   /** Active office staff — the only people a task can be assigned to (0461). */
@@ -171,7 +177,7 @@ export default function FieldOps() {
     if (!companyId) return;
     setLoading(true);
     setErr(null);
-    const [cli, rep, taskRes, staffRes, dayRes] = await Promise.all([
+    const [cli, rep, taskRes, staffRes, dayRes, prevRes] = await Promise.all([
       // Active = has at least one active contract. The inner join is what does
       // the filtering; !inner makes PostgREST drop clients with no match.
       supabase
@@ -182,7 +188,7 @@ export default function FieldOps() {
         .order("name"),
       supabase
         .from("daily_client_reports")
-        .select("client_id, details, no_report")
+        .select("client_id, details, no_report, urgent")
         .eq("company_id", companyId)
         .eq("report_date", date),
       supabase
@@ -204,6 +210,13 @@ export default function FieldOps() {
         .select("branch_id, other_updates")
         .eq("company_id", companyId)
         .eq("report_date", date),
+      supabase
+        .from("daily_report_tasks")
+        .select(TASK_COLS)
+        .eq("company_id", companyId)
+        .eq("report_date", shiftDay(date, -1))
+        .order("sort_order")
+        .order("created_at"),
     ]);
     if (cli.error) { setErr(cli.error.message); setLoading(false); return; }
     if (rep.error) { setErr(rep.error.message); setLoading(false); return; }
@@ -220,6 +233,10 @@ export default function FieldOps() {
     setNoReport(
       new Set(((rep.data ?? []) as any[]).filter((r) => r.no_report).map((r) => r.client_id as string)),
     );
+    setUrgent(
+      new Set(((rep.data ?? []) as any[]).filter((r) => r.urgent).map((r) => r.client_id as string)),
+    );
+    setPrevTasks((prevRes.data ?? []) as TaskRow[]);
     if (dayRes.error) setErr(dayRes.error.message);
     setOtherUpdates(
       new Map(
@@ -257,7 +274,7 @@ export default function FieldOps() {
    * deleted, so an accidental entry can be taken back and the day is not
    * littered with blanks.
    */
-  const saveOne = async (clientId: string, value: string, flag: boolean) => {
+  const saveOne = async (clientId: string, value: string, flag: boolean, isUrgent: boolean = urgent.has(clientId)) => {
     if (locked) return;
     setSaving((prev) => new Set(prev).add(clientId));
     setErr(null);
@@ -272,6 +289,8 @@ export default function FieldOps() {
             report_date: date,
             details: text || null,
             no_report: flag,
+            // An urgent flag means something only on a written note.
+            urgent: !flag && isUrgent,
             updated_by: userData.user?.id ?? null,
           },
           { onConflict: "company_id,client_id,report_date" },
@@ -287,6 +306,28 @@ export default function FieldOps() {
     setSavedAt((prev) => new Map(prev).set(clientId, Date.now()));
   };
 
+  const toggleUrgent = async (clientId: string, flag: boolean) => {
+    setUrgent((prev) => { const n = new Set(prev); if (flag) n.add(clientId); else n.delete(clientId); return n; });
+    await saveOne(clientId, details.get(clientId) ?? "", noReport.has(clientId), flag);
+  };
+
+  /**
+   * 0568: tick a task done (or not). Allowed on a past day — ticking yesterday's
+   * tasks off is the point — for anyone who can write reports.
+   */
+  const toggleDone = async (id: string, done: boolean) => {
+    if (!canWriteReports) return;
+    setErr(null);
+    const stamp = done ? new Date().toISOString() : null;
+    const apply = (list: TaskRow[]) => list.map((t) => (t.id === id ? { ...t, done_at: stamp } : t));
+    const beforeT = tasks, beforeP = prevTasks;
+    setTasks(apply); setPrevTasks(apply);
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await supabase.from("daily_report_tasks")
+      .update({ done_at: stamp, done_by: done ? userData.user?.id ?? null : null }).eq("id", id);
+    if (error) { setErr(error.message); setTasks(beforeT); setPrevTasks(beforeP); }
+  };
+
   const toggleNoReport = async (clientId: string, flag: boolean) => {
     setNoReport((prev) => {
       const n = new Set(prev);
@@ -294,6 +335,7 @@ export default function FieldOps() {
       return n;
     });
     if (flag) setDetails((prev) => new Map(prev).set(clientId, ""));
+    if (flag) setUrgent((prev) => { const n = new Set(prev); n.delete(clientId); return n; });
     await saveOne(clientId, flag ? "" : details.get(clientId) ?? "", flag);
   };
 
@@ -445,16 +487,34 @@ export default function FieldOps() {
     [visibleClients, details, noReport],
   );
 
-  const exportPdf = async () => {
-    generateDailyOperationsReportPdf(company, date, rowsForPdf, {
+  /** Yesterday's tasks in view (same region cut), and the ones still open. */
+  const prevVisible = useMemo(
+    () => prevTasks.filter((t) => !regionFilter || t.branch_id === regionFilter || t.branch_id === null),
+    [prevTasks, regionFilter],
+  );
+
+  /** 2026-10-28: the daily report, the attendance report, or both in one PDF. */
+  const exportPdf = async (which: "daily" | "attendance" | "both") => {
+    const daily = which !== "attendance" ? {
+      reportDate: date,
       regionLabel,
-      regionSections: regionBlocks.map((blk) => ({
+      clients: visibleClients.map((c) => ({
+        client_name: c.name,
+        details: details.get(c.id) ?? null,
+        no_report: noReport.has(c.id),
+        urgent: urgent.has(c.id),
+      })),
+      regions: regionBlocks.map((blk) => ({
         label: blk.label,
-        nextDayTasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+        tasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), done: !!t.done_at })),
         otherUpdates: otherUpdates.get(blk.key) ?? null,
       })),
+      openFromYesterday: prevVisible.filter((t) => !t.done_at).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
       attendance: visibleAttendance,
-    });
+    } : undefined;
+    const attendancePart = which !== "daily" && visibleAttendance ? { summary: visibleAttendance, regionLabel } : undefined;
+    generateOperationsPdf(company, { daily, attendance: attendancePart });
+    if (!daily) return;
     setBusy(true);
     const { data: userData } = await supabase.auth.getUser();
     // The export record keeps its original column names; here total_posts counts
@@ -566,14 +626,17 @@ export default function FieldOps() {
                   ))}
               </ThemedSelect>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy || visibleClients.length === 0}
-              onClick={exportPdf}
-            >
-              Download PDF
-            </Button>
+            <div className="inline-flex items-center rounded-lg border border-border overflow-hidden text-sm">
+              <span className="px-2.5 text-xs text-muted-foreground">PDF</span>
+              {([["daily", "Daily report"], ["attendance", "Attendance"], ["both", "Both"]] as const).map(([k, label]) => (
+                <button key={k} type="button"
+                  disabled={busy || (k !== "attendance" && visibleClients.length === 0) || (k !== "daily" && !visibleAttendance?.clients.length)}
+                  onClick={() => void exportPdf(k)}
+                  className="px-3 py-1.5 border-l border-border hover:bg-accent disabled:opacity-40 disabled:pointer-events-none">
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <Tabs
@@ -591,6 +654,29 @@ export default function FieldOps() {
                   REGION (0517), not to a client, so they sit above the table —
                   one block per region. Tasks: several per day, each general or
                   assigned to an active office-staff member (0461). */}
+              {prevVisible.length > 0 && (
+                <div className="border border-border rounded-md p-3 bg-card space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
+                      Tasks set on {formatDate(shiftDay(date, -1))} — tick when done
+                    </span>
+                    <span className={`text-[11px] font-semibold ${prevVisible.some((t) => !t.done_at) ? "text-heed" : "text-up"}`}>
+                      {prevVisible.filter((t) => t.done_at).length} / {prevVisible.length} done
+                    </span>
+                  </div>
+                  <ul className="space-y-1">
+                    {prevVisible.map((t) => (
+                      <li key={t.id} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" className="w-4 h-4 accent-brand-500" checked={!!t.done_at} disabled={!canWriteReports}
+                          onChange={(e) => void toggleDone(t.id, e.target.checked)} aria-label={`Done: ${t.title}`} />
+                        <span className={`flex-1 min-w-0 ${t.done_at ? "line-through text-muted-foreground" : "text-foreground"}`}>{t.title}</span>
+                        <span className="text-xs text-muted-foreground">{staffName(t.assignee_employee_id) ?? "General"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {regionBlocks.map((blk) => (
                 <div key={blk.key || "before-split"} className="space-y-2">
                   {(regionBlocks.length > 1 || blk.beforeSplit) && (
@@ -654,6 +740,8 @@ export default function FieldOps() {
                       client={c}
                       value={details.get(c.id) ?? ""}
                       noReport={noReport.has(c.id)}
+                      urgent={urgent.has(c.id)}
+                      onToggleUrgent={(f) => void toggleUrgent(c.id, f)}
                       locked={locked}
                       saving={saving.has(c.id)}
                       savedAt={savedAt.get(c.id)}
@@ -835,11 +923,13 @@ function NextDayTasks({
  * writes on blur.
  */
 function DetailsRow({
-  client, value, noReport, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
+  client, value, noReport, urgent, onToggleUrgent, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
 }: {
   client: ClientRow;
   value: string;
   noReport: boolean;
+  urgent: boolean;
+  onToggleUrgent: (flag: boolean) => void;
   locked: boolean;
   saving: boolean;
   savedAt: number | undefined;
@@ -854,6 +944,7 @@ function DetailsRow({
     <div className="md:grid md:grid-cols-[16rem_1fr] md:items-start">
       <div className="px-3 pt-2 md:py-2 text-foreground font-medium text-sm md:whitespace-nowrap md:truncate">
         {client.name}
+        {urgent && <span className="ml-2 inline-flex rounded-full border border-down/40 bg-down/15 px-1.5 py-0.5 text-[10px] font-semibold text-down align-middle">Urgent</span>}
       </div>
       <div className="px-3 pb-2 pt-1 md:py-2">
         {locked ? (
@@ -895,6 +986,17 @@ function DetailsRow({
                 className="w-3.5 h-3.5 accent-brand-500"
               />
               No Report
+            </label>
+            {/* 0568: an urgent note leads the PDF and is listed under Needs attention. */}
+            <label className={`ml-4 inline-flex items-center gap-2 text-xs select-none ${noReport || !value.trim() ? "text-muted-foreground/50 cursor-not-allowed" : "text-down cursor-pointer"}`}>
+              <input
+                type="checkbox"
+                checked={urgent}
+                disabled={noReport || !value.trim()}
+                onChange={(e) => onToggleUrgent(e.target.checked)}
+                className="w-3.5 h-3.5 accent-brand-500"
+              />
+              Urgent
             </label>
           </div>
         )}
