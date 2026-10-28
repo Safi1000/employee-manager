@@ -59,6 +59,7 @@ import StatutoryRemitModal, { type StatutoryRemitDefaults } from "../../componen
 import StatutoryPayments from "../../components/StatutoryPayments";
 import FuelCards from "../../components/FuelCards";
 import { usePageState } from "../../lib/pageState";
+import { openStoredLink } from "../../lib/driveFile";
 
 const PIE_COLORS = CHART_COLORS;
 
@@ -2196,7 +2197,7 @@ export default function Expenses() {
     receipt_file_name?: string | null;
   }) => {
     if (row.drive_view_url) {
-      window.open(row.drive_view_url, "_blank");
+      openStoredLink(row.drive_view_url);
       return;
     }
     const path = row.receipt_path;

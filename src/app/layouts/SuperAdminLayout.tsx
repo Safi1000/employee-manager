@@ -50,6 +50,7 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 import { ScrollMemory } from "../lib/pageState";
+import DriveLinkGuard from "../components/DriveLinkGuard";
 
 type LinkDef = {
   to: string;
@@ -378,6 +379,7 @@ export default function SuperAdminLayout() {
         </div>
         <AiChatWidget />
         <InactivityLogout />
+        <DriveLinkGuard />
       </div>
     </SecurityGate>
   );

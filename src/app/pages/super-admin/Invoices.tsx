@@ -62,6 +62,7 @@ import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../l
 import { formatDate, invoiceMonth } from "../../lib/date";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { usePageState } from "../../lib/pageState";
+import { openStoredLink } from "../../lib/driveFile";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -418,7 +419,7 @@ export default function Invoices() {
     attachment_path?: string | null;
   }) => {
     if (row.drive_view_url) {
-      window.open(row.drive_view_url, "_blank");
+      openStoredLink(row.drive_view_url);
       return;
     }
     if (row.attachment_path) {
@@ -436,7 +437,7 @@ export default function Invoices() {
     attachment_path?: string | null;
   }) => {
     if (row.drive_view_url) {
-      window.open(row.drive_view_url, "_blank");
+      openStoredLink(row.drive_view_url);
       return;
     }
     const path = row.attachment_path;

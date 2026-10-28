@@ -16,8 +16,8 @@ import { useRegion, withRegion, withRegionOrUnassigned } from "../../lib/region"
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { saveBlob } from "../../lib/saveFile";
-import { openExternal } from "../../lib/openExternal";
 import { usePageState } from "../../lib/pageState";
+import { openDriveFile } from "../../lib/driveFile";
 
 type EmployeeRow = Employee & {
   location_name: string | null;
@@ -285,14 +285,9 @@ export default function Documents() {
     setError(null);
     try {
       if (doc.drive_file_id) {
-        // Drive download endpoint � alt=media streams the file directly.
-        // Since we set "anyone with link" permission on upload, this works
-        // without an access token.
-        const url = `https://drive.google.com/uc?export=download&id=${doc.drive_file_id}`;
-        // System browser on native: it owns the download and can hand the file
-        // to the right app. Navigating the WebView here would strand the user
-        // on a Drive page with no way back into the CRM.
-        await openExternal(url);
+        // Drive files are private since 2026-10-29: Bastion streams the file
+        // after checking the caller may read this document (lib/driveFile.ts).
+        await openDriveFile(doc.drive_file_id);
         return;
       }
       if (!doc.storage_path) throw new Error("No storage path or Drive ID on this document.");

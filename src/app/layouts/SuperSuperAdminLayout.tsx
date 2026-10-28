@@ -7,6 +7,7 @@ import SecurityGate from "../components/SecurityGate";
 import TopBar from "../components/TopBar";
 import { Building2 } from "lucide-react";
 import { ScrollMemory } from "../lib/pageState";
+import DriveLinkGuard from "../components/DriveLinkGuard";
 
 export default function SuperSuperAdminLayout() {
   const links = [
@@ -26,6 +27,7 @@ export default function SuperSuperAdminLayout() {
           </ScrollMemory>
         </div>
         <InactivityLogout />
+        <DriveLinkGuard />
       </div>
     </SecurityGate>
   );
