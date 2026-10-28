@@ -6,6 +6,7 @@ import ThemedSelect from "./ThemedSelect";
 import { formatDate } from "../lib/date";
 import { useAuth } from "../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../lib/custodian";
+import { canReadBankBalances } from "../lib/bankOptions";
 import { supabase, type Partner } from "../lib/supabase";
 import AmountInWords from "./AmountInWords";
 
@@ -95,7 +96,7 @@ export default function PartnerDetailModal({
     if (!isAddEntryOpen) return;
     supabase.from("bank_accounts").select("id, bank_name, balance").order("bank_name")
       .then(({ data }) => setBanks((data ?? []) as BankOption[]));
-    if (companyId) loadCustodianOptions(companyId).then(setCustodians);
+    if (companyId) loadCustodianOptions(companyId, canReadBankBalances(profile)).then(setCustodians);
   }, [isAddEntryOpen, companyId]);
 
   // Remuneration basis is COMPANY policy since 0232 dropped partners.basis.

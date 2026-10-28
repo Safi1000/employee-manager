@@ -14,6 +14,7 @@ import Header from "../../components/Header";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { loadCustodianOptions } from "../../lib/custodian";
+import { canReadBankBalances } from "../../lib/bankOptions";
 import { formatDate } from "../../lib/date";
 import { lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { usePageState } from "../../lib/pageState";
@@ -271,7 +272,9 @@ export default function MyProfile() {
   // imply they are a custodian who has run out.
   useEffect(() => {
     const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-    if (!employeeId || !cid) return;
+    // The figure is folded from tables 0586 reads only with banking access;
+    // without it the sum would come out smaller and look right, so no card.
+    if (!employeeId || !cid || !canReadBankBalances(profile)) return;
     let cancelled = false;
     loadCustodianOptions(cid, true)
       .then((opts) => {

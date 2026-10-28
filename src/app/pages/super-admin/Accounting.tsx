@@ -1190,7 +1190,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
       const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
       if (cid) {
         try {
-          setCustodians(await loadCustodianOptions(cid));
+          setCustodians(await loadCustodianOptions(cid, canReadBanks));
         } catch {
           /* ignore — custodian attribution is optional */
         }
