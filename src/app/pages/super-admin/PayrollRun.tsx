@@ -683,6 +683,14 @@ export default function PayrollRun() {
   // always; money where it exists — saved payslips (Finance Verify), or the
   // live figures a Review roster reported once opened.
   const people = (s: Scope) => { const n = rowsByScope.get(s.key)?.length ?? 0; return `${n} ${n === 1 ? "person" : "people"}`; };
+  // 2026-10-28: guards with no base salary, flagged on the card before it is opened.
+  // Not on the Relievers card: a per-day reliever has no base by design (the
+  // roster itself, which knows his daily rate, still flags a real gap).
+  const NoBase = ({ s }: { s: Scope }) => {
+    if (s.category === "reliever") return null;
+    const n = (liveRowsByScope.get(s.key) ?? rowsByScope.get(s.key) ?? []).filter((r) => !(Number(r.baseSalary) > 0)).length;
+    return n ? <span className="ml-1.5 inline-flex rounded-full border border-down/40 bg-down/15 px-1.5 py-0.5 text-[10px] font-semibold text-down" title="Guards with no base salary — they would be paid nothing">{n} no base salary</span> : null;
+  };
   const moneyLine = (s: Scope): string | null => {
     const t = liveTotalsByKey.get(s.key) ?? totalsByKey.get(s.key);
     if (!t) return null;
@@ -861,7 +869,7 @@ export default function PayrollRun() {
                     <div key={s.key} className={`bg-card rounded-xl border p-4 flex items-center gap-3 ${blocked ? "border-warning-200 dark:border-warning-500/30 bg-warning-50/40 dark:bg-warning-500/8" : "border-border"}`}>
                       <ScopeIcon s={s} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span></p>
+                        <p className="text-sm font-medium text-foreground truncate">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span><NoBase s={s} /></p>
                         {!s.verifiable ? (
                           <p className="text-xs text-muted-foreground">Not gated (no attendance verification for this group)</p>
                         ) : ok ? (
@@ -904,7 +912,7 @@ export default function PayrollRun() {
                           <ChevronRight className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
                           <ScopeIcon s={s} />
                           <span className="min-w-0">
-                            <span className="text-sm font-medium text-foreground truncate block">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span></span>
+                            <span className="text-sm font-medium text-foreground truncate block">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span><NoBase s={s} /></span>
                             <span className="text-[11px] text-muted-foreground block">
                               {moneyLine(s) ?? (open ? "Computing…" : "Open to compute pay")}
                               {verifiedAt.get(s.key) ? ` · attendance verified ${fmtStamp(verifiedAt.get(s.key))}` : ""}
@@ -964,7 +972,7 @@ export default function PayrollRun() {
                   <div key={s.key} className={`rounded-xl border p-4 flex items-center gap-2 flex-wrap ${locked ? "bg-success-50/40 dark:bg-success-500/8 border-success-200 dark:border-success-500/30" : "bg-card border-border"}`}>
                     <ShieldCheck className={`w-5 h-5 shrink-0 ${locked ? "text-success-600" : "text-brand-600"}`} strokeWidth={1.5} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span></p>
+                      <p className="text-sm font-medium text-foreground truncate">{s.name} <span className="text-xs font-normal text-muted-foreground">· {people(s)}</span><NoBase s={s} /></p>
                       {moneyLine(s) && <p className="text-xs font-ledger text-foreground">{moneyLine(s)}</p>}
                       {verifiedAt.get(s.key) && (
                         <p className="text-[11px] text-muted-foreground">Attendance verified: {fmtStamp(verifiedAt.get(s.key))}</p>

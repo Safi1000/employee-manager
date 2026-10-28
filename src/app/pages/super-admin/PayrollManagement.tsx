@@ -1113,6 +1113,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // keys ONLY on settled status, so the existing order (name / employee id) is
   // preserved within each group, and a row moves down the instant it is marked
   // disbursed — no refresh.
+  // 2026-10-28: a guard with no base salary (null or 0) is always flagged — he
+  // would be paid nothing. A per-day reliever with a daily rate is not one.
+  const noBase = (r: RowState) =>
+    !(Number(r.base_salary) > 0) && !((r.employee as { pay_basis?: string }).pay_basis === "per_day" && Number((r.employee as { daily_rate?: number }).daily_rate ?? 0) > 0);
+
   const sortedRows = useMemo(
     () => [...filtered].sort((a, b) => Number(isPaidOrZero(a)) - Number(isPaidOrZero(b))),
     [filtered],
@@ -3069,6 +3074,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 );
               })()}
 
+              {(() => {
+                const missing = filtered.filter(noBase);
+                if (missing.length === 0) return null;
+                return (
+                  <div className="mb-3 rounded-xl border border-down/40 bg-down/10 px-4 py-2.5 text-sm text-down">
+                    <span className="font-semibold">{missing.length} {missing.length === 1 ? "guard has" : "guards have"} no base salary</span>
+                    <span className="text-foreground/80"> — {missing.slice(0, 6).map((r) => r.employee.full_name).join(", ")}{missing.length > 6 ? ` and ${missing.length - 6} more` : ""}. They are highlighted below and would be paid nothing.</span>
+                  </div>
+                );
+              })()}
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -3177,6 +3192,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 ? FOCUS_ROW_CLASS
                                 : selectedId === e.id
                                 ? "bg-brand-500/10"
+                                : noBase(row)
+                                  ? "bg-down/10 hover:bg-down/15"
                                 : isPaidOrZero(row)
                                   ? "bg-success-50 dark:bg-success-500/8 hover:bg-success-100 dark:hover:bg-success-500/12"
                                   : "hover:bg-accent/50"
@@ -3290,7 +3307,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               })()}
                             </td>
                             <td className="px-4 py-3 text-sm text-foreground">
-                              PKR {row.base_salary.toLocaleString()}
+                              {noBase(row)
+                                ? <span className="inline-flex items-center rounded-full border border-down/40 bg-down/15 px-2 py-0.5 text-[11px] font-semibold text-down" title="No base salary set — this guard would be paid nothing. Set it on the employee or on this payslip.">No base salary</span>
+                                : <>PKR {row.base_salary.toLocaleString()}</>}
                             </td>
                             <td className="px-4 py-3 text-sm text-foreground">
                               PKR {row.net_salary.toLocaleString()}
