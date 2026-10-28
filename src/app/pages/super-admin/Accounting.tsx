@@ -4365,27 +4365,27 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               <p className="text-xs text-muted-foreground font-mono">{selectedClient.client_code}</p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="bg-card p-3 md:p-4 lg:p-3 rounded-2xl border border-border min-w-0">
                 <p className="lbl mb-1">Opening Balance</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-foreground"><span className="cur">PKR</span>{Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-base sm:text-lg lg:text-base text-foreground"><span className="cur">PKR</span>{Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
               </div>
-              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+              <div className="bg-card p-3 md:p-4 lg:p-3 rounded-2xl border border-border min-w-0">
                 <p className="lbl mb-1">Total Invoiced</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-brand-700"><span className="cur">PKR</span>{selectedClient.total_invoiced.toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-base sm:text-lg lg:text-base text-brand-700"><span className="cur">PKR</span>{selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
-              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+              <div className="bg-card p-3 md:p-4 lg:p-3 rounded-2xl border border-border min-w-0">
                 <p className="lbl mb-1">Received</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-success-700"><span className="cur">PKR</span>{selectedClient.total_received.toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-base sm:text-lg lg:text-base text-success-700"><span className="cur">PKR</span>{selectedClient.total_received.toLocaleString()}</p>
               </div>
-              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+              <div className="bg-card p-3 md:p-4 lg:p-3 rounded-2xl border border-border min-w-0">
                 <p className="lbl mb-1">Withholding</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-danger-700"><span className="cur">PKR</span>{selectedClient.total_withholding.toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-base sm:text-lg lg:text-base text-danger-700"><span className="cur">PKR</span>{selectedClient.total_withholding.toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground/70 mt-0.5">deducted by the client</p>
               </div>
-              <div className="bg-card p-3 md:p-4 rounded-2xl border border-border">
+              <div className="bg-card p-3 md:p-4 lg:p-3 rounded-2xl border border-border min-w-0">
                 <p className="lbl mb-1">Outstanding</p>
-                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-lg text-warning-700"><span className="cur">PKR</span>{selectedClient.outstanding.toLocaleString()}</p>
+                <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-base sm:text-lg lg:text-base text-warning-700"><span className="cur">PKR</span>{selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>
 

@@ -10,7 +10,6 @@ import DetailDrawer from "./reports/DetailDrawer";
 import PLTab, { cmpTitle } from "./reports/PLTab";
 import ClientProfitTab from "./reports/ClientProfitTab";
 import HeadOfficeTab from "./reports/HeadOfficeTab";
-import Cashflow from "./CashFlow";
 import { usePL, type Basis, type Compare } from "./reports/usePL";
 
 /**
@@ -23,19 +22,23 @@ import { usePL, type Basis, type Compare } from "./reports/usePL";
  *   Client profit   per client, same rules as before (regional overhead, head
  *                   office), following the band's basis
  *   Head office     the month's pool and each region's Yes/No, with the price
- *   Cash flow       the existing cash flow statement
+ *
+ * 2026-10-28 (Shayan): the Cash flow tab is gone — "cash basis/revenue basis
+ * already exists". The standalone Cash Flow page is untouched.
  *
  * The working tools that used to live here — the checks, the accrual-to-cash
  * bridge, the ledgers, scenarios, contracted vs deployed — move to the
  * Accountant page, where the people who use them are.
  */
 
-type View = "pl" | "clients" | "ho" | "cash";
+type View = "pl" | "clients" | "ho";
 
 export default function FinancialReports() {
   const companyId = useCompanyId();
   const { regionId } = useRegion();
-  const [view, setView] = usePageState<View>("Reports.view", "pl");
+  const [savedView, setView] = usePageState<View>("Reports.view", "pl");
+  // A browser that last left this page on the removed Cash flow tab opens on P&L.
+  const view: View = savedView === "clients" || savedView === "ho" ? savedView : "pl";
   const [period, setPeriod] = usePageState<string>("Reports.period", previousMonthKey());
   const [basis, setBasis] = usePageState<Basis>("Reports.basis", "revenue");
   const [cmp, setCmp] = usePageState<Compare>("Reports.compare", "prev");
@@ -72,12 +75,9 @@ export default function FinancialReports() {
                 { value: "pl", label: "Profit & loss" },
                 { value: "clients", label: "Client profit" },
                 { value: "ho", label: "Head office" },
-                { value: "cash", label: "Cash flow" },
               ]}
             />
-            {view !== "cash" && (
-              <Tabs<Basis> value={basis} onChange={setBasis} items={[{ value: "revenue", label: "Revenue basis" }, { value: "cash", label: "Cash basis" }]} />
-            )}
+            <Tabs<Basis> value={basis} onChange={setBasis} items={[{ value: "revenue", label: "Revenue basis" }, { value: "cash", label: "Cash basis" }]} />
             {view === "pl" && (
               <Tabs<Compare> value={cmp} onChange={setCmp} items={[{ value: "prev", label: "vs previous month" }, { value: "ly", label: "vs last year" }, { value: "ytd", label: "Year to date" }]} />
             )}
@@ -99,7 +99,6 @@ export default function FinancialReports() {
         {view === "pl" && <PLTab period={period} basis={basis} cmp={cmp} pl={pl} loading={pl.loading} error={pl.error} />}
         {view === "clients" && <ClientProfitTab period={period} basis={basis} />}
         {view === "ho" && <HeadOfficeTab period={period} basis={basis} />}
-        {view === "cash" && <Cashflow embedded />}
       </PageBody>
       <DetailDrawer target={drill} onClose={() => setDrill(null)} />
     </DrillProvider>
