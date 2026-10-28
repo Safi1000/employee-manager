@@ -6,6 +6,7 @@ import { useNavBadges } from "../lib/navBadges";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
 import InactivityLogout from "../components/InactivityLogout";
+import SecurityGate from "../components/SecurityGate";
 import RegionSelector from "../components/RegionSelector";
 import TopBar from "../components/TopBar";
 import { hasAnyPermission, useAuth } from "../lib/auth";
@@ -323,59 +324,61 @@ export default function SuperAdminLayout() {
   };
 
   return (
-    <div className="app-shell flex h-dvh bg-muted/50">
-      <Sidebar
-        title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
-        links={links}
-        badges={navBadges}
-      />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {isSsaViewing && (
-          <div className="bg-warning-50 border-b border-warning-200 px-6 py-2 flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2 text-warning-700 dark:text-warning-500">
-              <Eye className="w-4 h-4" strokeWidth={1.5} />
-              <span>
-                You are viewing <strong>{company?.name ?? ""}</strong> as Super Super Admin.
-              </span>
+    <SecurityGate>
+      <div className="app-shell flex h-dvh bg-muted/50">
+        <Sidebar
+          title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
+          links={links}
+          badges={navBadges}
+        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {isSsaViewing && (
+            <div className="bg-warning-50 border-b border-warning-200 px-6 py-2 flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-warning-700 dark:text-warning-500">
+                <Eye className="w-4 h-4" strokeWidth={1.5} />
+                <span>
+                  You are viewing <strong>{company?.name ?? ""}</strong> as Super Super Admin.
+                </span>
+              </div>
+              <button
+                onClick={handleExitView}
+                className="flex items-center gap-1 px-3 py-1 rounded text-warning-700 dark:text-warning-500 hover:bg-warning-100"
+              >
+                <X className="w-4 h-4" strokeWidth={1.5} /> Exit view
+              </button>
             </div>
-            <button
-              onClick={handleExitView}
-              className="flex items-center gap-1 px-3 py-1 rounded text-warning-700 dark:text-warning-500 hover:bg-warning-100"
-            >
-              <X className="w-4 h-4" strokeWidth={1.5} /> Exit view
-            </button>
-          </div>
-        )}
-        <TopBar>
-          {showRegionBar && (
-            <>
-              <RegionSelector />
-              {/* Hidden below `lg`: the selector button next to it already
-                  names the current scope ("Head Office / All Regions", or the
-                  region), so on a phone this sentence only ever appeared as a
-                  truncated fragment competing for the same row. */}
-              <span className="hidden lg:inline-flex items-center gap-2 text-xs text-muted-foreground truncate">
-                <span className="live-dot w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />
-                {locked
-                  ? "You see only your region."
-                  : region && !region.is_head_office && companyWidePage
-                    ? "This page is company-wide; the region does not change it."
-                  : region && !region.is_head_office
-                    ? `Every figure is ${region.name} only.`
-                    : "Every figure is consolidated across regions."}
-              </span>
-            </>
           )}
-        </TopBar>
-        {/* Remembers each page's scroll position for the session (pageState.tsx). */}
-        <ScrollMemory>
-          <Suspense fallback={<RouteLoading />}>
-            <Outlet />
-          </Suspense>
-        </ScrollMemory>
+          <TopBar>
+            {showRegionBar && (
+              <>
+                <RegionSelector />
+                {/* Hidden below `lg`: the selector button next to it already
+                    names the current scope ("Head Office / All Regions", or the
+                    region), so on a phone this sentence only ever appeared as a
+                    truncated fragment competing for the same row. */}
+                <span className="hidden lg:inline-flex items-center gap-2 text-xs text-muted-foreground truncate">
+                  <span className="live-dot w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />
+                  {locked
+                    ? "You see only your region."
+                    : region && !region.is_head_office && companyWidePage
+                      ? "This page is company-wide; the region does not change it."
+                    : region && !region.is_head_office
+                      ? `Every figure is ${region.name} only.`
+                      : "Every figure is consolidated across regions."}
+                </span>
+              </>
+            )}
+          </TopBar>
+          {/* Remembers each page's scroll position for the session (pageState.tsx). */}
+          <ScrollMemory>
+            <Suspense fallback={<RouteLoading />}>
+              <Outlet />
+            </Suspense>
+          </ScrollMemory>
+        </div>
+        <AiChatWidget />
+        <InactivityLogout />
       </div>
-      <AiChatWidget />
-      <InactivityLogout />
-    </div>
+    </SecurityGate>
   );
 }

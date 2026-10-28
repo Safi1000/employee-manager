@@ -17,6 +17,7 @@ import {
 } from "../../lib/supabase";
 import { callCreateUser, callChangePassword, useAuth } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
+import UserSecurityModal, { deviceLabel, type UserSecurity } from "../../components/UserSecurityModal";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -134,6 +135,14 @@ export default function UserManagement() {
   const [resetPwSubmitting, setResetPwSubmitting] = useState(false);
   const [resetPwSuccess, setResetPwSuccess] = useState(false);
 
+  // Two-factor, last login and disabled state per login (0591, users.manage).
+  const [security, setSecurity] = useState<Map<string, UserSecurity>>(new Map());
+  const [securityUser, setSecurityUser] = useState<Profile | null>(null);
+  const loadSecurity = async () => {
+    const { data } = await supabase.rpc("user_security_overview");
+    setSecurity(new Map(((data ?? []) as UserSecurity[]).map((r) => [r.user_id, r])));
+  };
+
   const loadAll = async () => {
     setLoading(true);
     setError(null);
@@ -171,6 +180,7 @@ export default function UserManagement() {
 
   useEffect(() => {
     loadAll();
+    void loadSecurity();
   }, []);
 
   const togglePerm = (set: Set<string>, setSet: (s: Set<string>) => void, key: string) => {
@@ -562,6 +572,12 @@ export default function UserManagement() {
                 actions={(u) => (
                   <>
                     <button
+                      onClick={() => setSecurityUser(u)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground"
+                    >
+                      <ShieldCheck className="w-4 h-4" /> Security
+                    </button>
+                    <button
                       onClick={() => openEdit(u)}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground"
                     >
@@ -600,6 +616,7 @@ export default function UserManagement() {
                       <th className="text-left px-6 py-3 text-sm text-muted-foreground">Title</th>
                       <th className="text-left px-6 py-3 text-sm text-muted-foreground">Branch</th>
                       <th className="text-left px-6 py-3 text-sm text-muted-foreground">Permissions</th>
+                      <th className="text-left px-6 py-3 text-sm text-muted-foreground">Security</th>
                       <th className="text-right px-6 py-3 text-sm text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
@@ -628,8 +645,33 @@ export default function UserManagement() {
                             <span className="text-xs text-foreground">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}</span>
                           )}
                         </td>
+                        <td className="px-6 py-4 text-xs">
+                          {(() => {
+                            const sec = security.get(u.id);
+                            if (!sec) return <span className="text-muted-foreground/70">—</span>;
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                <span className={sec.disabled_at ? "font-semibold text-down" : sec.two_factor ? "text-up" : "text-heed"}>
+                                  {sec.disabled_at ? "Disabled" : sec.two_factor ? "Two-factor on" : "Two-factor not set up"}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {sec.last_login
+                                    ? `${new Date(sec.last_login).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · ${deviceLabel(sec.last_device)}`
+                                    : "Never logged in"}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-6 py-4 text-right">
                           <div className="inline-flex gap-1">
+                            <button
+                              onClick={() => setSecurityUser(u)}
+                              className="p-1.5 rounded text-muted-foreground hover:bg-muted"
+                              title="Security — two-factor, logins, sign out, disable"
+                            >
+                              <ShieldCheck className="w-4 h-4" />
+                            </button>
                             <button
                               onClick={() => openEdit(u)}
                               className="p-1.5 rounded text-muted-foreground hover:bg-muted"
@@ -974,6 +1016,15 @@ export default function UserManagement() {
           </Modal>
         );
       })()}
+
+      {securityUser && (
+        <UserSecurityModal
+          user={securityUser}
+          security={security.get(securityUser.id) ?? null}
+          onClose={() => setSecurityUser(null)}
+          onChanged={() => void loadSecurity()}
+        />
+      )}
     </>
   );
 }

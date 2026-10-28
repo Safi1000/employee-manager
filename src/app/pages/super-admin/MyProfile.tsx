@@ -15,6 +15,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { loadCustodianOptions } from "../../lib/custodian";
 import { canReadBankBalances } from "../../lib/bankOptions";
+import MySecurityCard from "../../components/MySecurityCard";
 import { formatDate } from "../../lib/date";
 import { lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { usePageState } from "../../lib/pageState";
@@ -331,6 +332,7 @@ export default function MyProfile() {
               An administrator can link it in Access &amp; Governance ▸ Users.
             </span>
           </div>
+          <div className="mt-5"><MySecurityCard /></div>
         </div>
       </>
     );
@@ -449,6 +451,7 @@ export default function MyProfile() {
         )}
       </Header>
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-5">
+        <MySecurityCard />
         {err && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
