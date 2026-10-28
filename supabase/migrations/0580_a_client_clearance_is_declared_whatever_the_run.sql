@@ -38,7 +38,7 @@ begin
     json_build_object('sub', 'd2f4c9c0-7e33-4d5f-80aa-3d04cf657f12', 'role', 'authenticated')::text, true);   -- Shayan Ahmed
   begin
     -- Madison Square Mall (Lahore), September 2026 — a posted month
-    perform public.declare_region_profit('a46fd702-8796-4858-b338-142628ce33cf', '2026-09-01', 1, '0580 test',
+    perform public.declare_region_profit('a46fd702-8796-4858-b338-142628ce33cf', '2026-09-01', 1, '0580 test', 
       (select id from public.clients where company_id = '7f7899a0-edd2-4491-a40d-f81b54c68d1e' and name = 'Madison Square Mall'), 0);
     v_ok := true;
     begin
