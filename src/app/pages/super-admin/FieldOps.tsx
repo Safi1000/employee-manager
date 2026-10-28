@@ -547,7 +547,8 @@ export default function FieldOps() {
     for (const r of [...noteRows, ...dayRows, ...taskRows]) authorIds.add(r.updated_by!);
     for (const c of attendance?.clients ?? []) for (const u of c.markedBy ?? []) authorIds.add(u);
     const { data: who } = authorIds.size
-      ? await supabase.from("profiles").select("id, full_name").in("id", [...authorIds])
+      // 0570: profiles RLS hides other users from a non-super-admin exporter.
+      ? await supabase.rpc("report_author_names", { p_ids: [...authorIds] })
       : { data: [] as { id: string; full_name: string | null }[] };
     const nameOf = new Map(((who ?? []) as { id: string; full_name: string | null }[]).map((x) => [x.id, x.full_name ?? "Unknown user"]));
     // Most entries first, so the main author leads.
