@@ -202,8 +202,12 @@ function Enroll({ required = false, onDone }: { required?: boolean; onDone: () =
       for (const f of (list?.all ?? []).filter((x) => x.status !== "verified")) {
         await supabase.auth.mfa.unenroll({ factorId: f.id });
       }
+      // `issuer` is the name the authenticator app shows above the code; left out,
+      // Supabase uses the project's Site URL (it read "localhost"). The account
+      // line under it is the user's email.
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
+        issuer: "Bastion",
         friendlyName: `Bastion ${new Date().toISOString().slice(0, 16)}`,
       });
       if (cancelled) return;
