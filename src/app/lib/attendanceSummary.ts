@@ -42,6 +42,9 @@ export type ClientAttendanceSummary = {
   other: number;
   /** Guards with an attendance row of any kind — how much was actually touched. */
   marked: number;
+  /** 2026-10-28: who was absent / on leave, for the attendance report. */
+  absentees: { name: string; code: string | null }[];
+  onLeave: { name: string; code: string | null }[];
   /** Every site with guards on the date is confirmed. */
   confirmed: boolean;
   /** Some sites confirmed, others not — `sites` says which. */
@@ -80,7 +83,7 @@ export async function loadAttendanceSummary(
         .from("deployments")
         .select(
           "guard_id, client_id, site_id, start_date, end_date, " +
-            "employees:guard_id(category, join_date, last_working_day, termination_date, exit_date, lifecycle_state)",
+            "employees:guard_id(category, join_date, last_working_day, termination_date, exit_date, lifecycle_state, full_name, employee_code)",
         )
         .range(0, 9999)
         // The dated segment containing the date — a guard separated last week is
@@ -166,7 +169,7 @@ export async function loadAttendanceSummary(
       client_id: cid,
       client_name: c?.name ?? "—",
       branch_id: c?.branch_id ?? null,
-      deployed: 0, present: 0, absent: 0, leave: 0, other: 0, marked: 0,
+      deployed: 0, present: 0, absent: 0, leave: 0, other: 0, marked: 0, absentees: [], onLeave: [],
       confirmed: false, partial: false, confirmed_by: null, confirmed_at: null, sites: [],
     };
   };
@@ -191,8 +194,9 @@ export async function loadAttendanceSummary(
     site.deployed += 1;
     const st = statusByGuard.get(d.guard_id);
     if (st) row.marked += 1;
-    if (st === "absent") row.absent += 1;
-    else if (st === "rotation_leave" || st === "leave") row.leave += 1;
+    const who = { name: (d.employees?.full_name as string) ?? "—", code: (d.employees?.employee_code as string | null) ?? null };
+    if (st === "absent") { row.absent += 1; row.absentees.push(who); }
+    else if (st === "rotation_leave" || st === "leave") { row.leave += 1; row.onLeave.push(who); }
     else if (st && EXCEPTION.has(st)) row.other += 1;
     byClient.set(cid, row);
   }

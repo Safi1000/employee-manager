@@ -45,8 +45,11 @@ export type DailyBrief = {
   regionLabel: string | null;
   clients: BriefClient[];
   regions: BriefRegion[];
-  /** Tasks set for the report day not ticked done. */
+  /** Tasks set for the report day still pending. */
   openFromYesterday: BriefTask[];
+  /** 0569: every task set the previous day, with its progress. */
+  previousTasks?: { title: string; assignee: string | null; status: string; note: string | null }[];
+  previousDate?: string;
   /** The previous day's attendance — for "Matters requiring attention". */
   attendance: AttendanceSummary | null;
 };
@@ -154,7 +157,7 @@ function drawDaily(p: Page, d: DailyBrief) {
   if (att && att.unconfirmed.length) {
     items.push(`Attendance for ${formatDate(att.date)} not confirmed — ${att.unconfirmed.map((c) => (c.partial ? describeUnconfirmed(c) : c.client_name)).join(", ")}.`);
   }
-  for (const t of d.openFromYesterday) items.push(`Not completed from yesterday — ${t.title}${t.assignee ? ` (${t.assignee})` : ""}.`);
+  for (const t of d.openFromYesterday) items.push(`Still pending from yesterday — ${t.title}${t.assignee ? ` (${t.assignee})` : ""}.`);
   if (items.length) {
     p.font("normal", 10.5);
     const laid = items.map((t) => p.wrap(t, W - 12));
@@ -187,7 +190,42 @@ function drawDaily(p: Page, d: DailyBrief) {
     }
   }
 
-  // ── 2. Tasks for tomorrow ──
+  // ── 2. Previous day's tasks — progress (0569) ──
+  const prev = d.previousTasks ?? [];
+  if (prev.length) {
+    sec += 1;
+    heading(p, `${sec}.  Previous day's tasks${d.previousDate ? ` (${formatDate(d.previousDate)})` : ""}`);
+    const C1 = 12, C3 = 40, C4 = 28, C2 = W - C1 - C3 - C4;
+    const head = () => {
+      p.need(8);
+      doc.setDrawColor(...RULE); doc.line(M, p.y - 4.2, M + W, p.y - 4.2);
+      p.font("bold", 10); p.color(INK);
+      doc.text("S/No", M + 1, p.y); doc.text("Task", M + C1 + 2, p.y); doc.text("Responsible", M + C1 + C2 + 2, p.y); doc.text("Status", M + C1 + C2 + C3 + 2, p.y);
+      p.y += 2; doc.line(M, p.y, M + W, p.y); p.y += 4.6;
+    };
+    head();
+    prev.forEach((t, i) => {
+      p.font("normal", 10.5);
+      const lines = p.wrap(t.title.trim(), C2 - 4);
+      const noteLines = t.note ? p.wrap(t.note, C2 - 4) : [];
+      if (p.need((lines.length + noteLines.length) * LH + 2)) head();
+      p.color(INK);
+      doc.text(`${i + 1}.`, M + 1, p.y);
+      lines.forEach((ln, k) => doc.text(ln, M + C1 + 2, p.y + k * LH));
+      p.font(t.assignee ? "normal" : "italic", 10.5); p.color(t.assignee ? INK : SOFT);
+      doc.text(t.assignee ?? "General", M + C1 + C2 + 2, p.y);
+      const tone: RGB = t.status === "Completed" ? [30, 100, 50] : t.status === "In progress" ? [140, 90, 10] : t.status === "Pending" ? RED : SOFT;
+      p.font("bold", 10.5); p.color(tone);
+      doc.text(t.status, M + C1 + C2 + C3 + 2, p.y);
+      let yy = p.y + lines.length * LH;
+      if (noteLines.length) { p.font("italic", 10); p.color(SOFT); noteLines.forEach((ln) => { doc.text(ln, M + C1 + 2, yy); yy += LH; }); }
+      p.y = yy + 1.6;
+    });
+    doc.setDrawColor(...RULE); doc.line(M, p.y - 3, M + W, p.y - 3);
+    p.y += 4;
+  }
+
+  // ── 3. Tasks for tomorrow ──
   const regionsTasks = d.regions.filter((r) => r.tasks.some((t) => t.title.trim()));
   if (regionsTasks.length) {
     sec += 1;
@@ -260,7 +298,12 @@ function drawDaily(p: Page, d: DailyBrief) {
     lines.forEach((ln) => { doc.text(ln, M + 14, p.y); p.y += LH; });
   }
 
-  // ── sign-off ──
+  signOff(p);
+}
+
+/** Prepared / Reviewed / Approved by. */
+function signOff(p: Page) {
+  const doc = p.doc;
   p.need(34);
   p.y += 20;
   const col = W / 3;
@@ -273,47 +316,142 @@ function drawDaily(p: Page, d: DailyBrief) {
   p.y += 12;
 }
 
-/** Interim attendance section, in the same letter style — replaced once the previous house style is in. */
-function drawAttendanceSection(p: Page, s: AttendanceSummary) {
+/**
+ * ATTENDANCE REPORT — same letter style (2026-10-28).
+ *   opening line   strength, present %, absent, leave, unmarked, confirmed
+ *   1. Client-wise attendance   ruled table, grouped by region with subtotals
+ *   2. Absentees and leave      by client, by name
+ *   3. Attendance not confirmed numbered, naming the open sites
+ * "Unmarked" = deployed guards with no mark at all — counted as present by the
+ * figures, so shown so nobody mistakes a blank register for a full one.
+ */
+function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>) {
   const doc = p.doc;
+  const t = s.totals;
+  const unmarked = (c: AttendanceSummary["clients"][number]) => Math.max(0, c.deployed - c.marked);
+  const totalUnmarked = s.clients.reduce((n, c) => n + unmarked(c), 0);
+  const pct = t.deployed ? Math.round(((t.present - totalUnmarked) / t.deployed) * 1000) / 10 : 0;
+
+  p.font("normal", 10.5); p.color(INK);
+  const opening = `On ${longDay(s.date)}, ${t.deployed} guards were deployed across ${s.clients.length} clients: ` +
+    `${t.present - totalUnmarked} present (${pct}%), ${t.absent} absent, ${t.leave} on leave` +
+    `${t.other ? `, ${t.other} other` : ""}${totalUnmarked ? `, ${totalUnmarked} not marked` : ""}. ` +
+    `Attendance was confirmed for ${s.clients.length - s.unconfirmed.length} of ${s.clients.length} clients.`;
+  p.wrap(opening, W).forEach((ln) => { p.need(LH); doc.text(ln, M, p.y); p.y += LH; });
+  p.y += 4;
+
+  // ── 1. client-wise ──
+  heading(p, "1.  Client-wise attendance");
   const COLS = [
-    { label: "S/No", w: 12, right: false },
-    { label: "Client", w: 56, right: false },
-    { label: "Deployed", w: 20, right: true },
-    { label: "Present", w: 18, right: true },
-    { label: "Absent", w: 17, right: true },
-    { label: "Leave", w: 15, right: true },
-    { label: "Confirmed", w: W - 138, right: false },
+    { label: "S/No", w: 11, right: false },
+    { label: "Client", w: 55, right: false },
+    { label: "Deployed", w: 17, right: true },
+    { label: "Present", w: 16, right: true },
+    { label: "Absent", w: 15, right: true },
+    { label: "Leave", w: 13, right: true },
+    { label: "Unmarked", w: 18, right: true },
+    { label: "Confirmed by", w: W - 145, right: false },
   ];
   const head = () => {
     p.need(8);
     doc.setDrawColor(...RULE); doc.line(M, p.y - 4.2, M + W, p.y - 4.2);
-    p.font("bold", 10); p.color(INK);
+    p.font("bold", 9.5); p.color(INK);
     let x = M;
     for (const c of COLS) { if (c.right) doc.text(c.label, x + c.w - 1, p.y, { align: "right" }); else doc.text(c.label, x + 1, p.y); x += c.w; }
     p.y += 2; doc.line(M, p.y, M + W, p.y); p.y += 4.6;
   };
+  const nums = (dep: number, pre: number, ab: number, lv: number, un: number, x0: number) => {
+    let x = x0;
+    [dep, pre, ab, lv, un].forEach((n, k) => {
+      if (k === 4 && n) p.color(RED);
+      doc.text(String(n), x + COLS[k + 2].w - 1, p.y, { align: "right" });
+      p.color(INK);
+      x += COLS[k + 2].w;
+    });
+    return x;
+  };
   head();
-  s.clients.forEach((c, i) => {
-    if (p.need(LH + 1)) head();
-    p.font("normal", 10.5); p.color(INK);
-    let x = M;
-    doc.text(`${i + 1}.`, x + 1, p.y); x += COLS[0].w;
-    doc.text(p.wrap(c.client_name, COLS[1].w - 2)[0], x + 1, p.y); x += COLS[1].w;
-    [c.deployed, c.present, c.absent, c.leave].forEach((n, k) => { doc.text(String(n), x + COLS[k + 2].w - 1, p.y, { align: "right" }); x += COLS[k + 2].w; });
-    if (c.confirmed) doc.text("Yes", x + 1, p.y);
-    else { p.font("bold", 10.5); p.color(RED); doc.text(c.partial ? `Partly (${c.sites.filter((t) => t.confirmed).length}/${c.sites.length})` : "Not confirmed", x + 1, p.y); }
-    p.y += LH + 0.6;
-  });
-  const t = s.totals;
+  const groups = new Map<string, AttendanceSummary["clients"]>();
+  for (const c of [...s.clients].sort((a, b) => a.client_name.localeCompare(b.client_name))) {
+    const k = c.branch_id ?? "";
+    groups.set(k, [...(groups.get(k) ?? []), c]);
+  }
+  const showGroups = groups.size > 1;
+  let n = 0;
+  for (const [bid, rows] of groups) {
+    if (showGroups) {
+      if (p.need(LH + 2)) head();
+      p.font("bolditalic", 10); p.color(SOFT); doc.text(regionNames[bid] ?? "No region", M + 1, p.y); p.y += LH + 0.4;
+    }
+    for (const c of rows) {
+      if (p.need(LH + 1)) head();
+      n += 1;
+      p.font("normal", 10); p.color(INK);
+      let x = M;
+      doc.text(`${n}.`, x + 1, p.y); x += COLS[0].w;
+      doc.text(p.wrap(c.client_name, COLS[1].w - 2)[0], x + 1, p.y); x += COLS[1].w;
+      x = nums(c.deployed, c.present - unmarked(c), c.absent, c.leave, unmarked(c), x);
+      if (c.confirmed) { p.color(INK); doc.text(p.wrap(c.confirmed_by ?? "Yes", COLS[7].w - 2)[0], x + 1, p.y); }
+      else { p.font("bold", 10); p.color(RED); doc.text(c.partial ? `Partly (${c.sites.filter((q) => q.confirmed).length}/${c.sites.length})` : "Not confirmed", x + 1, p.y); }
+      p.y += LH + 0.5;
+    }
+    if (showGroups) {
+      if (p.need(LH + 2)) head();
+      const sub = rows.reduce((a, c) => ({ d: a.d + c.deployed, p: a.p + c.present - unmarked(c), ab: a.ab + c.absent, l: a.l + c.leave, u: a.u + unmarked(c) }), { d: 0, p: 0, ab: 0, l: 0, u: 0 });
+      doc.setDrawColor(...RULE); doc.setLineWidth(0.1); doc.line(M + COLS[0].w, p.y - 3.6, M + W, p.y - 3.6); doc.setLineWidth(0.2);
+      p.font("italic", 10); p.color(SOFT);
+      doc.text(`Subtotal · ${regionNames[bid] ?? "No region"}`, M + COLS[0].w + 1, p.y);
+      p.font("italic", 10);
+      nums(sub.d, sub.p, sub.ab, sub.l, sub.u, M + COLS[0].w + COLS[1].w);
+      p.y += LH + 2;
+    }
+  }
   p.need(10);
   doc.setDrawColor(...RULE); doc.line(M, p.y - 3.6, M + W, p.y - 3.6);
-  p.font("bold", 10.5); p.color(INK);
-  let x = M + COLS[0].w; doc.text("Total", x + 1, p.y); x += COLS[1].w;
-  [t.deployed, t.present, t.absent, t.leave].forEach((n, k) => { doc.text(String(n), x + COLS[k + 2].w - 1, p.y, { align: "right" }); x += COLS[k + 2].w; });
-  doc.text(`${s.clients.length - s.unconfirmed.length} of ${s.clients.length}`, x + 1, p.y);
+  p.font("bold", 10); p.color(INK);
+  doc.text("Total", M + COLS[0].w + 1, p.y);
+  const xe = nums(t.deployed, t.present - totalUnmarked, t.absent, t.leave, totalUnmarked, M + COLS[0].w + COLS[1].w);
+  doc.text(`${s.clients.length - s.unconfirmed.length} of ${s.clients.length}`, xe + 1, p.y);
   p.y += 2; doc.line(M, p.y, M + W, p.y); doc.line(M, p.y + 0.8, M + W, p.y + 0.8);
-  p.y += 8;
+  p.y += 9;
+
+  // ── 2. absentees and leave ──
+  const withNames = [...s.clients].filter((c) => (c.absentees ?? []).length || (c.onLeave ?? []).length)
+    .sort((a, b) => a.client_name.localeCompare(b.client_name));
+  heading(p, "2.  Absentees and leave");
+  if (!withNames.length) { p.font("italic", 10.5); p.color(SOFT); doc.text("Nil.", M + 4, p.y); p.y += LH + 3; }
+  const who = (l: { name: string; code: string | null }[]) => l.map((g) => (g.code ? `${g.name} (${g.code})` : g.name)).join(", ");
+  withNames.forEach((c, i) => {
+    p.need(LH * 3);
+    p.font("bold", 10.5); p.color(INK);
+    doc.text(`2.${i + 1}`, M + 4, p.y); doc.text(c.client_name, M + 14, p.y); p.y += LH;
+    for (const [label, list] of [["Absent", c.absentees ?? []], ["Leave", c.onLeave ?? []]] as const) {
+      if (!list.length) continue;
+      p.font("normal", 10.5);
+      const lines = p.wrap(who(list), W - 14 - 22);
+      lines.forEach((ln, j) => {
+        p.need(LH);
+        if (j === 0) { p.font("italic", 10.5); p.color(SOFT); doc.text(`${label}:`, M + 14, p.y); p.font("normal", 10.5); p.color(INK); }
+        doc.text(ln, M + 36, p.y);
+        p.y += LH;
+      });
+    }
+    p.y += 1.8;
+  });
+  p.y += 2;
+
+  // ── 3. not confirmed ──
+  heading(p, "3.  Attendance not confirmed");
+  if (!s.unconfirmed.length) { p.font("italic", 10.5); p.color(SOFT); doc.text("Nil — every client's attendance was confirmed.", M + 4, p.y); p.y += LH + 3; }
+  s.unconfirmed.forEach((c, i) => {
+    p.font("normal", 10.5); p.color(INK);
+    const lines = p.wrap(describeUnconfirmed(c), W - 14);
+    p.need(lines.length * LH + 1);
+    lines.forEach((ln, j) => { if (j === 0) doc.text(`${i + 1}.`, M + 4, p.y); doc.text(ln, M + 14, p.y); p.y += LH; });
+    p.y += 0.8;
+  });
+
+  signOff(p);
 }
 
 function footer(doc: jsPDF, b: PdfBranding, ref: string) {
@@ -335,7 +473,7 @@ const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/
  */
 export function generateOperationsPdf(
   company: Company | null | undefined,
-  parts: { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null } },
+  parts: { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string> } },
 ) {
   const b = brandingFromCompany(company);
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -351,7 +489,7 @@ export function generateOperationsPdf(
     const a = parts.attendance;
     if (!first) doc.addPage();
     letterhead(p, "Attendance Report", a.summary.date, a.regionLabel, refOf("ATR", a.summary.date));
-    drawAttendanceSection(p, a.summary);
+    drawAttendanceSection(p, a.summary, a.regionNames ?? {});
   }
   footer(doc, b, parts.daily ? refOf("DOR", day) : refOf("ATR", day));
   const kind = parts.daily && parts.attendance ? "Daily and attendance report" : parts.daily ? "Daily operations report" : "Attendance report";

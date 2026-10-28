@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Lock, Plus, Trash2 } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Loader2, Lock, Plus, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Tabs from "../../components/Tabs";
@@ -74,13 +74,18 @@ type TaskRow = {
   sort_order: number;
   /** The region (0517); null only on rows written before the split. */
   branch_id: string | null;
-  /** 0568: ticked done — usually the day after it was set. */
+  /** 0568: ticked done — usually the day after it was set. Follows status (0569). */
   done_at: string | null;
+  /** 0569: progress, set the day after. */
+  status: TaskStatus;
+  status_note: string | null;
 };
+type TaskStatus = "pending" | "in_progress" | "completed";
+const STATUS_LABEL: Record<TaskStatus, string> = { pending: "Pending", in_progress: "In progress", completed: "Completed" };
 /** Map key for the region-less rows written before 0517. */
 const BEFORE_SPLIT = "";
 const BEFORE_SPLIT_LABEL = "All regions (before the split)";
-const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at";
+const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at, status, status_note";
 type StaffRow = { id: string; full_name: string; employee_code: string | null };
 type Tab = "reports" | "attendance";
 
@@ -312,19 +317,21 @@ export default function FieldOps() {
   };
 
   /**
-   * 0568: tick a task done (or not). Allowed on a past day — ticking yesterday's
-   * tasks off is the point — for anyone who can write reports.
+   * 0569: a task's progress — pending / in progress / completed — and a short
+   * remark. Set on a past day too (yesterday's tasks are updated today), by
+   * anyone who can write reports. done_at follows the status.
    */
-  const toggleDone = async (id: string, done: boolean) => {
+  const setTaskProgress = async (id: string, patch: { status?: TaskStatus; status_note?: string | null }) => {
     if (!canWriteReports) return;
     setErr(null);
-    const stamp = done ? new Date().toISOString() : null;
-    const apply = (list: TaskRow[]) => list.map((t) => (t.id === id ? { ...t, done_at: stamp } : t));
+    const stamp = patch.status === undefined ? undefined : patch.status === "completed" ? new Date().toISOString() : null;
+    const apply = (list: TaskRow[]) => list.map((t) => (t.id === id ? { ...t, ...patch, ...(stamp !== undefined ? { done_at: stamp } : {}) } : t));
     const beforeT = tasks, beforeP = prevTasks;
     setTasks(apply); setPrevTasks(apply);
     const { data: userData } = await supabase.auth.getUser();
-    const { error } = await supabase.from("daily_report_tasks")
-      .update({ done_at: stamp, done_by: done ? userData.user?.id ?? null : null }).eq("id", id);
+    const row: Record<string, unknown> = { ...patch, updated_by: userData.user?.id ?? null };
+    if (stamp !== undefined) { row.done_at = stamp; row.done_by = stamp ? userData.user?.id ?? null : null; }
+    const { error } = await supabase.from("daily_report_tasks").update(row).eq("id", id);
     if (error) { setErr(error.message); setTasks(beforeT); setPrevTasks(beforeP); }
   };
 
@@ -509,12 +516,16 @@ export default function FieldOps() {
         tasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), done: !!t.done_at })),
         otherUpdates: otherUpdates.get(blk.key) ?? null,
       })),
-      // Only tasks set since the done tick existed (0568, 28 Oct 2026) — an
-      // earlier task was never tickable, so "not done" would be false.
-      openFromYesterday: prevVisible.filter((t) => !t.done_at && shiftDay(date, -1) >= "2026-10-28").map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+      // Only tasks set since status existed (0568/0569, 28 Oct 2026) — an
+      // earlier task could not be updated, so "pending" would be false.
+      openFromYesterday: prevVisible.filter((t) => t.status === "pending" && shiftDay(date, -1) >= "2026-10-28").map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+      previousTasks: prevVisible.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: shiftDay(date, -1) < "2026-10-28" && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note })),
+      previousDate: shiftDay(date, -1),
       attendance: visibleAttendance,
     } : undefined;
-    const attendancePart = which !== "daily" && visibleAttendance ? { summary: visibleAttendance, regionLabel } : undefined;
+    const attendancePart = which !== "daily" && visibleAttendance
+      ? { summary: visibleAttendance, regionLabel, regionNames: Object.fromEntries(regions.map((r) => [r.id, r.name])) }
+      : undefined;
     generateOperationsPdf(company, { daily, attendance: attendancePart });
     if (!daily) return;
     setBusy(true);
@@ -660,19 +671,28 @@ export default function FieldOps() {
                 <div className="border border-border rounded-md p-3 bg-card space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
-                      Tasks set on {formatDate(shiftDay(date, -1))} — tick when done
+                      Tasks set on {formatDate(shiftDay(date, -1))} — progress
                     </span>
-                    <span className={`text-[11px] font-semibold ${prevVisible.some((t) => !t.done_at) ? "text-heed" : "text-up"}`}>
-                      {prevVisible.filter((t) => t.done_at).length} / {prevVisible.length} done
+                    <span className="text-[11px] text-muted-foreground">
+                      {prevVisible.filter((t) => t.status === "completed").length} completed · {prevVisible.filter((t) => t.status === "in_progress").length} in progress · {prevVisible.filter((t) => t.status === "pending").length} pending
                     </span>
                   </div>
-                  <ul className="space-y-1">
+                  <ul className="divide-y divide-border">
                     {prevVisible.map((t) => (
-                      <li key={t.id} className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" className="w-4 h-4 accent-brand-500" checked={!!t.done_at} disabled={!canWriteReports}
-                          onChange={(e) => void toggleDone(t.id, e.target.checked)} aria-label={`Done: ${t.title}`} />
-                        <span className={`flex-1 min-w-0 ${t.done_at ? "line-through text-muted-foreground" : "text-foreground"}`}>{t.title}</span>
-                        <span className="text-xs text-muted-foreground">{staffName(t.assignee_employee_id) ?? "General"}</span>
+                      <li key={t.id} className="py-2 flex flex-col md:flex-row md:items-center gap-2 text-sm">
+                        <span className="flex-1 min-w-0 text-foreground">{t.title}
+                          <span className="ml-2 text-xs text-muted-foreground">{staffName(t.assignee_employee_id) ?? "General"}</span>
+                        </span>
+                        <ThemedSelect value={t.status ?? "pending"} disabled={!canWriteReports} aria-label={`Status: ${t.title}`}
+                          onChange={(e) => void setTaskProgress(t.id, { status: e.target.value as TaskStatus })}
+                          className={`w-full md:w-36 ${t.status === "completed" ? "text-up" : t.status === "in_progress" ? "text-heed" : ""}`}>
+                          <option value="pending">Pending</option>
+                          <option value="in_progress">In progress</option>
+                          <option value="completed">Completed</option>
+                        </ThemedSelect>
+                        <input defaultValue={t.status_note ?? ""} disabled={!canWriteReports} placeholder="Remark (optional)"
+                          onBlur={(e) => { const v = e.target.value.trim(); if (v !== (t.status_note ?? "")) void setTaskProgress(t.id, { status_note: v || null }); }}
+                          className="w-full md:w-64 px-3 py-1.5 border border-border rounded-md text-sm bg-card" />
                       </li>
                     ))}
                   </ul>
@@ -773,6 +793,7 @@ export default function FieldOps() {
               loading={attLoading}
               date={attendanceDate}
               regionLabel={regionLabel}
+              regionNames={Object.fromEntries(regions.map((r) => [r.id, r.name]))}
             />
           )}
         </div>
@@ -1059,145 +1080,150 @@ function OtherUpdates({
 }
 
 /**
- * The Attendance Report tab: the same summary the PDF prints, for the day BEFORE
- * the report's date. Unconfirmed clients sort to the top and are tinted — the
- * point of the tab is the ones nobody signed off, not the ones who did.
+ * The Attendance Report tab (rebuilt 2026-10-28, the same reading as the PDF):
+ * one line saying how the day went, the clients grouped by region with
+ * subtotals and an Unmarked column (deployed with no mark at all — counted as
+ * present by the figures, shown so a blank register is never read as full),
+ * absentees and leave by name on opening a row, and the clients nobody
+ * confirmed. It reads the day BEFORE the report's date.
  */
 function AttendanceReport({
-  summary, loading, date, regionLabel,
+  summary, loading, date, regionLabel, regionNames,
 }: {
   summary: AttendanceSummary | null;
   loading: boolean;
   date: string;
   regionLabel: string | null;
+  regionNames: Record<string, string>;
 }) {
+  const [open, setOpen] = useState<string | null>(null);
   if (loading) {
     return (
-      <div className="border border-border rounded-md px-3 py-4 text-muted-foreground text-sm">
+      <div className="border border-border rounded-xl px-4 py-6 text-muted-foreground text-sm">
         <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading attendance…
       </div>
     );
   }
   if (!summary || summary.clients.length === 0) {
     return (
-      <div className="border border-border rounded-md px-3 py-4 text-muted-foreground text-sm">
-        No guards deployed on {formatDate(date)}
-        {regionLabel ? ` in ${regionLabel}` : ""}.
+      <div className="border border-dashed border-border rounded-xl px-4 py-8 text-center text-muted-foreground text-sm">
+        No guards deployed on {formatDate(date)}{regionLabel ? ` in ${regionLabel}` : ""}.
       </div>
     );
   }
-
   const t = summary.totals;
+  const un = (c: AttendanceSummary["clients"][number]) => Math.max(0, c.deployed - c.marked);
+  const totalUn = summary.clients.reduce((n, c) => n + un(c), 0);
+  const present = t.present - totalUn;
+  const pct = t.deployed ? Math.round((present / t.deployed) * 1000) / 10 : 0;
   const confirmed = summary.clients.length - summary.unconfirmed.length;
-  const partial = summary.unconfirmed.filter((c) => c.partial).length;
+  const groups = new Map<string, AttendanceSummary["clients"]>();
+  for (const c of [...summary.clients].sort((a, b) => a.client_name.localeCompare(b.client_name))) {
+    const k = c.branch_id ?? "";
+    groups.set(k, [...(groups.get(k) ?? []), c]);
+  }
+  const num = "px-3 py-2 text-right font-ledger";
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        Attendance for {formatDate(date)} — the day before this report
-        {regionLabel ? ` · ${regionLabel}` : ""} · {summary.clients.length} client
-        {summary.clients.length === 1 ? "" : "s"} · {confirmed} confirmed,{" "}
-        {partial > 0 ? `${partial} partly, ` : ""}
-        {summary.unconfirmed.length - partial} not
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+        {[
+          { k: "Deployed", v: String(t.deployed), tone: "" },
+          { k: "Present", v: `${present}`, sub: `${pct}%`, tone: "text-up" },
+          { k: "Absent", v: String(t.absent), tone: t.absent ? "text-down" : "" },
+          { k: "Leave", v: String(t.leave), tone: "" },
+          { k: "Confirmed", v: `${confirmed}/${summary.clients.length}`, tone: summary.unconfirmed.length ? "text-heed" : "text-up" },
+        ].map((x) => (
+          <div key={x.k} className="rounded-xl border border-border bg-card px-4 py-3">
+            <span className="lbl">{x.k}</span>
+            <div className={`font-ledger text-2xl font-semibold leading-tight ${x.tone}`}>{x.v}{x.sub && <span className="ml-1.5 text-xs text-muted-foreground font-normal">{x.sub}</span>}</div>
+          </div>
+        ))}
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {formatDate(date)} — the day before this report{regionLabel ? ` · ${regionLabel}` : ""}.
+        {totalUn ? <span className="text-down"> {totalUn} deployed guard{totalUn === 1 ? " has" : "s have"} no mark at all.</span> : null}
       </p>
 
-      {summary.unconfirmed.length > 0 && (
-        <div className="border border-danger-200 bg-danger-50 dark:bg-danger-500/10 rounded-md px-3 py-2">
-          <p className="text-sm font-medium text-danger-700 dark:text-danger-500 inline-flex items-center gap-1.5">
-            <AlertTriangle className="w-4 h-4" />
-            Attendance not confirmed — {summary.unconfirmed.length} client
-            {summary.unconfirmed.length === 1 ? "" : "s"}
-          </p>
-          <p className="text-xs text-danger-700/80 dark:text-danger-500/80 mt-1">
-            {summary.unconfirmed.filter((c) => !c.partial).map((c) => c.client_name).join(", ")}
-          </p>
-          {/* Partly confirmed clients get a line each, naming the open sites —
-              a client-level "not confirmed" would send someone to re-check the
-              sites that are already done. */}
-          {summary.unconfirmed.filter((c) => c.partial).map((c) => (
-            <p key={c.client_id} className="text-xs text-danger-700/80 dark:text-danger-500/80 mt-1">
-              {describeUnconfirmed(c)}
-            </p>
-          ))}
-        </div>
-      )}
-
-      <div className="border border-border rounded-md overflow-x-auto">
+      <div className="rounded-xl border border-border bg-card overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 dark:bg-card text-xs text-muted-foreground uppercase">
+          <thead className="bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">Client</th>
-              <th className="px-3 py-2 text-right font-medium">Deployed</th>
-              <th className="px-3 py-2 text-right font-medium">Present</th>
-              <th className="px-3 py-2 text-right font-medium">Absent</th>
-              <th className="px-3 py-2 text-right font-medium">Leave</th>
-              <th className="px-3 py-2 text-right font-medium">Other</th>
-              <th className="px-3 py-2 text-left font-medium">Attendance</th>
+              <th className="text-left px-3 py-2 font-medium">Client</th>
+              <th className="text-right px-3 py-2 font-medium">Deployed</th>
+              <th className="text-right px-3 py-2 font-medium">Present</th>
+              <th className="text-right px-3 py-2 font-medium">Absent</th>
+              <th className="text-right px-3 py-2 font-medium">Leave</th>
+              <th className="text-right px-3 py-2 font-medium">Unmarked</th>
+              <th className="text-left px-3 py-2 font-medium">Confirmed</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
-            {summary.clients.map((c) => (
-              <tr key={c.client_id} className={c.confirmed ? "" : "bg-danger-50/60 dark:bg-danger-500/10"}>
-                <td className="px-3 py-2 text-foreground">{c.client_name}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{c.deployed}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{c.present}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{c.absent}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{c.leave}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{c.other}</td>
-                <td className="px-3 py-2">
-                  {c.confirmed ? (
-                    <span className="inline-flex items-center gap-1.5 text-success-700 dark:text-success-500 text-xs">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Confirmed{c.confirmed_by ? ` · ${c.confirmed_by}` : ""}
-                    </span>
-                  ) : c.partial ? (
-                    <div className="space-y-0.5">
-                      <span className="inline-flex items-center gap-1.5 text-warning-700 dark:text-warning-500 text-xs font-medium">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        Partly confirmed · {c.sites.filter((x) => x.confirmed).length}/{c.sites.length} sites
-                      </span>
-                      <ul className="text-xs space-y-0.5 pl-5">
-                        {c.sites.map((site) => (
-                          <li
-                            key={site.site_id ?? "none"}
-                            className={site.confirmed ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500 font-medium"}
-                          >
-                            {site.site_name} —{" "}
-                            {site.confirmed
-                              ? `confirmed${site.confirmed_by ? ` · ${site.confirmed_by}` : ""}`
-                              : "not confirmed"}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-danger-700 dark:text-danger-500 text-xs font-medium">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      Not confirmed
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          {/* The collective line. Summed from the rows displayed above it — the
-              one place arithmetic belongs on a reporting screen. */}
-          <tfoot className="bg-muted/50 dark:bg-card font-medium">
-            <tr>
-              <td className="px-3 py-2">All clients</td>
-              <td className="px-3 py-2 text-right tabular-nums">{t.deployed}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{t.present}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{t.absent}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{t.leave}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{t.other}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">
-                {confirmed}/{summary.clients.length} confirmed
-                {partial > 0 ? ` · ${partial} partly` : ""}
-              </td>
+          {[...groups.entries()].map(([bid, rows]) => {
+            const sub = rows.reduce((a, c) => ({ d: a.d + c.deployed, p: a.p + c.present - un(c), ab: a.ab + c.absent, l: a.l + c.leave, u: a.u + un(c) }), { d: 0, p: 0, ab: 0, l: 0, u: 0 });
+            return (
+              <tbody key={bid} className="divide-y divide-border border-t border-border">
+                {groups.size > 1 && (
+                  <tr className="bg-muted/30"><td colSpan={7} className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">{regionNames[bid] ?? "No region"}</td></tr>
+                )}
+                {rows.map((c) => {
+                  const names = (c.absentees?.length ?? 0) + (c.onLeave?.length ?? 0);
+                  const isOpen = open === c.client_id;
+                  return (
+                    <Fragment key={c.client_id}>
+                      <tr className={`${!c.confirmed ? "bg-down/5" : ""} ${names ? "cursor-pointer hover:bg-muted/40" : ""}`} onClick={() => names && setOpen(isOpen ? null : c.client_id)}>
+                        <td className="px-3 py-2 text-foreground">
+                          {names ? (isOpen ? <ChevronDown className="w-3.5 h-3.5 inline mr-1 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 inline mr-1 text-muted-foreground" />) : <span className="inline-block w-[18px]" />}
+                          {c.client_name}
+                        </td>
+                        <td className={num}>{c.deployed}</td>
+                        <td className={num}>{c.present - un(c)}</td>
+                        <td className={`${num} ${c.absent ? "text-down" : ""}`}>{c.absent}</td>
+                        <td className={num}>{c.leave}</td>
+                        <td className={`${num} ${un(c) ? "text-down font-semibold" : "text-muted-foreground"}`}>{un(c)}</td>
+                        <td className="px-3 py-2">
+                          {c.confirmed
+                            ? <span className="text-xs text-up">{c.confirmed_by ?? "Yes"}</span>
+                            : <span className="text-xs font-semibold text-down">{c.partial ? `Partly ${c.sites.filter((x) => x.confirmed).length}/${c.sites.length}` : "Not confirmed"}</span>}
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={7} className="px-9 py-2 text-xs space-y-1">
+                            {c.absentees?.length ? <div><span className="text-muted-foreground">Absent: </span>{c.absentees.map((g) => g.code ? `${g.name} (${g.code})` : g.name).join(", ")}</div> : null}
+                            {c.onLeave?.length ? <div><span className="text-muted-foreground">Leave: </span>{c.onLeave.map((g) => g.code ? `${g.name} (${g.code})` : g.name).join(", ")}</div> : null}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {groups.size > 1 && (
+                  <tr className="text-muted-foreground italic">
+                    <td className="px-3 py-1.5 text-xs">Subtotal</td>
+                    <td className={num}>{sub.d}</td><td className={num}>{sub.p}</td><td className={num}>{sub.ab}</td><td className={num}>{sub.l}</td><td className={num}>{sub.u}</td><td />
+                  </tr>
+                )}
+              </tbody>
+            );
+          })}
+          <tfoot>
+            <tr className="border-t-2 border-border font-semibold">
+              <td className="px-3 py-2">Total</td>
+              <td className={num}>{t.deployed}</td><td className={num}>{present}</td><td className={num}>{t.absent}</td><td className={num}>{t.leave}</td><td className={num}>{totalUn}</td>
+              <td className="px-3 py-2 text-xs">{confirmed} of {summary.clients.length}</td>
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {summary.unconfirmed.length > 0 && (
+        <div className="rounded-xl border border-down/40 bg-down/5 px-4 py-3">
+          <div className="text-sm font-semibold text-down mb-1">Attendance not confirmed · {summary.unconfirmed.length}</div>
+          <ul className="text-sm text-foreground list-decimal ml-5 space-y-0.5">
+            {summary.unconfirmed.map((c) => <li key={c.client_id}>{describeUnconfirmed(c)}</li>)}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
