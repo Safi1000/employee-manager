@@ -41,7 +41,10 @@ type RunView = {
 type Region = {
   branch_id: string | null; region: string | null; own_profit: number; ho_allocated: number; base: number; regional: number;
   to_equity: number; regional_partners: { name: string; pct: number }[]; outside: boolean; declared: number | null;
+  /** 0573: a declared region — the PRA GGS holds for it, and its profit client by client. */
+  pra_held?: number | null; declared_clients?: DeclaredClient[] | null;
 };
+type DeclaredClient = { client: string; amount: number; pra_held: number };
 type Partner = {
   partner_id: string; name: string; kind: "equity" | "regional"; region: string | null; pct: number | null; amount: number;
   clients: { client_id: string; client: string | null; net: number; pct: number; share: number }[];
@@ -146,7 +149,7 @@ export default function PartnershipRun() {
     : "bg-muted text-muted-foreground border-border";
 
   const branding = brandingFromCompany(company);
-  const partnerPdf = (p: Partner) => generatePartnerStatementPdf({ branding, monthLabel: monthName(period), status: statusLine, partner: p });
+  const partnerPdf = (p: Partner) => generatePartnerStatementPdf({ branding, monthLabel: monthName(period), status: statusLine, partner: p, regions });
   const monthPdf = () => generatePartnershipMonthPdf({
     branding, monthLabel: monthName(period), status: statusLine, total: isAll ? run?.total_profit ?? null : null,
     partners, regions: regions.map((r) => ({ ...r })), clients,
@@ -442,12 +445,39 @@ export default function PartnershipRun() {
                               </>
                             ) : (
                               <ul className="divide-y divide-border text-sm">
-                                {p.equity_regions.map((e) => (
-                                  <li key={e.region ?? ""} className="py-1.5 flex justify-between gap-3">
-                                    <span>{e.region ?? "—"}</span>
-                                    <span className={`font-ledger ${neg(e.amount)}`}>{acct(e.amount)}</span>
-                                  </li>
-                                ))}
+                                {p.equity_regions.map((e) => {
+                                  // 0573: a declared region shows, beside the partner's profit,
+                                  // what GGS kept for it including the PRA it holds — and the
+                                  // profit client by client. The partner's part of each is his
+                                  // share of the region's declared total.
+                                  const rg = regions.find((r) => r.region === e.region && r.outside && r.declared);
+                                  const f = rg && rg.declared ? e.amount / rg.declared : 0;
+                                  const pra = rg ? Number(rg.pra_held ?? 0) * f : 0;
+                                  return (
+                                    <li key={e.region ?? ""} className="py-1.5">
+                                      <div className="flex justify-between gap-3">
+                                        <span>{e.region ?? "—"}{rg ? <span className="ml-1.5 text-[11px] text-muted-foreground">declared</span> : null}</span>
+                                        <span className="flex items-baseline gap-4">
+                                          {pra > 0.5 && <span className="text-[11px] text-muted-foreground">kept by GGS incl. PRA <span className="font-ledger text-foreground">{acct(e.amount + pra)}</span></span>}
+                                          <span className={`font-ledger ${neg(e.amount)}`}>{acct(e.amount)}</span>
+                                        </span>
+                                      </div>
+                                      {rg?.declared_clients?.length ? (
+                                        <ul className="mt-1 ml-3 text-xs text-muted-foreground space-y-0.5">
+                                          {rg.declared_clients.map((c) => (
+                                            <li key={c.client} className="flex justify-between gap-3">
+                                              <span>{c.client}</span>
+                                              <span className="flex gap-4">
+                                                {Number(c.pra_held) > 0 && <span>PRA held <span className="font-ledger">{acct(Number(c.pra_held) * f)}</span></span>}
+                                                <span className="font-ledger text-foreground">{acct(Number(c.amount) * f)}</span>
+                                              </span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      ) : null}
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             )}
                           </div>
@@ -483,7 +513,7 @@ export default function PartnershipRun() {
                               {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                               <span className="font-medium text-foreground min-w-[8rem]">
                                 {r.region ?? "—"}
-                                {r.outside && <span className="ml-2 text-[11px] font-normal text-muted-foreground">outside the partnership{r.declared != null ? ` · declared ${acct(r.declared)}` : ""}</span>}
+                                {r.outside && <span className="ml-2 text-[11px] font-normal text-muted-foreground">outside the partnership{r.declared != null ? ` · declared ${acct(r.declared)}` : ""}{Number(r.pra_held ?? 0) > 0 ? ` · kept by GGS incl. PRA ${acct(Number(r.declared ?? 0) + Number(r.pra_held))}` : ""}</span>}
                               </span>
                               <span className="text-xs text-muted-foreground">Own <span className={`font-ledger text-foreground ${neg(r.own_profit)}`}>{acct(r.own_profit)}</span></span>
                               <span className="text-xs text-muted-foreground">Head office <span className="font-ledger text-foreground">{acct(r.ho_allocated)}</span></span>
@@ -494,6 +524,29 @@ export default function PartnershipRun() {
                             </button>
                             {open && (
                               <div className="px-5 pb-4 overflow-x-auto">
+                                {r.declared_clients?.length ? (
+                                  // 0573: what the regional partner's statement declared, client by client.
+                                  <table className="w-full text-sm mb-4">
+                                    <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                      <tr>
+                                        <th className="text-left py-1.5 font-medium">Declared — client</th>
+                                        <th className="text-right py-1.5 font-medium">GGS profit</th>
+                                        <th className="text-right py-1.5 font-medium">PRA held</th>
+                                        <th className="text-right py-1.5 font-medium">Kept by GGS</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                      {r.declared_clients.map((c) => (
+                                        <tr key={c.client}>
+                                          <td className="py-1.5 pr-3 text-foreground">{c.client}</td>
+                                          <td className="py-1.5 text-right font-ledger font-semibold">{acct(Number(c.amount))}</td>
+                                          <td className="py-1.5 text-right font-ledger text-muted-foreground">{acct(Number(c.pra_held))}</td>
+                                          <td className="py-1.5 text-right font-ledger">{acct(Number(c.amount) + Number(c.pra_held))}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                ) : null}
                                 <table className="w-full text-sm">
                                   <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
                                     <tr>

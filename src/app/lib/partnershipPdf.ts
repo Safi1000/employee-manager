@@ -17,6 +17,8 @@ export type PartnerStatement = {
 export type RegionRow = {
   region: string | null; own_profit: number; ho_allocated: number; base: number; regional: number; to_equity: number;
   regional_partners: { name: string; pct: number }[]; outside: boolean; declared: number | null;
+  /** 0573: a declared region's PRA held by GGS, and its profit client by client. */
+  pra_held?: number | null; declared_clients?: { client: string; amount: number; pra_held: number }[] | null;
 };
 export type ClientRow = { client: string; region: string | null; revenue: number; cost: number; overhead: number; net: number };
 
@@ -38,7 +40,7 @@ function lines(doc: jsPDF) {
   return { get y() { return y; }, set, section, row };
 }
 
-function statementBody(doc: jsPDF, L: ReturnType<typeof lines>, p: PartnerStatement) {
+function statementBody(doc: jsPDF, L: ReturnType<typeof lines>, p: PartnerStatement, regions: RegionRow[] = []) {
   if (p.kind === "regional") {
     L.section(`Regional share · ${p.region ?? ""} · ${p.pct ?? ""}%`);
     for (const c of p.clients) L.row(c.client ?? "Client", acct(c.share), { sub: `${c.pct}% of ${acct(c.net)}` });
@@ -46,7 +48,16 @@ function statementBody(doc: jsPDF, L: ReturnType<typeof lines>, p: PartnerStatem
     L.row("Head office and region adjustments", acct(p.amount - sum));
   } else {
     L.section(`Equity share · ${p.pct ?? ""}% of what each region leaves`);
-    for (const e of p.equity_regions) L.row(e.region ?? "—", acct(e.amount));
+    for (const e of p.equity_regions) {
+      // 0573: a declared region — the partner's part of GGS's profit, beside it
+      // what GGS kept including the PRA it holds, and the profit by client.
+      const rg = regions.find((r) => r.region === e.region && r.outside && r.declared);
+      const f = rg && rg.declared ? e.amount / rg.declared : 0;
+      const pra = rg ? Number(rg.pra_held ?? 0) * f : 0;
+      L.row(e.region ?? "—", acct(e.amount), pra > 0.5 ? { sub: `declared · kept by GGS incl. PRA ${acct(e.amount + pra)}` } : undefined);
+      for (const c of rg?.declared_clients ?? [])
+        L.row(c.client, acct(Number(c.amount) * f), { indent: 4, sub: Number(c.pra_held) > 0 ? `PRA held ${acct(Number(c.pra_held) * f)}` : undefined });
+    }
   }
   L.row("Share this month", acct(p.amount), { bold: true });
   L.section("Account");
@@ -54,12 +65,12 @@ function statementBody(doc: jsPDF, L: ReturnType<typeof lines>, p: PartnerStatem
   L.row("Closing balance", acct(p.closing_balance), { bold: true });
 }
 
-export function generatePartnerStatementPdf(o: { branding: PdfBranding; monthLabel: string; status: string; partner: PartnerStatement }) {
+export function generatePartnerStatementPdf(o: { branding: PdfBranding; monthLabel: string; status: string; partner: PartnerStatement; regions?: RegionRow[] }) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const L = lines(doc);
   L.set(drawBrandedHeader(doc, o.branding, "Partner statement", `${o.monthLabel}  ·  ${o.partner.name}`) + 8);
   doc.setFontSize(9); doc.setTextColor(110); doc.text(o.status, 14, L.y); L.set(L.y + 4);
-  statementBody(doc, L, o.partner);
+  statementBody(doc, L, o.partner, o.regions ?? []);
   drawBrandedFooter(doc, o.branding, "System-generated from the partnership run as posted.");
   void savePdf(doc, `Partner statement ${o.monthLabel} — ${o.partner.name}.pdf`);
 }
@@ -78,7 +89,9 @@ export function generatePartnershipMonthPdf(o: {
 
   L.section("Where the profit came from");
   for (const r of o.regions) {
-    L.row(r.region ?? "—", acct(r.own_profit), { bold: true, sub: r.outside ? `outside the partnership${r.declared != null ? ` · declared ${acct(r.declared)}` : ""}` : undefined });
+    L.row(r.region ?? "—", acct(r.own_profit), { bold: true, sub: r.outside ? `outside the partnership${r.declared != null ? ` · declared ${acct(r.declared)}` : ""}${Number(r.pra_held ?? 0) > 0 ? ` · kept by GGS incl. PRA ${acct(Number(r.declared ?? 0) + Number(r.pra_held))}` : ""}` : undefined });
+    for (const c of r.declared_clients ?? [])
+      L.row(`Declared — ${c.client}`, acct(Number(c.amount)), { indent: 4, sub: Number(c.pra_held) > 0 ? `PRA held ${acct(Number(c.pra_held))}` : undefined });
     if (r.ho_allocated) L.row("Head office", acct(r.ho_allocated), { indent: 4 });
     if (r.regional) L.row(`Regional partner (${r.regional_partners.map((x) => `${x.name} ${x.pct}%`).join(", ")})`, acct(-r.regional), { indent: 4 });
     L.row("To equity", acct(r.to_equity), { indent: 4 });
@@ -87,7 +100,7 @@ export function generatePartnershipMonthPdf(o: {
     }
   }
 
-  for (const p of o.partners) { doc.addPage(); L.set(20); doc.setFontSize(13); doc.setTextColor(0); doc.text(p.name, 14, L.y); L.set(L.y + 4); statementBody(doc, L, p); }
+  for (const p of o.partners) { doc.addPage(); L.set(20); doc.setFontSize(13); doc.setTextColor(0); doc.text(p.name, 14, L.y); L.set(L.y + 4); statementBody(doc, L, p, o.regions); }
   drawBrandedFooter(doc, o.branding, "System-generated from the partnership run as posted.");
   void savePdf(doc, `Partnership ${o.monthLabel}.pdf`);
 }
