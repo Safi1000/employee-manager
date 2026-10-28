@@ -50,6 +50,8 @@ export type DailyBrief = {
   /** 0569: every task set the previous day, with its progress. */
   previousTasks?: { title: string; assignee: string | null; status: string; note: string | null; /** Set before yesterday and carried forward; null for yesterday's own. */ setOn?: string | null }[];
   previousDate?: string;
+  /** 0571: HR's explanation per client for the previous day's attendance gaps. */
+  attendanceNotes?: Record<string, string>;
   /** 2026-10-28: the people who wrote this day's notes, updates and tasks. */
   preparedBy?: string[];
   /** The previous day's attendance — for "Matters requiring attention". */
@@ -158,7 +160,8 @@ function drawDaily(p: Page, d: DailyBrief) {
     items.push(`${c.client_name} (urgent) — ${first}`);
   }
   if (att && att.unconfirmed.length) {
-    items.push(`Attendance for ${formatDate(att.date)} not confirmed — ${att.unconfirmed.map((c) => (c.partial ? describeUnconfirmed(c) : c.client_name)).join(", ")}.`);
+    const why = (c: AttendanceSummary["clients"][number]) => { const n = d.attendanceNotes?.[c.client_id]; return n ? ` (HR: ${n.trim()})` : ""; };
+    items.push(`Attendance for ${formatDate(att.date)} not confirmed — ${att.unconfirmed.map((c) => (c.partial ? describeUnconfirmed(c) : c.client_name) + why(c)).join("; ")}.`);
   }
   for (const t of d.openFromYesterday) items.push(`Still pending${t.setOn ? ` since ${formatDate(t.setOn)}` : " from yesterday"} — ${t.title}${t.assignee ? ` (${t.assignee})` : ""}.`);
   if (items.length) {
@@ -341,7 +344,7 @@ function signOff(p: Page, label: string, names: string[]) {
  * "Unmarked" = deployed guards with no mark at all — counted as present by the
  * figures, so shown so nobody mistakes a blank register for a full one.
  */
-function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>, markedBy: string[]) {
+function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>, markedBy: string[], explanations: Record<string, string>) {
   const doc = p.doc;
   const t = s.totals;
   const unmarked = (c: AttendanceSummary["clients"][number]) => Math.max(0, c.deployed - c.marked);
@@ -456,15 +459,23 @@ function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Recor
   });
   p.y += 2;
 
-  // ── 3. not confirmed ──
-  heading(p, "3.  Attendance not confirmed");
-  if (!s.unconfirmed.length) { p.font("italic", 10.5); p.color(SOFT); doc.text("Nil — every client's attendance was confirmed.", M + 4, p.y); p.y += LH + 3; }
-  s.unconfirmed.forEach((c, i) => {
-    p.font("normal", 10.5); p.color(INK);
-    const lines = p.wrap(describeUnconfirmed(c), W - 14);
-    p.need(lines.length * LH + 1);
+  // ── 3. not confirmed or not fully marked, with HR's explanation (0571) ──
+  const gaps = s.clients.filter((c) => !c.confirmed || c.deployed > c.marked).sort((a, b) => a.client_name.localeCompare(b.client_name));
+  heading(p, "3.  Attendance not confirmed or not fully marked");
+  if (!gaps.length) { p.font("italic", 10.5); p.color(SOFT); doc.text("Nil — every client's attendance was marked and confirmed.", M + 4, p.y); p.y += LH + 3; }
+  gaps.forEach((c, i) => {
+    const un = Math.max(0, c.deployed - c.marked);
+    const what = [!c.confirmed ? (c.partial ? describeUnconfirmed(c) : `${c.client_name} — not confirmed`) : c.client_name, un ? `${un} guard${un === 1 ? "" : "s"} unmarked` : ""].filter(Boolean).join(" — ");
+    const note = (explanations[c.client_id] ?? "").trim();
+    p.font("normal", 10.5);
+    const lines = p.wrap(what, W - 14);
+    const noteLines = p.wrap(note ? `HR: ${note}` : "HR: no explanation given.", W - 14);
+    p.need((lines.length + noteLines.length) * LH + 1);
+    p.color(INK);
     lines.forEach((ln, j) => { if (j === 0) doc.text(`${i + 1}.`, M + 4, p.y); doc.text(ln, M + 14, p.y); p.y += LH; });
-    p.y += 0.8;
+    p.font("italic", 10); p.color(note ? INK : RED);
+    noteLines.forEach((ln) => { doc.text(ln, M + 14, p.y); p.y += LH; });
+    p.y += 1.2;
   });
 
   signOff(p, "Attendance marked by", markedBy);
@@ -483,7 +494,7 @@ function footer(doc: jsPDF, b: PdfBranding, ref: string) {
 
 const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/")}`;
 
-type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string>; markedBy?: string[] } };
+type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string>; markedBy?: string[]; explanations?: Record<string, string> } };
 
 /**
  * One PDF of one or more parts — a part is one region's daily report and/or
@@ -510,7 +521,7 @@ export function generateOperationsPdf(company: Company | null | undefined, parts
       if (!first) doc.addPage();
       letterhead(p, "Attendance Report", a.summary.date, a.regionLabel, refOf("ATR", a.summary.date));
       first = false;
-      drawAttendanceSection(p, a.summary, a.regionNames ?? {}, a.markedBy ?? []);
+      drawAttendanceSection(p, a.summary, a.regionNames ?? {}, a.markedBy ?? [], a.explanations ?? {});
     }
   }
   const anyDaily = parts.some((pt) => pt.daily), anyAtt = parts.some((pt) => pt.attendance);

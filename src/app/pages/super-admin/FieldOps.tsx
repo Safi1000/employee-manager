@@ -3,8 +3,9 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Lo
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Tabs from "../../components/Tabs";
+import Modal from "../../components/Modal";
 import ThemedSelect from "../../components/ThemedSelect";
-import { useAuth, hasPermission } from "../../lib/auth";
+import { useAuth, hasAnyPermission, hasPermission } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { useRegion } from "../../lib/region";
 import { formatDate } from "../../lib/date";
@@ -81,13 +82,15 @@ type TaskRow = {
   status_note: string | null;
   /** The day the task was set for. */
   report_date: string;
+  /** 0571: the report day its status was last reported on. */
+  status_reported_on: string | null;
 };
 type TaskStatus = "pending" | "in_progress" | "completed";
 const STATUS_LABEL: Record<TaskStatus, string> = { pending: "Pending", in_progress: "In progress", completed: "Completed" };
 /** Map key for the region-less rows written before 0517. */
 const BEFORE_SPLIT = "";
 const BEFORE_SPLIT_LABEL = "All regions (before the split)";
-const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at, status, status_note, report_date";
+const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at, status, status_note, report_date, status_reported_on";
 /**
  * CARRY-FORWARD (Shayan, 28 Oct 2026): a task still pending or in progress
  * follows on to every later day until it is completed, so it is asked about
@@ -97,6 +100,17 @@ const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_
  * the day it was completed, and then drops off.
  */
 const CARRY_FROM = "2026-10-27";
+/**
+ * 0571 (Shayan, 28 Oct 2026): exporting is refused until every previous task
+ * has been reported on the report day itself (from report day 29 Oct), and
+ * until HR has explained every client whose attendance was not confirmed or
+ * left guards unmarked (from attendance day 28 Oct). Before those days there
+ * was nothing to record either with.
+ */
+const TASKS_REPORTED_FROM = "2026-10-29";
+const GAPS_EXPLAINED_FROM = "2026-10-28";
+/** A client whose attendance needs HR's explanation: not confirmed, or guards left unmarked. */
+const isGap = (c: AttendanceSummary["clients"][number]) => !c.confirmed || c.deployed > c.marked;
 /** The local calendar day of a timestamp. */
 const dayOf = (ts: string) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 type StaffRow = { id: string; full_name: string; employee_code: string | null };
@@ -148,11 +162,21 @@ export default function FieldOps() {
   // Backend RLS (0313) enforces it on daily_client_reports; folding it into
   // `locked` makes the textarea read-only AND blocks saveOne for view-only users.
   const canWriteReports = hasPermission(profile, "roster.edit");
+  // HR sees the Attendance Report only (Shayan, 28 Oct 2026): the Daily
+  // Reports tab needs a key HR does not hold. Attendance explanations are
+  // attendance.edit, the key a write to attendance needs (0571).
+  const canSeeDaily = hasAnyPermission(profile, ["roster.view", "roster.edit", "incidents.view"]);
+  const canExplainAttendance = hasPermission(profile, "attendance.edit");
   const companyId = company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = usePageState<Tab>("FieldOps.tab", "reports");
+  const [tabPicked, setTab] = usePageState<Tab>("FieldOps.tab", "reports");
+  const tab: Tab = canSeeDaily ? tabPicked : "attendance";
+  /** 0571: HR's explanation per gap client, for the attendance date. */
+  const [gapNotes, setGapNotes] = useState<Map<string, string>>(new Map());
+  /** What stopped an export: unreported tasks and unexplained attendance gaps. */
+  const [blocked, setBlocked] = useState<{ tasks: TaskRow[]; gaps: AttendanceSummary["clients"] } | null>(null);
 
   const [date, setDate] = usePageState("FieldOps.date", todayIso());
   // Page-level region filter, seeded from the app-wide selector. A user pinned
@@ -286,8 +310,17 @@ export default function FieldOps() {
     setAttLoading(true);
     // Unfiltered here; the region cut is applied below so switching regions
     // doesn't re-query the day.
-    loadAttendanceSummary(companyId, attendanceDate)
-      .then((s) => { if (!cancelled) { setAttendance(s); setAttLoading(false); } })
+    Promise.all([
+      loadAttendanceSummary(companyId, attendanceDate),
+      supabase.from("attendance_gap_notes").select("client_id, note").eq("company_id", companyId).eq("attendance_date", attendanceDate),
+    ])
+      .then(([s, notes]) => {
+        if (cancelled) return;
+        setAttendance(s);
+        setGapNotes(new Map(((notes.data ?? []) as { client_id: string; note: string }[]).map((n) => [n.client_id, n.note])));
+        if (notes.error) setErr(notes.error.message);
+        setAttLoading(false);
+      })
       .catch((e) => { if (!cancelled) { setErr(e.message ?? String(e)); setAttLoading(false); } });
     return () => { cancelled = true; };
   }, [companyId, attendanceDate]);
@@ -345,14 +378,32 @@ export default function FieldOps() {
     if (!canWriteReports) return;
     setErr(null);
     const stamp = patch.status === undefined ? undefined : patch.status === "completed" ? new Date().toISOString() : null;
-    const apply = (list: TaskRow[]) => list.map((t) => (t.id === id ? { ...t, ...patch, ...(stamp !== undefined ? { done_at: stamp } : {}) } : t));
+    const apply = (list: TaskRow[]) => list.map((t) => (t.id === id ? { ...t, ...patch, ...(stamp !== undefined ? { done_at: stamp } : {}), ...(patch.status !== undefined ? { status_reported_on: date } : {}) } : t));
     const beforeT = tasks, beforeP = prevTasks;
     setTasks(apply); setPrevTasks(apply);
     const { data: userData } = await supabase.auth.getUser();
     const row: Record<string, unknown> = { ...patch, updated_by: userData.user?.id ?? null };
+    if (patch.status !== undefined) row.status_reported_on = date;
     if (stamp !== undefined) { row.done_at = stamp; row.done_by = stamp ? userData.user?.id ?? null : null; }
     const { error } = await supabase.from("daily_report_tasks").update(row).eq("id", id);
     if (error) { setErr(error.message); setTasks(beforeT); setPrevTasks(beforeP); }
+  };
+
+  /** 0571: HR's explanation for one gap client — saved on blur; empty deletes it. */
+  const saveGapNote = async (clientId: string, text: string) => {
+    if (!canExplainAttendance || !companyId) return;
+    const v = text.trim();
+    if (v === (gapNotes.get(clientId) ?? "")) return;
+    setErr(null);
+    const before = gapNotes;
+    setGapNotes((m) => { const n = new Map(m); if (v) n.set(clientId, v); else n.delete(clientId); return n; });
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = v
+      ? await supabase.from("attendance_gap_notes").upsert(
+          { company_id: companyId, attendance_date: attendanceDate, client_id: clientId, note: v, updated_by: userData.user?.id ?? null },
+          { onConflict: "company_id,attendance_date,client_id" })
+      : await supabase.from("attendance_gap_notes").delete().eq("company_id", companyId).eq("attendance_date", attendanceDate).eq("client_id", clientId);
+    if (error) { setErr(error.message); setGapNotes(before); }
   };
 
   const toggleNoReport = async (clientId: string, flag: boolean) => {
@@ -528,6 +579,13 @@ export default function FieldOps() {
    * complete one region everything then next … dont merge it all").
    */
   const exportPdf = async (which: "daily" | "attendance" | "both") => {
+    // 0571: refuse while a previous task is unreported today, or a gap in the
+    // attendance has no explanation from HR — and say which.
+    const unreported = which !== "attendance" && date >= TASKS_REPORTED_FROM
+      ? prevVisible.filter((t) => t.status_reported_on !== date) : [];
+    const unexplained = which !== "daily" && attendanceDate >= GAPS_EXPLAINED_FROM
+      ? (visibleAttendance?.clients ?? []).filter((c) => isGap(c) && !(gapNotes.get(c.client_id) ?? "").trim()) : [];
+    if (unreported.length || unexplained.length) { setBlocked({ tasks: unreported, gaps: unexplained }); return; }
     const prevDay = shiftDay(date, -1);
     // WHO ENTERED IT (28 Oct 2026). The PDF names the people who wrote the
     // notes, updates and tasks and who marked the attendance — read off the
@@ -596,9 +654,10 @@ export default function FieldOps() {
         previousTasks: prev.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: t.report_date < CARRY_FROM && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note, setOn: t.report_date === prevDay ? null : t.report_date })),
         previousDate: prevDay,
         attendance: att,
+        attendanceNotes: Object.fromEntries(gapNotes),
         preparedBy,
       } : undefined;
-      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames, markedBy } : undefined;
+      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames, markedBy, explanations: Object.fromEntries(gapNotes) } : undefined;
       return { daily, attendance: attendancePart };
     };
     let parts;
@@ -640,10 +699,10 @@ export default function FieldOps() {
     // fixed ancestor to pin against and it just scrolled away with the content.
     <>
       <Header
-        title="Daily Reports"
-        subtitle="A written note per active client, day by day, exported as a branded PDF"
+        title={canSeeDaily ? "Daily Reports" : "Attendance Report"}
+        subtitle={canSeeDaily ? "A written note per active client, day by day, exported as a branded PDF" : "The day's attendance by client, with your explanation for anything not marked or confirmed"}
       >
-        {visibleClients.length > 0 && (() => {
+        {canSeeDaily && visibleClients.length > 0 && (() => {
           // The day's notes as progress (2026-10-20): written, marked "nothing
           // to report", or still blank — so the end-of-day PDF is never sent
           // with gaps nobody noticed.
@@ -726,9 +785,14 @@ export default function FieldOps() {
                   ))}
               </ThemedSelect>
             </div>
+            {/* The daily tab exports the daily report alone or with the
+                attendance; the attendance tab exports the attendance only. */}
             <div className="inline-flex items-center rounded-lg border border-border overflow-hidden text-sm">
               <span className="px-2.5 text-xs text-muted-foreground">PDF</span>
-              {([["daily", "Daily report"], ["attendance", "Attendance"], ["both", "Both"]] as const).map(([k, label]) => (
+              {(tab === "reports"
+                ? ([["daily", "Daily report"], ["both", "Daily + attendance"]] as const)
+                : ([["attendance", "Attendance report"]] as const)
+              ).map(([k, label]) => (
                 <button key={k} type="button"
                   disabled={busy || (k !== "attendance" && visibleClients.length === 0) || (k !== "daily" && !visibleAttendance?.clients.length)}
                   onClick={() => void exportPdf(k)}
@@ -741,7 +805,7 @@ export default function FieldOps() {
 
           <Tabs
             items={[
-              { value: "reports", label: "Daily Reports", count: visibleClients.length },
+              ...(canSeeDaily ? [{ value: "reports", label: "Daily Reports", count: visibleClients.length }] : []),
               { value: "attendance", label: "Attendance Report", count: visibleAttendance?.clients.length ?? 0 },
             ]}
             value={tab}
@@ -761,6 +825,9 @@ export default function FieldOps() {
                       Previous tasks — set on {formatDate(shiftDay(date, -1))}{prevVisible.some((t) => t.report_date !== shiftDay(date, -1)) ? ", and earlier ones still open" : ""}
                     </span>
                     <span className="text-[11px] text-muted-foreground">
+                      {date >= TASKS_REPORTED_FROM && prevVisible.some((t) => t.status_reported_on !== date) && (
+                        <span className="text-down font-semibold mr-2">{prevVisible.filter((t) => t.status_reported_on !== date).length} not reported yet ·</span>
+                      )}
                       {prevVisible.filter((t) => t.status === "completed").length} completed · {prevVisible.filter((t) => t.status === "in_progress").length} in progress · {prevVisible.filter((t) => t.status === "pending").length} pending
                     </span>
                   </div>
@@ -776,9 +843,12 @@ export default function FieldOps() {
                             <span className="ml-2 text-[11px] font-medium text-heed whitespace-nowrap">carried from {formatDate(t.report_date)}</span>
                           )}
                         </span>
-                        <ThemedSelect value={t.status ?? "pending"} disabled={!canWriteReports} aria-label={`Status: ${t.title}`}
-                          onChange={(e) => void setTaskProgress(t.id, { status: e.target.value as TaskStatus })}
-                          className={`w-full ${t.status === "completed" ? "text-up" : t.status === "in_progress" ? "text-heed" : ""}`}>
+                        {/* 0571: until reported today the select reads "Report status"
+                            — choosing any status, even the same one, reports it. */}
+                        <ThemedSelect value={date < TASKS_REPORTED_FROM || t.status_reported_on === date ? t.status ?? "pending" : ""} disabled={!canWriteReports} aria-label={`Status: ${t.title}`}
+                          onChange={(e) => { if (e.target.value) void setTaskProgress(t.id, { status: e.target.value as TaskStatus }); }}
+                          className={`w-full ${date >= TASKS_REPORTED_FROM && t.status_reported_on !== date ? "text-down font-semibold" : t.status === "completed" ? "text-up" : t.status === "in_progress" ? "text-heed" : ""}`}>
+                          <option value="">Report status</option>
                           <option value="pending">Pending</option>
                           <option value="in_progress">In progress</option>
                           <option value="completed">Completed</option>
@@ -887,8 +957,39 @@ export default function FieldOps() {
               date={attendanceDate}
               regionLabel={regionLabel}
               regionNames={Object.fromEntries(regions.map((r) => [r.id, r.name]))}
+              notes={gapNotes}
+              canExplain={canExplainAttendance}
+              onExplain={(cid, v) => void saveGapNote(cid, v)}
             />
           )}
+
+          <Modal isOpen={!!blocked} onClose={() => setBlocked(null)} title="Not ready to export" size="md"
+            footer={<Button onClick={() => setBlocked(null)}>OK</Button>}>
+            <div className="space-y-4 text-sm">
+              {!!blocked?.tasks.length && (
+                <div>
+                  <p className="font-semibold text-down mb-1">
+                    {blocked.tasks.length} previous task{blocked.tasks.length === 1 ? " has" : "s have"} not been reported today
+                  </p>
+                  <p className="text-muted-foreground mb-1.5">Set each one's status — Pending, In progress or Completed — under "Previous tasks" on the Daily Reports tab.</p>
+                  <ul className="list-disc ml-5 space-y-0.5">
+                    {blocked.tasks.map((t) => <li key={t.id}>{t.title}{t.report_date !== shiftDay(date, -1) ? <span className="text-muted-foreground"> (set {formatDate(t.report_date)})</span> : null}</li>)}
+                  </ul>
+                </div>
+              )}
+              {!!blocked?.gaps.length && (
+                <div>
+                  <p className="font-semibold text-down mb-1">
+                    {blocked.gaps.length} client{blocked.gaps.length === 1 ? "'s" : "s'"} attendance for {formatDate(attendanceDate)} not explained
+                  </p>
+                  <p className="text-muted-foreground mb-1.5">Not confirmed or guards left unmarked — HR writes why, on the Attendance Report tab.</p>
+                  <ul className="list-disc ml-5 space-y-0.5">
+                    {blocked.gaps.map((c) => <li key={c.client_id}>{c.client_name}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </Modal>
         </div>
       </div>
     </>
@@ -1181,13 +1282,17 @@ function OtherUpdates({
  * confirmed. It reads the day BEFORE the report's date.
  */
 function AttendanceReport({
-  summary, loading, date, regionLabel, regionNames,
+  summary, loading, date, regionLabel, regionNames, notes, canExplain, onExplain,
 }: {
   summary: AttendanceSummary | null;
   loading: boolean;
   date: string;
   regionLabel: string | null;
   regionNames: Record<string, string>;
+  /** 0571: HR's explanation per gap client. */
+  notes: Map<string, string>;
+  canExplain: boolean;
+  onExplain: (clientId: string, text: string) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   if (loading) {
@@ -1309,14 +1414,39 @@ function AttendanceReport({
         </table>
       </div>
 
-      {summary.unconfirmed.length > 0 && (
-        <div className="rounded-xl border border-down/40 bg-down/5 px-4 py-3">
-          <div className="text-sm font-semibold text-down mb-1">Attendance not confirmed · {summary.unconfirmed.length}</div>
-          <ul className="text-sm text-foreground list-decimal ml-5 space-y-0.5">
-            {summary.unconfirmed.map((c) => <li key={c.client_id}>{describeUnconfirmed(c)}</li>)}
-          </ul>
-        </div>
-      )}
+      {/* 0571: HR explains every gap — not confirmed, or guards left
+          unmarked; a fully marked, confirmed client needs nothing. Printed
+          beside the gap in the attendance report. */}
+      {(() => {
+        const gaps = summary.clients.filter(isGap).sort((a, b) => a.client_name.localeCompare(b.client_name));
+        if (!gaps.length) return null;
+        const missing = gaps.filter((c) => !(notes.get(c.client_id) ?? "").trim()).length;
+        return (
+          <div className="rounded-xl border border-down/40 bg-down/5 px-4 py-3 space-y-2.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="text-sm font-semibold text-down">Not confirmed or not fully marked · {gaps.length}</div>
+              <div className={`text-xs ${missing ? "text-down font-semibold" : "text-up"}`}>
+                {missing ? `${missing} still need${missing === 1 ? "s" : ""} HR's explanation before export` : "Every gap explained"}
+              </div>
+            </div>
+            <ul className="space-y-2.5">
+              {gaps.map((c) => {
+                const unmarked = Math.max(0, c.deployed - c.marked);
+                const what = [!c.confirmed ? (c.partial ? describeUnconfirmed(c) : `${c.client_name} — not confirmed`) : c.client_name, unmarked ? `${unmarked} guard${unmarked === 1 ? "" : "s"} unmarked` : ""].filter(Boolean).join(" — ");
+                return (
+                  <li key={c.client_id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-1.5 md:gap-3 md:items-start">
+                    <span className="text-sm text-foreground pt-1.5">{what}</span>
+                    <textarea key={`${date}:${c.client_id}`} defaultValue={notes.get(c.client_id) ?? ""} disabled={!canExplain} rows={1}
+                      placeholder={canExplain ? "Why? (HR's explanation — required)" : "Awaiting HR's explanation"}
+                      onBlur={(e) => onExplain(c.client_id, e.target.value)}
+                      className={`w-full px-3 py-1.5 border rounded-md text-sm bg-card resize-y ${(notes.get(c.client_id) ?? "").trim() ? "border-border" : "border-down/60"}`} />
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })()}
     </div>
   );
 }
