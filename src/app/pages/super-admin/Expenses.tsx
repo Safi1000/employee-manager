@@ -654,7 +654,10 @@ export default function Expenses() {
       // gets the picker list without balances (0530).
       loadBankOptions<BankAccount>(treasuryCompanyId, canViewBanking).then((data) => ({ data })),
       // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
-      supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number }>(),
+      // Banking access only: 0585 gates cash_in_hand to the screens that show it.
+      canViewBanking
+        ? supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number }>()
+        : Promise.resolve({ data: null as { cash_balance: number } | null, error: null }),
       supabase.from("employees").select("*").order("employee_code"),
       supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
