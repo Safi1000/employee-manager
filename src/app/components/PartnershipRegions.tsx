@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "./Button";
 import Modal from "./Modal";
+import ClientClearances from "./ClientClearances";
 import { supabase, friendlyDbError } from "../lib/supabase";
 
 /**
@@ -179,6 +180,12 @@ export default function PartnershipRegions({
           </tbody>
         </table>
       </div>
+
+      {/* 0576/0580: a region outside the partnership (Lahore) is settled client by client. */}
+      {rows.filter((r) => outside.has(r.branchId)).map((r) => (
+        <ClientClearances key={r.branchId} companyId={companyId} branchId={r.branchId} regionName={r.name}
+          canEdit={canDeclare} onChanged={() => { void load(); onDeclared(); }} />
+      ))}
 
       <Modal isOpen={!!editing} onClose={() => setEditing(null)} title={editing ? `${editing.name}: declared profit` : ""} error={err} onDismissError={() => setErr(null)}
         footer={<>
