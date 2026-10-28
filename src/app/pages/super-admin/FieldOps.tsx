@@ -148,17 +148,6 @@ export default function FieldOps() {
   // Backend RLS (0313) enforces it on daily_client_reports; folding it into
   // `locked` makes the textarea read-only AND blocks saveOne for view-only users.
   const canWriteReports = hasPermission(profile, "roster.edit");
-  // "Prepared by" on the PDF, typed here (28 Oct 2026: the report goes to the
-  // ops WhatsApp group, never signed on paper). Remembered in this browser;
-  // starts as the signed-in user's name.
-  const preparedKey = `FieldOps.preparedBy:${profile?.id ?? ""}`;
-  const [preparedBy, setPreparedBy] = useState("");
-  useEffect(() => {
-    let saved: string | null = null;
-    try { saved = localStorage.getItem(preparedKey); } catch { /* no storage */ }
-    setPreparedBy(saved ?? profile?.full_name ?? "");
-  }, [preparedKey, profile?.full_name]);
-  const rememberPreparedBy = (v: string) => { try { localStorage.setItem(preparedKey, v); } catch { /* no storage */ } };
   const companyId = company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -540,6 +529,34 @@ export default function FieldOps() {
    */
   const exportPdf = async (which: "daily" | "attendance" | "both") => {
     const prevDay = shiftDay(date, -1);
+    // WHO ENTERED IT (28 Oct 2026). The PDF names the people who wrote the
+    // notes, updates and tasks and who marked the attendance — read off the
+    // records — and the person exporting only as "Extracted by".
+    setBusy(true);
+    const [noteBy, dayBy, taskBy] = await Promise.all([
+      supabase.from("daily_client_reports").select("client_id, updated_by, details, no_report").eq("company_id", companyId).eq("report_date", date),
+      supabase.from("daily_report_day_notes").select("branch_id, updated_by, other_updates").eq("company_id", companyId).eq("report_date", date),
+      supabase.from("daily_report_tasks").select("branch_id, updated_by").eq("company_id", companyId).eq("report_date", date),
+    ]);
+    const authorIds = new Set<string>();
+    const noteRows = ((noteBy.data ?? []) as { client_id: string; updated_by: string | null; details: string | null; no_report: boolean }[])
+      .filter((r) => r.updated_by && (r.no_report || (r.details ?? "").trim()));
+    const dayRows = ((dayBy.data ?? []) as { branch_id: string | null; updated_by: string | null; other_updates: string | null }[])
+      .filter((r) => r.updated_by && (r.other_updates ?? "").trim());
+    const taskRows = ((taskBy.data ?? []) as { branch_id: string | null; updated_by: string | null }[]).filter((r) => r.updated_by);
+    for (const r of [...noteRows, ...dayRows, ...taskRows]) authorIds.add(r.updated_by!);
+    for (const c of attendance?.clients ?? []) for (const u of c.markedBy ?? []) authorIds.add(u);
+    const { data: who } = authorIds.size
+      ? await supabase.from("profiles").select("id, full_name").in("id", [...authorIds])
+      : { data: [] as { id: string; full_name: string | null }[] };
+    const nameOf = new Map(((who ?? []) as { id: string; full_name: string | null }[]).map((x) => [x.id, x.full_name ?? "Unknown user"]));
+    // Most entries first, so the main author leads.
+    const namesFrom = (ids: string[]) => {
+      const n = new Map<string, number>();
+      for (const id of ids) { const nm = nameOf.get(id) ?? "Unknown user"; n.set(nm, (n.get(nm) ?? 0) + 1); }
+      return [...n.entries()].sort((x, y) => y[1] - x[1]).map(([nm]) => nm);
+    };
+    const clientBranch = new Map(clients.map((c) => [c.id, c.branch_id]));
     const regionNames = Object.fromEntries(regions.map((r) => [r.id, r.name]));
     const partFor = (regionId: string | null, label: string | null, orphans = false) => {
       const inRegion = (b: string | null) => (orphans ? !b : !regionId || b === regionId);
@@ -550,6 +567,12 @@ export default function FieldOps() {
       // own part under "All regions".
       const prev = prevTasks.filter((t) => (regionId ? t.branch_id === regionId || t.branch_id === null : inRegion(t.branch_id)));
       const att = cutAttendance(regionId, orphans);
+      const preparedBy = namesFrom([
+        ...noteRows.filter((r) => inRegion(clientBranch.get(r.client_id) ?? null)).map((r) => r.updated_by!),
+        ...dayRows.filter((r) => inRegion(r.branch_id)).map((r) => r.updated_by!),
+        ...taskRows.filter((r) => inRegion(r.branch_id)).map((r) => r.updated_by!),
+      ]);
+      const markedBy = namesFrom((att?.clients ?? []).flatMap((c) => c.markedBy ?? []));
       const daily = which !== "attendance" ? {
         reportDate: date,
         regionLabel: label,
@@ -572,8 +595,9 @@ export default function FieldOps() {
         previousTasks: prev.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: t.report_date < CARRY_FROM && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note, setOn: t.report_date === prevDay ? null : t.report_date })),
         previousDate: prevDay,
         attendance: att,
+        preparedBy,
       } : undefined;
-      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames } : undefined;
+      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames, markedBy } : undefined;
       return { daily, attendance: attendancePart };
     };
     let parts;
@@ -589,9 +613,8 @@ export default function FieldOps() {
       if ((orphan.daily && (orphan.daily.clients.length || orphan.daily.previousTasks.length || orphan.daily.regions.length)) || orphan.attendance) parts.push(orphan);
     }
     const daily = parts.some((pt) => pt.daily);
-    generateOperationsPdf(company, parts, regionLabel, preparedBy);
-    if (!daily) return;
-    setBusy(true);
+    generateOperationsPdf(company, parts, regionLabel, profile?.full_name ?? "");
+    if (!daily) { setBusy(false); return; }
     const { data: userData } = await supabase.auth.getUser();
     // The export record keeps its original column names; here total_posts counts
     // the clients listed and `reported` the ones with a note written.
@@ -702,17 +725,11 @@ export default function FieldOps() {
                   ))}
               </ThemedSelect>
             </div>
-            <label className="inline-flex items-center gap-2 text-sm">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">Prepared by</span>
-              <input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} onBlur={(e) => rememberPreparedBy(e.target.value.trim())}
-                placeholder="Your name" aria-label="Prepared by"
-                className="w-44 px-3 py-1.5 border border-border rounded-md text-sm bg-card" />
-            </label>
             <div className="inline-flex items-center rounded-lg border border-border overflow-hidden text-sm">
               <span className="px-2.5 text-xs text-muted-foreground">PDF</span>
               {([["daily", "Daily report"], ["attendance", "Attendance"], ["both", "Both"]] as const).map(([k, label]) => (
                 <button key={k} type="button"
-                  disabled={busy || !preparedBy.trim() || (k !== "attendance" && visibleClients.length === 0) || (k !== "daily" && !visibleAttendance?.clients.length)}
+                  disabled={busy || (k !== "attendance" && visibleClients.length === 0) || (k !== "daily" && !visibleAttendance?.clients.length)}
                   onClick={() => void exportPdf(k)}
                   className="px-3 py-1.5 border-l border-border hover:bg-accent disabled:opacity-40 disabled:pointer-events-none">
                   {label}

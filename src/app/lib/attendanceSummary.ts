@@ -46,6 +46,8 @@ export type ClientAttendanceSummary = {
   /** 2026-10-28: who was absent / on leave, for the attendance report. */
   absentees: { name: string; code: string | null }[];
   onLeave: { name: string; code: string | null }[];
+  /** 2026-10-28: the users who marked this client's attendance (user ids) — the report names them, not whoever extracts it. */
+  markedBy: string[];
   /** Every site with guards on the date is confirmed. */
   confirmed: boolean;
   /** Some sites confirmed, others not — `sites` says which. */
@@ -93,7 +95,7 @@ export async function loadAttendanceSummary(
         .or(`end_date.is.null,end_date.gte.${date}`),
       supabase
         .from("attendance_records")
-        .select("employee_id, status")
+        .select("employee_id, status, marked_by_user_id")
         .eq("attendance_date", date),
       supabase
         .from("attendance_confirmations")
@@ -135,7 +137,9 @@ export async function loadAttendanceSummary(
   // One status per guard per day, the exception winning where a day carries both
   // (the board's own rule — a double-marked day is an exception day).
   const statusByGuard = new Map<string, string>();
+  const markerOf = new Map<string, string>();
   for (const a of (att ?? []) as any[]) {
+    if (a.marked_by_user_id) markerOf.set(a.employee_id, a.marked_by_user_id);
     const s = String(a.status ?? "").toLowerCase();
     const prev = statusByGuard.get(a.employee_id);
     if (!prev || (EXCEPTION.has(s) && !EXCEPTION.has(prev))) statusByGuard.set(a.employee_id, s);
@@ -170,7 +174,7 @@ export async function loadAttendanceSummary(
       client_id: cid,
       client_name: c?.name ?? "—",
       branch_id: c?.branch_id ?? null,
-      deployed: 0, present: 0, absent: 0, leave: 0, other: 0, marked: 0, absentees: [], onLeave: [],
+      deployed: 0, present: 0, absent: 0, leave: 0, other: 0, marked: 0, absentees: [], onLeave: [], markedBy: [],
       confirmed: false, partial: false, confirmed_by: null, confirmed_at: null, sites: [],
     };
   };
@@ -195,6 +199,8 @@ export async function loadAttendanceSummary(
     site.deployed += 1;
     const st = statusByGuard.get(d.guard_id);
     if (st) row.marked += 1;
+    const by = markerOf.get(d.guard_id);
+    if (by && !row.markedBy.includes(by)) row.markedBy.push(by);
     // The code the client knows the guard by (NOVA-080), not the GGS code —
     // the client-prefixed display code every other screen shows.
     const e = d.employees ?? {};

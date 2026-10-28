@@ -50,6 +50,8 @@ export type DailyBrief = {
   /** 0569: every task set the previous day, with its progress. */
   previousTasks?: { title: string; assignee: string | null; status: string; note: string | null; /** Set before yesterday and carried forward; null for yesterday's own. */ setOn?: string | null }[];
   previousDate?: string;
+  /** 2026-10-28: the people who wrote this day's notes, updates and tasks. */
+  preparedBy?: string[];
   /** The previous day's attendance — for "Matters requiring attention". */
   attendance: AttendanceSummary | null;
 };
@@ -60,7 +62,7 @@ const longDay = (iso: string) =>
 
 class Page {
   y = 0;
-  preparedBy = "";
+  extractedBy = "";
   constructor(public doc: jsPDF, public b: PdfBranding) {}
   font(style: "normal" | "bold" | "italic" | "bolditalic", size: number) { this.doc.setFont("times", style); this.doc.setFontSize(size); }
   color(c: RGB) { this.doc.setTextColor(c[0], c[1], c[2]); }
@@ -301,26 +303,32 @@ function drawDaily(p: Page, d: DailyBrief) {
     lines.forEach((ln) => { doc.text(ln, M + 14, p.y); p.y += LH; });
   }
 
-  signOff(p);
+  signOff(p, "Prepared by", d.preparedBy ?? []);
 }
 
 /**
- * The sign-off. The report is extracted and sent to the ops WhatsApp group,
- * never printed and signed (Shayan, 28 Oct 2026) — so no blank signature
- * lines: the name typed on the Daily Reports screen, and when it was extracted.
+ * The sign-off (28 Oct 2026). The report is extracted and sent to the ops
+ * WhatsApp group, never printed and signed — so no blank signature lines.
+ * It names the people who ENTERED what it reports (read off the records'
+ * updated_by / marked_by), and separately who extracted it: extracting is not
+ * preparing. Shayan: "i did nothing i just extracted".
  */
-function signOff(p: Page) {
+function signOff(p: Page, label: string, names: string[]) {
   const doc = p.doc;
-  p.need(22);
+  p.need(24);
   p.y += 10;
   doc.setDrawColor(...RULE); doc.line(M, p.y - 4.5, M + 60, p.y - 4.5);
-  p.font("normal", 10.5); p.color(INK);
-  doc.text("Prepared by:", M, p.y);
-  p.font("bold", 10.5);
-  doc.text(p.preparedBy || "—", M + 23, p.y);
-  p.y += LH;
+  const row = (k: string, v: string, bold: boolean) => {
+    p.font("normal", 10.5); p.color(INK); doc.text(k, M, p.y);
+    p.font(bold ? "bold" : "normal", 10.5);
+    const lines = p.wrap(v, W - 44);
+    lines.forEach((ln, i) => doc.text(ln, M + 44, p.y + i * LH));
+    p.y += lines.length * LH;
+  };
+  row(`${label}:`, names.length ? names.join(", ") : "Not recorded", true);
+  if (p.extractedBy) row("Extracted by:", p.extractedBy, false);
   p.font("italic", 9); p.color(SOFT);
-  doc.text(`Extracted from Bastion on ${new Date().toLocaleString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, M, p.y);
+  doc.text(`Extracted from Bastion on ${new Date().toLocaleString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, M, p.y + 0.5);
   p.y += LH;
 }
 
@@ -333,7 +341,7 @@ function signOff(p: Page) {
  * "Unmarked" = deployed guards with no mark at all — counted as present by the
  * figures, so shown so nobody mistakes a blank register for a full one.
  */
-function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>) {
+function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>, markedBy: string[]) {
   const doc = p.doc;
   const t = s.totals;
   const unmarked = (c: AttendanceSummary["clients"][number]) => Math.max(0, c.deployed - c.marked);
@@ -459,7 +467,7 @@ function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Recor
     p.y += 0.8;
   });
 
-  signOff(p);
+  signOff(p, "Attendance marked by", markedBy);
 }
 
 function footer(doc: jsPDF, b: PdfBranding, ref: string) {
@@ -475,7 +483,7 @@ function footer(doc: jsPDF, b: PdfBranding, ref: string) {
 
 const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/")}`;
 
-type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string> } };
+type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string>; markedBy?: string[] } };
 
 /**
  * One PDF of one or more parts — a part is one region's daily report and/or
@@ -483,11 +491,11 @@ type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; reg
  * regions" the caller passes one part per region, so a region is printed whole
  * before the next begins. The file name says which reports it holds.
  */
-export function generateOperationsPdf(company: Company | null | undefined, parts: Part[], fileRegion: string | null = null, preparedBy = "") {
+export function generateOperationsPdf(company: Company | null | undefined, parts: Part[], fileRegion: string | null = null, extractedBy = "") {
   const b = brandingFromCompany(company);
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const p = new Page(doc, b);
-  p.preparedBy = preparedBy.trim();
+  p.extractedBy = extractedBy.trim();
   let first = true;
   const day = parts.map((pt) => pt.daily?.reportDate ?? pt.attendance?.summary.date).find(Boolean) ?? "";
   for (const pt of parts) {
@@ -502,7 +510,7 @@ export function generateOperationsPdf(company: Company | null | undefined, parts
       if (!first) doc.addPage();
       letterhead(p, "Attendance Report", a.summary.date, a.regionLabel, refOf("ATR", a.summary.date));
       first = false;
-      drawAttendanceSection(p, a.summary, a.regionNames ?? {});
+      drawAttendanceSection(p, a.summary, a.regionNames ?? {}, a.markedBy ?? []);
     }
   }
   const anyDaily = parts.some((pt) => pt.daily), anyAtt = parts.some((pt) => pt.attendance);
