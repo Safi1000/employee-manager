@@ -272,10 +272,17 @@ export default function MyProfile() {
   // imply they are a custodian who has run out.
   useEffect(() => {
     const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-    // The figure is folded from tables 0586 reads only with banking access;
-    // without it the sum would come out smaller and look right, so no card.
-    if (!employeeId || !cid || !canReadBankBalances(profile)) return;
+    if (!employeeId || !cid) return;
     let cancelled = false;
+    // Without banking access the browser cannot fold the figure (0586 hides its
+    // sources), so the custodian's own cash comes from my_cash_held() (0589) —
+    // his figure and nobody else's. Null = not a custodian: no card.
+    if (!canReadBankBalances(profile)) {
+      void supabase.rpc("my_cash_held").then(({ data, error }) => {
+        if (!cancelled) setHeldCash(error || data == null ? null : Number(data));
+      });
+      return () => { cancelled = true; };
+    }
     loadCustodianOptions(cid, true)
       .then((opts) => {
         if (cancelled) return;

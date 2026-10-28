@@ -76,7 +76,7 @@ import {
   validateWalletAccount,
   validateBankAccountLength,
 } from "../../lib/validation";
-import { useAuth, hasPermission } from "../../lib/auth";
+import { useAuth, hasPermission, hasAnyPermission } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
 
 // Rows painted per page of the roster list. See renderEmployeeList.
@@ -3227,10 +3227,14 @@ export default function EmployeeManagement() {
                   <h4 className="text-sm text-foreground mb-3">Payroll disbursements</h4>
                   <PayrollDisbursementHistory employeeId={selectedEmployee.id} />
                 </div>
-                <div className="pt-4 border-t border-border">
-                  <h4 className="text-sm text-foreground mb-3">Payslip corrections</h4>
-                  <PayrollAdjustmentHistory employeeId={selectedEmployee.id} />
-                </div>
+                {/* 0588: payroll_adjustments is read with a payroll key; without one the
+                    list would come back empty and read as "no corrections". */}
+                {hasAnyPermission(profile, ["payroll.view", "payroll.edit", "payroll.approve", "payroll.adjust", "reports.view", "accountant.view"]) && (
+                  <div className="pt-4 border-t border-border">
+                    <h4 className="text-sm text-foreground mb-3">Payslip corrections</h4>
+                    <PayrollAdjustmentHistory employeeId={selectedEmployee.id} />
+                  </div>
+                )}
               </div>
             )}
           </div>
