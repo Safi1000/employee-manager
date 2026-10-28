@@ -46,9 +46,9 @@ export type DailyBrief = {
   clients: BriefClient[];
   regions: BriefRegion[];
   /** Tasks set for the report day still pending. */
-  openFromYesterday: BriefTask[];
+  openFromYesterday: (BriefTask & { setOn?: string | null })[];
   /** 0569: every task set the previous day, with its progress. */
-  previousTasks?: { title: string; assignee: string | null; status: string; note: string | null }[];
+  previousTasks?: { title: string; assignee: string | null; status: string; note: string | null; /** Set before yesterday and carried forward; null for yesterday's own. */ setOn?: string | null }[];
   previousDate?: string;
   /** The previous day's attendance — for "Matters requiring attention". */
   attendance: AttendanceSummary | null;
@@ -60,6 +60,7 @@ const longDay = (iso: string) =>
 
 class Page {
   y = 0;
+  preparedBy = "";
   constructor(public doc: jsPDF, public b: PdfBranding) {}
   font(style: "normal" | "bold" | "italic" | "bolditalic", size: number) { this.doc.setFont("times", style); this.doc.setFontSize(size); }
   color(c: RGB) { this.doc.setTextColor(c[0], c[1], c[2]); }
@@ -157,7 +158,7 @@ function drawDaily(p: Page, d: DailyBrief) {
   if (att && att.unconfirmed.length) {
     items.push(`Attendance for ${formatDate(att.date)} not confirmed — ${att.unconfirmed.map((c) => (c.partial ? describeUnconfirmed(c) : c.client_name)).join(", ")}.`);
   }
-  for (const t of d.openFromYesterday) items.push(`Still pending from yesterday — ${t.title}${t.assignee ? ` (${t.assignee})` : ""}.`);
+  for (const t of d.openFromYesterday) items.push(`Still pending${t.setOn ? ` since ${formatDate(t.setOn)}` : " from yesterday"} — ${t.title}${t.assignee ? ` (${t.assignee})` : ""}.`);
   if (items.length) {
     p.font("normal", 10.5);
     const laid = items.map((t) => p.wrap(t, W - 12));
@@ -194,7 +195,8 @@ function drawDaily(p: Page, d: DailyBrief) {
   const prev = d.previousTasks ?? [];
   if (prev.length) {
     sec += 1;
-    heading(p, `${sec}.  Previous day's tasks${d.previousDate ? ` (${formatDate(d.previousDate)})` : ""}`);
+    const carried = prev.some((t) => t.setOn);
+    heading(p, `${sec}.  Previous tasks${d.previousDate ? ` (set ${formatDate(d.previousDate)}${carried ? ", and earlier ones still open" : ""})` : ""}`);
     const C1 = 12, C3 = 40, C4 = 28, C2 = W - C1 - C3 - C4;
     const head = () => {
       p.need(8);
@@ -207,7 +209,8 @@ function drawDaily(p: Page, d: DailyBrief) {
     prev.forEach((t, i) => {
       p.font("normal", 10.5);
       const lines = p.wrap(t.title.trim(), C2 - 4);
-      const noteLines = t.note ? p.wrap(t.note, C2 - 4) : [];
+      const remark = [t.setOn ? `Carried from ${formatDate(t.setOn)}.` : "", t.note ?? ""].filter(Boolean).join(" ");
+      const noteLines = remark ? p.wrap(remark, C2 - 4) : [];
       if (p.need((lines.length + noteLines.length) * LH + 2)) head();
       p.color(INK);
       doc.text(`${i + 1}.`, M + 1, p.y);
@@ -301,19 +304,24 @@ function drawDaily(p: Page, d: DailyBrief) {
   signOff(p);
 }
 
-/** Prepared / Reviewed / Approved by. */
+/**
+ * The sign-off. The report is extracted and sent to the ops WhatsApp group,
+ * never printed and signed (Shayan, 28 Oct 2026) — so no blank signature
+ * lines: the name typed on the Daily Reports screen, and when it was extracted.
+ */
 function signOff(p: Page) {
   const doc = p.doc;
-  p.need(34);
-  p.y += 20;
-  const col = W / 3;
-  ["Prepared by", "Reviewed by", "Approved by"].forEach((t, i) => {
-    const x = M + i * col;
-    doc.setDrawColor(...RULE); doc.line(x + 2, p.y, x + col - 6, p.y);
-    p.font("normal", 10); p.color(INK); doc.text(t, x + 2, p.y + 5);
-    p.font("italic", 9); p.color(SOFT); doc.text("Name, designation and date", x + 2, p.y + 9.5);
-  });
-  p.y += 12;
+  p.need(22);
+  p.y += 10;
+  doc.setDrawColor(...RULE); doc.line(M, p.y - 4.5, M + 60, p.y - 4.5);
+  p.font("normal", 10.5); p.color(INK);
+  doc.text("Prepared by:", M, p.y);
+  p.font("bold", 10.5);
+  doc.text(p.preparedBy || "—", M + 23, p.y);
+  p.y += LH;
+  p.font("italic", 9); p.color(SOFT);
+  doc.text(`Extracted from Bastion on ${new Date().toLocaleString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, M, p.y);
+  p.y += LH;
 }
 
 /**
@@ -475,10 +483,11 @@ type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; reg
  * regions" the caller passes one part per region, so a region is printed whole
  * before the next begins. The file name says which reports it holds.
  */
-export function generateOperationsPdf(company: Company | null | undefined, parts: Part[], fileRegion: string | null = null) {
+export function generateOperationsPdf(company: Company | null | undefined, parts: Part[], fileRegion: string | null = null, preparedBy = "") {
   const b = brandingFromCompany(company);
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const p = new Page(doc, b);
+  p.preparedBy = preparedBy.trim();
   let first = true;
   const day = parts.map((pt) => pt.daily?.reportDate ?? pt.attendance?.summary.date).find(Boolean) ?? "";
   for (const pt of parts) {

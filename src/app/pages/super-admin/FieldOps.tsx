@@ -79,13 +79,26 @@ type TaskRow = {
   /** 0569: progress, set the day after. */
   status: TaskStatus;
   status_note: string | null;
+  /** The day the task was set for. */
+  report_date: string;
 };
 type TaskStatus = "pending" | "in_progress" | "completed";
 const STATUS_LABEL: Record<TaskStatus, string> = { pending: "Pending", in_progress: "In progress", completed: "Completed" };
 /** Map key for the region-less rows written before 0517. */
 const BEFORE_SPLIT = "";
 const BEFORE_SPLIT_LABEL = "All regions (before the split)";
-const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at, status, status_note";
+const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_at, status, status_note, report_date";
+/**
+ * CARRY-FORWARD (Shayan, 28 Oct 2026): a task still pending or in progress
+ * follows on to every later day until it is completed, so it is asked about
+ * again instead of being missed. It starts with the tasks set on 27 Oct —
+ * tasks set before that are not carried. A carried task is the same row, so
+ * its status is updated in one place; once completed it shows once more, on
+ * the day it was completed, and then drops off.
+ */
+const CARRY_FROM = "2026-10-27";
+/** The local calendar day of a timestamp. */
+const dayOf = (ts: string) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 type StaffRow = { id: string; full_name: string; employee_code: string | null };
 type Tab = "reports" | "attendance";
 
@@ -135,6 +148,17 @@ export default function FieldOps() {
   // Backend RLS (0313) enforces it on daily_client_reports; folding it into
   // `locked` makes the textarea read-only AND blocks saveOne for view-only users.
   const canWriteReports = hasPermission(profile, "roster.edit");
+  // "Prepared by" on the PDF, typed here (28 Oct 2026: the report goes to the
+  // ops WhatsApp group, never signed on paper). Remembered in this browser;
+  // starts as the signed-in user's name.
+  const preparedKey = `FieldOps.preparedBy:${profile?.id ?? ""}`;
+  const [preparedBy, setPreparedBy] = useState("");
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(preparedKey); } catch { /* no storage */ }
+    setPreparedBy(saved ?? profile?.full_name ?? "");
+  }, [preparedKey, profile?.full_name]);
+  const rememberPreparedBy = (v: string) => { try { localStorage.setItem(preparedKey, v); } catch { /* no storage */ } };
   const companyId = company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -219,7 +243,10 @@ export default function FieldOps() {
         .from("daily_report_tasks")
         .select(TASK_COLS)
         .eq("company_id", companyId)
-        .eq("report_date", shiftDay(date, -1))
+        // Yesterday's tasks, plus earlier ones that may still be open.
+        .gte("report_date", shiftDay(date, -1) < CARRY_FROM ? shiftDay(date, -1) : CARRY_FROM)
+        .lt("report_date", date)
+        .order("report_date")
         .order("sort_order")
         .order("created_at"),
     ]);
@@ -241,7 +268,11 @@ export default function FieldOps() {
     setUrgent(
       new Set(((rep.data ?? []) as any[]).filter((r) => r.urgent).map((r) => r.client_id as string)),
     );
-    setPrevTasks((prevRes.data ?? []) as TaskRow[]);
+    // Every task set yesterday; from earlier days (since CARRY_FROM) the ones
+    // not completed, and those completed on this report's day.
+    const yday = shiftDay(date, -1);
+    setPrevTasks(((prevRes.data ?? []) as TaskRow[]).filter((t) =>
+      t.report_date === yday || t.status !== "completed" || (t.done_at != null && dayOf(t.done_at) >= date)));
     if (dayRes.error) setErr(dayRes.error.message);
     setOtherUpdates(
       new Map(
@@ -535,8 +566,10 @@ export default function FieldOps() {
         })),
         // Only tasks set since status existed (0568/0569, 28 Oct 2026) — an
         // earlier task could not be updated, so "pending" would be false.
-        openFromYesterday: prev.filter((t) => t.status === "pending" && prevDay >= "2026-10-28").map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
-        previousTasks: prev.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: prevDay < "2026-10-28" && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note })),
+        openFromYesterday: prev.filter((t) => t.status === "pending" && t.report_date >= CARRY_FROM).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), setOn: t.report_date === prevDay ? null : t.report_date })),
+        // Tasks set before CARRY_FROM could not be given a status, so an
+        // untouched "pending" there means not recorded, not still pending.
+        previousTasks: prev.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id), status: t.report_date < CARRY_FROM && (t.status ?? "pending") === "pending" ? "Not recorded" : STATUS_LABEL[t.status ?? "pending"], note: t.status_note, setOn: t.report_date === prevDay ? null : t.report_date })),
         previousDate: prevDay,
         attendance: att,
       } : undefined;
@@ -556,7 +589,7 @@ export default function FieldOps() {
       if ((orphan.daily && (orphan.daily.clients.length || orphan.daily.previousTasks.length || orphan.daily.regions.length)) || orphan.attendance) parts.push(orphan);
     }
     const daily = parts.some((pt) => pt.daily);
-    generateOperationsPdf(company, parts, regionLabel);
+    generateOperationsPdf(company, parts, regionLabel, preparedBy);
     if (!daily) return;
     setBusy(true);
     const { data: userData } = await supabase.auth.getUser();
@@ -669,11 +702,17 @@ export default function FieldOps() {
                   ))}
               </ThemedSelect>
             </div>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Prepared by</span>
+              <input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} onBlur={(e) => rememberPreparedBy(e.target.value.trim())}
+                placeholder="Your name" aria-label="Prepared by"
+                className="w-44 px-3 py-1.5 border border-border rounded-md text-sm bg-card" />
+            </label>
             <div className="inline-flex items-center rounded-lg border border-border overflow-hidden text-sm">
               <span className="px-2.5 text-xs text-muted-foreground">PDF</span>
               {([["daily", "Daily report"], ["attendance", "Attendance"], ["both", "Both"]] as const).map(([k, label]) => (
                 <button key={k} type="button"
-                  disabled={busy || (k !== "attendance" && visibleClients.length === 0) || (k !== "daily" && !visibleAttendance?.clients.length)}
+                  disabled={busy || !preparedBy.trim() || (k !== "attendance" && visibleClients.length === 0) || (k !== "daily" && !visibleAttendance?.clients.length)}
                   onClick={() => void exportPdf(k)}
                   className="px-3 py-1.5 border-l border-border hover:bg-accent disabled:opacity-40 disabled:pointer-events-none">
                   {label}
@@ -701,7 +740,7 @@ export default function FieldOps() {
                 <div className="border border-border rounded-md p-3 bg-card space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
-                      Tasks set on {formatDate(shiftDay(date, -1))} — progress
+                      Previous tasks — set on {formatDate(shiftDay(date, -1))}{prevVisible.some((t) => t.report_date !== shiftDay(date, -1)) ? ", and earlier ones still open" : ""}
                     </span>
                     <span className="text-[11px] text-muted-foreground">
                       {prevVisible.filter((t) => t.status === "completed").length} completed · {prevVisible.filter((t) => t.status === "in_progress").length} in progress · {prevVisible.filter((t) => t.status === "pending").length} pending
@@ -715,6 +754,9 @@ export default function FieldOps() {
                             the title to one word a line. */}
                         <span className="min-w-0 text-foreground break-words">{t.title}
                           <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">{staffName(t.assignee_employee_id) ?? "General"}</span>
+                          {t.report_date !== shiftDay(date, -1) && (
+                            <span className="ml-2 text-[11px] font-medium text-heed whitespace-nowrap">carried from {formatDate(t.report_date)}</span>
+                          )}
                         </span>
                         <ThemedSelect value={t.status ?? "pending"} disabled={!canWriteReports} aria-label={`Status: ${t.title}`}
                           onChange={(e) => void setTaskProgress(t.id, { status: e.target.value as TaskStatus })}
