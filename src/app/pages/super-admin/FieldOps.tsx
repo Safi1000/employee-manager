@@ -102,13 +102,15 @@ const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id, done_
 const CARRY_FROM = "2026-10-27";
 /**
  * 0571 (Shayan, 28 Oct 2026): exporting is refused until every previous task
- * has been reported on the report day itself (from report day 29 Oct), and
- * until HR has explained every client whose attendance was not confirmed or
- * left guards unmarked (from attendance day 28 Oct). Before those days there
+ * has been reported on the report day itself, and until HR has explained
+ * every client whose attendance was not confirmed or left guards unmarked —
+ * from the 28 Oct report on. Before those days there
  * was nothing to record either with.
  */
-const TASKS_REPORTED_FROM = "2026-10-29";
-const GAPS_EXPLAINED_FROM = "2026-10-28";
+// Shayan: "make it 28th" — the 28 Oct report (extracted that night) is the
+// first one checked: its tasks, and its attendance (27 Oct).
+const TASKS_REPORTED_FROM = "2026-10-28";
+const GAPS_EXPLAINED_FROM = "2026-10-27";
 /** A client whose attendance needs HR's explanation: not confirmed, or guards left unmarked. */
 const isGap = (c: AttendanceSummary["clients"][number]) => !c.confirmed || c.deployed > c.marked;
 /** The local calendar day of a timestamp. */
