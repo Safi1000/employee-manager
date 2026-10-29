@@ -371,7 +371,7 @@ export type Profile = {
   // Partner scoping (0314): 'partner' users see ONLY the partners listed in
   // partner_scope on the Partnership Report; 'office_staff'/null is unscoped
   // (all company partners), the default. Mirrors branch_id scoping.
-  user_type?: "office_staff" | "partner" | null;
+  user_type?: "office_staff" | "partner" | "site_supervisor" | null;
   partner_scope?: string[] | null;
   // Employee linking (0424): the ONE employee this login belongs to. Null for an
   // ordinary admin account. It is a FLOOR, not a ceiling — it gives the user a

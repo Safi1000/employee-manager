@@ -21,6 +21,7 @@ import UserSecurityModal, { deviceLabel, type UserSecurity } from "../../compone
 import DrivePrivacyCard from "../../components/DrivePrivacyCard";
 import BackupCard from "../../components/BackupCard";
 import SecurityDigestCard from "../../components/SecurityDigestCard";
+import FieldAccountsCard from "../../components/FieldAccountsCard";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -167,7 +168,10 @@ export default function UserManagement() {
     ]);
     if (usersRes.error) setError(usersRes.error.message);
     if (branchesRes.error) setError(branchesRes.error.message);
-    setUsers((usersRes.data as Profile[]) ?? []);
+    // Field (site-supervisor) logins are managed by the Field accounts card. The
+    // edit form here would rewrite user_type to office_staff and lift the
+    // field-app lock (0607), so they never appear in this list.
+    setUsers(((usersRes.data as Profile[]) ?? []).filter((u) => u.user_type !== "site_supervisor"));
     setBranches((branchesRes.data ?? []) as Branch[]);
     setPartnersList((partnersRes.data ?? []) as { id: string; name: string }[]);
     setEmployeesList(
@@ -513,6 +517,7 @@ export default function UserManagement() {
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         {(profile?.role === "super_admin" || profile?.role === "super_super_admin") && (<><SecurityDigestCard companyId={company?.id ?? profile?.company_id ?? null} /><BackupCard /><DrivePrivacyCard /></>)}
+        {profile?.role === "super_admin" && <FieldAccountsCard />}
 
         <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center gap-3">
