@@ -219,8 +219,8 @@ export default function Sidebar({ title, links, badges = {} }: SidebarProps) {
                   role="link"
                   tabIndex={0}
                   title={`${badges[l.label].title} — open them`}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate("/app/alerts"); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); navigate("/app/alerts"); } }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(home ? "/app/alerts" : l.to); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); navigate(home ? "/app/alerts" : l.to); } }}
                   className="absolute top-1 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-down text-ink text-[10px] font-bold leading-[18px] text-center hover:ring-2 hover:ring-brand-500"
                 >
                   {badges[l.label].n > 99 ? "99+" : badges[l.label].n}

@@ -41,6 +41,7 @@ const ComplianceHub = lazyPage(() => import("./pages/super-admin/ComplianceHub")
 const Documents = lazyPage(() => import("./pages/super-admin/Documents"));
 const Settings = lazyPage(() => import("./pages/super-admin/Settings"));
 const Tasks = lazyPage(() => import("./pages/super-admin/Tasks"));
+const Comments = lazyPage(() => import("./pages/super-admin/Comments"));
 const Performance = lazyPage(() => import("./pages/super-admin/Performance"));
 const Clients = lazyPage(() => import("./pages/super-admin/Clients"));
 const Contracts = lazyPage(() => import("./pages/super-admin/Contracts"));
@@ -281,6 +282,8 @@ export const router = createBrowserRouter([
       // the edge function is what refuses a non-super-admin trying to spend.
       { path: "billing", element: guard(["settings.view", "settings.edit"], <Billing />) },
       { path: "tasks", element: <Tasks /> },
+      // 0606: anyone signed in — the page shows only conversations they are in.
+      { path: "comments", element: <Comments /> },
       // 0424. Deliberately NOT permission-guarded: the employee link IS the
       // entitlement, and it entitles you to yourself. The page says so plainly
       // when the login has no link.

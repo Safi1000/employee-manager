@@ -12,6 +12,7 @@ import { withRegion, withRegionOrUnassigned } from "./region";
  *              nothing is settled, as on Payroll)
  *   Finance    fixed expenses this month still waiting for a decision
  *   Compliance guard documents already expired
+ *   Comments   conversations with a reply the viewer has not read (0606)
  */
 export type NavBadge = { n: number; title: string };
 
@@ -28,11 +29,12 @@ export function useNavBadges(companyId: string | null, regionId: string | null):
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const lastKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}-01`;
       const thisKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      const [al, ps, fx, cu] = await Promise.all([
+      const [al, ps, fx, cu, cm] = await Promise.all([
         withRegionOrUnassigned(supabase.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("state", "open"), regionId),
         withRegion(supabase.from("payslips").select("id", { count: "exact", head: true }).eq("period_month", lastKey).eq("disbursed", false).gt("net_salary", 0), regionId),
         withRegionOrUnassigned(supabase.from("fixed_expense_instances").select("id", { count: "exact", head: true }).eq("period_month", thisKey).eq("status", "pending"), regionId),
         withRegionOrUnassigned(supabase.from("compliance_upcoming").select("ref_id", { count: "exact", head: true }).eq("company_id", companyId).lt("days_remaining", 0), regionId),
+        supabase.rpc("my_unread_comment_threads"),
       ]);
       if (cancelled) return;
       const month = lastMonth.toLocaleDateString(undefined, { month: "long" });
@@ -40,6 +42,8 @@ export function useNavBadges(companyId: string | null, regionId: string | null):
       if (!al.error && al.count) next["Dashboard"] = { n: al.count, title: `${al.count} open alert${al.count === 1 ? "" : "s"}` };
       if (!ps.error && ps.count) next["Workforce"] = { n: ps.count, title: `${ps.count} ${month} payslip${ps.count === 1 ? "" : "s"} not yet paid` };
       if (!fx.error && fx.count) next["Finance"] = { n: fx.count, title: `${fx.count} fixed expense${fx.count === 1 ? "" : "s"} waiting for a decision` };
+      const unread = typeof cm.data === "number" ? cm.data : 0;
+      if (!cm.error && unread) next["Comments"] = { n: unread, title: `${unread} conversation${unread === 1 ? "" : "s"} with an unread reply` };
       if (!cu.error && cu.count) next["Compliance"] = { n: cu.count, title: `${cu.count} guard document${cu.count === 1 ? "" : "s"} expired` };
       setBadges(next);
     };

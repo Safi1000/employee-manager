@@ -1,4 +1,5 @@
 import ReversalDialog from "../../components/ReversalDialog";
+import CommentsButton from "../../components/CommentsButton";
 import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -4174,6 +4175,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           );
           return (
             <div className="space-y-6">
+              {r.payslip_id && (
+                <div className="flex justify-end -mb-4">
+                  <CommentsButton recordType="payslip" recordId={r.payslip_id} />
+                </div>
+              )}
               {section("Employee", [
                 ["Name", e.full_name],
                 ["Code", empDisplay(e)],

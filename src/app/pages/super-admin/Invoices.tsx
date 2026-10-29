@@ -61,6 +61,7 @@ import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
+import CommentsButton from "../../components/CommentsButton";
 import { usePageState } from "../../lib/pageState";
 import { openStoredLink } from "../../lib/driveFile";
 
@@ -1306,6 +1307,7 @@ export default function Invoices() {
                           )}
                         </td>
                         <td className="px-6 py-4 flex gap-1">
+                          <CommentsButton recordType="invoice" recordId={inv.id} />
                           <Button
                             variant="ghost"
                             size="sm"

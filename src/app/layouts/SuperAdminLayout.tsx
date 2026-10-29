@@ -41,6 +41,7 @@ import {
   RotateCcw,
   Users2,
   UserRound,
+  MessageSquare,
   Play,
   PieChart,
   Briefcase,
@@ -128,6 +129,8 @@ export default function SuperAdminLayout() {
   const COMPLIANCE: LinkDef = { to: "/app/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
   const DOCUMENTS: LinkDef = { to: "/app/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
   const TASKS: LinkDef = { to: "/app/tasks", label: "Tasks", icon: Trello };
+  // 0606: everyone — the inbox shows only conversations the viewer is in.
+  const COMMENTS: LinkDef = { to: "/app/comments", label: "Comments", icon: MessageSquare };
   const USERS: LinkDef = { to: "/app/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
   const SETTINGS: LinkDef = { to: "/app/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
   const BILLING: LinkDef = { to: "/app/billing", label: "Plan & Billing", icon: CreditCard, perms: ["settings.view", "settings.edit"] };
@@ -224,6 +227,8 @@ export default function SuperAdminLayout() {
   if (dashLink) links.push(dashLink);
   const tasksLink = linkOrNull(profile, TASKS);
   if (tasksLink) links.push(tasksLink);
+  const commentsLink = linkOrNull(profile, COMMENTS);
+  if (commentsLink) links.push(commentsLink);
 
   // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
   // Deployment; billing → Invoices); Client Relationships dissolved (complaints

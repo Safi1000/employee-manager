@@ -14,6 +14,8 @@ import Header from "../../components/Header";
 import GuardTimeline from "../../components/GuardTimeline";
 import PayrollAdjustmentHistory from "../../components/PayrollAdjustmentHistory";
 import GuardCapBanner from "../../components/GuardCapBanner";
+import CommentsButton from "../../components/CommentsButton";
+import { useFocusTarget } from "../../lib/focus";
 import ProfileCompletionPanel from "../../components/ProfileCompletionPanel";
 import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
@@ -1782,6 +1784,15 @@ export default function EmployeeManagement() {
     }
   };
 
+  // 0606: a comment's "Open the record" link lands here with ?focus=<id>&focusType=employees.
+  const focusEmployee = useFocusTarget("employees");
+  useEffect(() => {
+    if (!focusEmployee || isViewModalOpen) return;
+    const row = employees.find((x) => x.id === focusEmployee);
+    if (row) void openView(row);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEmployee, employees]);
+
   const openView = async (emp: EmployeeRow) => {
     setSelectedEmployee(emp);
     setSelectedDocs([]);
@@ -3101,6 +3112,7 @@ export default function EmployeeManagement() {
                 {/* Separations are recorded from Workforce ▸ Assignments & Pay
                     (Fire / Resign), which runs the same record_separation RPC.
                     Rehire and Archive are driven from the Employees list row. */}
+                <CommentsButton recordType="employee" recordId={selectedEmployee.id} />
                 <div className="flex-1" />
                 <button
                   type="button"

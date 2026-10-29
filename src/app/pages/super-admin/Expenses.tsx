@@ -3,6 +3,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import CategoryPicker from "../../components/CategoryPicker";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import CommentsButton from "../../components/CommentsButton";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
 import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
@@ -2956,6 +2957,7 @@ export default function Expenses() {
                     </button>
                   </>
                 )}
+                <CommentsButton recordType="expense" recordId={exp.id} />
                 {canApproveExpenses && (
                   <Button variant="ghost" size="sm" onClick={() => openApproval(exp)}>
                     {exp.approved_at ? "Undo sign-off" : "Sign off"}
@@ -3120,6 +3122,7 @@ export default function Expenses() {
                             </button>
                           </>
                         )}
+                        <CommentsButton recordType="expense" recordId={exp.id} />
                         {canApproveExpenses && (
                           <Button
                             variant="ghost"
