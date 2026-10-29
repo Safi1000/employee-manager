@@ -130,7 +130,9 @@ export const PK_BANKS: readonly { code: string | null; name: string; wallet?: tr
   { code: "AIIN", name: "Al Baraka Bank" },
   { code: "ABPA", name: "Allied Bank", lengths: [13, 20] },
   { code: null, name: "Apna Microfinance Bank", lengths: [16] },
-  { code: "ASCM", name: "Askari Bank", lengths: [14] },
+  // 13 as well: Askari numbers are written without their leading 0 on the salary
+  // sheets and in most stored records (0603); 14 is the same number with it.
+  { code: "ASCM", name: "Askari Bank", lengths: [13, 14] },
   { code: "BAHL", name: "Bank Al Habib", lengths: [17] },
   { code: "ALFH", name: "Bank Alfalah", lengths: [14, 18] },
   { code: "KHYB", name: "Bank of Khyber" },

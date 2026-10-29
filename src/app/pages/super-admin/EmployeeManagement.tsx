@@ -981,6 +981,11 @@ export default function EmployeeManagement() {
   const editSections = useSectionState();
 
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
+  // The record as it was when Edit opened. A format problem in a field still
+  // holding this value is old data, not something the user typed — it is shown
+  // but does not refuse the save (29 Oct 2026: 62 staff could not be edited for
+  // a bank number nobody had touched).
+  const [editOriginal, setEditOriginal] = useState<FormState>(emptyForm);
   const [editStatus, setEditStatus] = useState<EmployeeRow["status"]>("Active");
   const [editing, setEditing] = useState(false);
 
@@ -1879,7 +1884,7 @@ export default function EmployeeManagement() {
     setSelectedEmployee(emp);
     setEditStatus(emp.status);
     const baseStr = emp.base_salary != null ? String(emp.base_salary) : "";
-    setEditForm({
+    const initial: FormState = {
       full_name: emp.full_name,
       phone: emp.phone ?? "",
       secondary_phone: emp.secondary_phone ?? "",
@@ -1969,7 +1974,9 @@ export default function EmployeeManagement() {
       referral_source: emp.referral_source ?? "",
       referred_by_name: emp.referred_by_name ?? "",
       lifecycle_intake: "",
-    });
+    };
+    setEditForm(initial);
+    setEditOriginal(initial);
     setEditFormErrors({});
     setEditSubmitAttempted(false);
     setIsEditModalOpen(true);
@@ -1990,6 +1997,13 @@ export default function EmployeeManagement() {
     // is worse than a blank the Incomplete badge reports honestly. Missing
     // fields still show inline; they no longer stop the save, hiring included.
     const blocking = computeEmployeeErrors(editForm, intakeOnly, false);
+    // Only what the user changed can refuse the save; an untouched field's old
+    // value keeps its inline warning but is not a reason to block. Full Name is
+    // the exception — a nameless record cannot be written at all.
+    for (const k of Object.keys(blocking)) {
+      const key = k as keyof FormState;
+      if (k !== "full_name" && key in editOriginal && editForm[key] === editOriginal[key]) blocking[k] = null;
+    }
     setEditFormErrors(errs);
     if (Object.values(blocking).some(Boolean)) {
       setEditSubmitAttempted(true);
