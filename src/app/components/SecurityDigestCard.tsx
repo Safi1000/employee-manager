@@ -55,8 +55,12 @@ export default function SecurityDigestCard({ companyId }: { companyId: string | 
     setBusy(true); setErr(null); setNote(null);
     const { data, error } = await supabase.functions.invoke("security-digest", { body: {} });
     setBusy(false);
-    const res = data as { sent?: string[]; failed?: string[]; error?: string } | null;
-    const msg = error?.message ?? res?.error ?? (res?.failed?.length ? res.failed.join("; ") : null);
+    // A non-2xx reply carries the function's own reason in its body; supabase-js
+    // only says "non-2xx status code", so read the body when there is one.
+    let res = data as { sent?: string[]; failed?: string[]; error?: string } | null;
+    const ctx = (error as { context?: Response } | null)?.context;
+    if (ctx && typeof ctx.json === "function") { try { res = await ctx.json(); } catch { /* not JSON */ } }
+    const msg = res?.error ?? (res?.failed?.length ? res.failed.join("; ") : null) ?? error?.message ?? null;
     if (msg) setErr(msg); else setNote(`Sent to ${res?.sent?.join(", ") || "you"}.`);
   };
 
