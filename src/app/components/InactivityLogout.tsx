@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldAlert, LogOut } from "lucide-react";
+import { ShieldAlert, LogOut, Clock } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
 /**
- * App-wide inactivity auto-logout (hard security timeout).
+ * App-wide inactivity auto-logout and session limit (hard security timeouts).
  *
- * - 15 minutes of no real user interaction → full sign-out + redirect to /login.
- * - At 14 minutes (1 min before cutoff) a non-dismissible warning modal with a
- *   live countdown appears; "Stay logged in" resets the full 15-minute timer.
+ * - 30 minutes of no real user interaction → full sign-out + redirect to /login.
+ *   (Raised from 15 on 29 Oct 2026, Shayan: with two-factor on, every
+ *   re-login costs an authenticator code, so the idle cut can be gentler.)
+ * - At 29 minutes (1 min before cutoff) a non-dismissible warning modal with a
+ *   live countdown appears; "Stay logged in" resets the full 30-minute timer.
+ * - SESSION LIMIT: 8 hours after the actual sign-in, activity or not, the
+ *   session ends. Ten minutes before, a popup counts down; it can be dismissed
+ *   but not extended — the point is that a session cannot live all day. The
+ *   sign-in time is read from the access token's `amr` timestamps, which
+ *   Supabase signs and carries unchanged through every token refresh, so a
+ *   refresh cannot restart the clock.
  * - Only genuine DOM interaction (mouse/keyboard/scroll/touch) resets the timer,
  *   never background polling.
  * - Cross-tab: the "last activity" timestamp lives in localStorage and is shared
@@ -19,9 +27,11 @@ import { useAuth } from "../lib/auth";
  * no session, and RequireAuth handles the redirect once signOut() clears it.
  */
 
-const IDLE_LIMIT_MS =15 * 60 * 1000; // total inactivity before logout
+const IDLE_LIMIT_MS = 30 * 60 * 1000; // total inactivity before logout
 const WARN_MS = 60 * 1000; // show the warning this long before the cutoff
 const WRITE_THROTTLE_MS = 2000; // don't hammer localStorage on every mousemove
+const SESSION_LIMIT_MS = 8 * 60 * 60 * 1000; // a session ends this long after sign-in
+const SESSION_WARN_MS = 10 * 60 * 1000; // the "session ending" popup appears this long before
 
 // Shared across tabs.
 const LS_LAST = "txs.lastActivity";
@@ -38,6 +48,26 @@ function readLast(): number {
   }
 }
 
+/**
+ * When this session signed in (ms), from the access token's `amr` claim — the
+ * earliest authentication timestamp (password, then TOTP). Falls back to the
+ * user's last sign-in if the token carries no amr. null = unknown, no limit.
+ */
+function signedInAt(token: string | undefined, lastSignIn: string | undefined): number | null {
+  try {
+    const b64 = (token ?? "").split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/");
+    if (b64) {
+      const claims = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "="))) as { amr?: { timestamp?: number }[] };
+      const ts = (claims.amr ?? []).map((a) => Number(a.timestamp)).filter((n) => Number.isFinite(n) && n > 0);
+      if (ts.length) return Math.min(...ts) * 1000;
+    }
+  } catch {
+    /* fall through */
+  }
+  const t = lastSignIn ? Date.parse(lastSignIn) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
 function writeLast(t: number): void {
   try {
     localStorage.setItem(LS_LAST, String(t));
@@ -52,6 +82,12 @@ export default function InactivityLogout() {
 
   const [warning, setWarning] = useState(false);
   const [remaining, setRemaining] = useState(Math.ceil(WARN_MS / 1000));
+  const [sessionLeft, setSessionLeft] = useState<number | null>(null); // seconds, while the popup shows
+  const sessionDismissedRef = useRef(false);
+
+  // Read inside the 1s tick, so a token refresh never re-runs the watcher.
+  const startRef = useRef<number | null>(null);
+  startRef.current = signedInAt(session?.access_token, session?.user?.last_sign_in_at);
 
   const warnRef = useRef(false);
   const lastWriteRef = useRef(0);
@@ -81,11 +117,11 @@ export default function InactivityLogout() {
     }
   }, []);
 
-  const doLogout = useCallback(async () => {
+  const doLogout = useCallback(async (reason: "inactivity" | "session_limit" = "inactivity") => {
     if (loggingOutRef.current) return;
     loggingOutRef.current = true;
     try {
-      localStorage.setItem(LS_LOGOUT, "inactivity");
+      localStorage.setItem(LS_LOGOUT, reason);
     } catch {
       /* ignore */
     }
@@ -95,6 +131,7 @@ export default function InactivityLogout() {
       // RequireAuth redirects to /login once the session is cleared.
       warnRef.current = false;
       setWarning(false);
+      setSessionLeft(null);
     }
   }, []);
 
@@ -103,7 +140,9 @@ export default function InactivityLogout() {
       // Logged out: clear any warning state and stop watching.
       warnRef.current = false;
       loggingOutRef.current = false;
+      sessionDismissedRef.current = false;
       setWarning(false);
+      setSessionLeft(null);
       return;
     }
 
@@ -124,6 +163,17 @@ export default function InactivityLogout() {
 
     const evaluate = () => {
       if (loggingOutRef.current) return;
+
+      const start = startRef.current;
+      if (start) {
+        const left = start + SESSION_LIMIT_MS - Date.now();
+        if (left <= 0) {
+          void doLogout("session_limit");
+          return;
+        }
+        setSessionLeft(left <= SESSION_WARN_MS && !sessionDismissedRef.current ? Math.ceil(left / 1000) : null);
+      }
+
       const last = readLast() || Date.now();
       const elapsed = Date.now() - last;
 
@@ -150,8 +200,8 @@ export default function InactivityLogout() {
     // changes and when the tab regains focus/visibility.
     const onStorage = (e: StorageEvent) => {
       if (e.key === LS_LOGOUT && e.newValue) {
-        // Another tab logged out for inactivity — follow it here too.
-        void doLogout();
+        // Another tab logged out — follow it here too, for the same reason.
+        void doLogout(e.newValue === "session_limit" ? "session_limit" : "inactivity");
         return;
       }
       if (e.key === LS_LAST) evaluate();
@@ -182,7 +232,59 @@ export default function InactivityLogout() {
     };
   }, [active, resetTimer, doLogout]);
 
-  if (!active || !warning) return null;
+  if (!active) return null;
+
+  if (!warning && sessionLeft !== null) {
+    const m = Math.floor(sessionLeft / 60);
+    const sec = sessionLeft % 60;
+    return createPortal(
+      <div
+        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="session-title"
+        aria-describedby="session-desc"
+      >
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl md:p-8">
+          <div className="mb-5 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-warning-50">
+              <Clock className="h-6 w-6 text-warning-600" strokeWidth={1.5} />
+            </div>
+            <h2 id="session-title" className="mb-1 text-xl font-bold text-foreground">
+              Your session is about to end
+            </h2>
+            <p id="session-desc" className="text-sm text-muted-foreground">
+              Sessions last 8 hours. Save what you are working on — you&apos;ll be signed out in
+            </p>
+            <p className="mt-3 font-ledger text-4xl font-bold tabular-nums text-warning-700 dark:text-warning-500">
+              {m}:{String(sec).padStart(2, "0")}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">Sign in again afterwards to carry on.</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => { sessionDismissedRef.current = true; setSessionLeft(null); }}
+              className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-on-brand shadow-sm transition-colors hover:bg-brand-600"
+            >
+              OK, I&apos;ll save my work
+            </button>
+            <button
+              type="button"
+              onClick={() => void doLogout("session_limit")}
+              className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" strokeWidth={1.5} />
+              Sign out now
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
+  if (!warning) return null;
 
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;

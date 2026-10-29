@@ -31,13 +31,14 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [idleLogout, setIdleLogout] = useState(false);
+  const [idleLogout, setIdleLogout] = useState<null | "inactivity" | "session_limit">(null);
 
   // Show a one-time notice if we landed here from an inactivity auto-logout.
   useEffect(() => {
     try {
-      if (localStorage.getItem("txs.logout_reason") === "inactivity") {
-        setIdleLogout(true);
+      const reason = localStorage.getItem("txs.logout_reason");
+      if (reason === "inactivity" || reason === "session_limit") {
+        setIdleLogout(reason);
         localStorage.removeItem("txs.logout_reason");
       }
     } catch {
@@ -144,7 +145,9 @@ export default function Login() {
               {idleLogout && (
                 <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-sm text-warning-700 dark:text-warning-500">
                   <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
-                  <span>You were logged out due to inactivity. Please sign in again.</span>
+                  <span>{idleLogout === "session_limit"
+                    ? "Your 8-hour session ended. Please sign in again."
+                    : "You were logged out due to inactivity. Please sign in again."}</span>
                 </div>
               )}
               <div>
