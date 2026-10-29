@@ -734,11 +734,11 @@ const missingRequiredFields = (e: {
     // Set when the employee is assigned (Assignments & Pay). Attendance can't be
     // gated without it, so it belongs in the same flag as everything else.
     !e.join_date ? "Join Date" : null,
-    !e.bank_name?.trim() ? "Bank Name" : null,
-    !e.account_title?.trim() ? "Account Title" : null,
-    !e.bank_account?.trim() ? "Bank Account Number" : null,
-    // Mirrors the form rule: a mobile wallet has no branch code to give.
-    !isPkWallet(e.bank_name ?? "") && !e.bank_branch_code?.trim() ? "Branch Code" : null,
+    // One item for the bank block (Shayan, 29 Oct 2026): any of bank, title or
+    // account number missing means payroll cannot pay — the form still shows
+    // which. Branch Code is optional. 0602 mirrors both in the database's copy
+    // of this list (employee_missing_fields).
+    !e.bank_name?.trim() || !e.account_title?.trim() || !e.bank_account?.trim() ? "Bank Details" : null,
   ].filter(Boolean) as string[];
 };
 
@@ -1603,10 +1603,8 @@ export default function EmployeeManagement() {
     bank_account: f.bank_account.trim()
       ? accountFieldError(f.bank_name, f.bank_account)
       : req("Bank Account Number is required."),
-    // A mobile wallet has no branch, so the code only applies to real banks.
-    bank_branch_code: isPkWallet(f.bank_name) || f.bank_branch_code.trim()
-      ? null
-      : req("Branch Code is required."),
+    // Branch Code is optional (29 Oct 2026); a wallet has none at all.
+    bank_branch_code: null,
     // At least ONE usable emergency contact — a name with no number can't be
     // called, so a contact only counts when both halves are there. Either slot
     // satisfies it; the second is still optional on its own.
@@ -2974,14 +2972,13 @@ export default function EmployeeManagement() {
               </div>
               {!isPkWallet(form.bank_name) && (
                 <div>
-                  <label className="block text-sm text-foreground mb-1">Branch Code *</label>
+                  <label className="block text-sm text-foreground mb-1">Branch Code</label>
                   <input
                     type="text"
                     id="empfield-bank_branch_code"
                     value={form.bank_branch_code}
                     onChange={(e) => setForm({ ...form, bank_branch_code: e.target.value })}
-                    onBlur={(e) => setFormErrors((p) => ({ ...p, bank_branch_code: e.target.value.trim() ? null : "Branch Code is required." }))}
-                    className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
+                                        className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                     placeholder={branchCodeHint(form.bank_account) ?? "e.g., 0010"}
                   />
                   {formErrors.bank_branch_code && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_branch_code}</p>}
@@ -3690,14 +3687,13 @@ export default function EmployeeManagement() {
                 </div>
                 {!isPkWallet(editForm.bank_name) && (
                   <div>
-                    <label className="block text-sm text-foreground mb-1">Branch Code *</label>
+                    <label className="block text-sm text-foreground mb-1">Branch Code</label>
                     <input
                       type="text"
                       id="empeditfield-bank_branch_code"
                       value={editForm.bank_branch_code}
                       onChange={(e) => setEditForm({ ...editForm, bank_branch_code: e.target.value })}
-                      onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_branch_code: e.target.value.trim() ? null : "Branch Code is required." }))}
-                      className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
+                                            className="w-full px-4 py-2 border border-border rounded-md text-sm font-mono"
                       placeholder={branchCodeHint(editForm.bank_account) ?? "e.g., 0010"}
                     />
                     {editFormErrors.bank_branch_code && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_branch_code}</p>}
