@@ -315,26 +315,6 @@ async function uploadFile(
   return { id: j.id, webViewLink: j.webViewLink };
 }
 
-async function makeAnyoneReader(token: string, fileId: string) {
-  const resp = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ role: "reader", type: "anyone" }),
-    },
-  );
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(
-      `Drive set-permission failed (status ${resp.status}): ${text}`,
-    );
-  }
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -432,7 +412,8 @@ Deno.serve(async (req) => {
 
     const finalName = docType ? `${docType}_${file.name}` : file.name;
     const uploaded = await uploadFile(token, parentFolderId, file, finalName, companyId);
-    await makeAnyoneReader(token, uploaded.id);
+    // 2026-10-29: no "anyone with the link" permission any more. A file is
+    // opened through gdrive-file, which checks the caller may read its record.
 
     return json({
       drive_file_id: uploaded.id,
