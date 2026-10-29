@@ -1541,7 +1541,8 @@ export default function EmployeeManagement() {
   // REQUIRED: it is what the record is verified against, and payroll/attendance
   // gating downstream treats a record without it as unusable. Records created
   // before this rule can still be missing them; those surface via
-  // isMissingKeyFields in the list, and are forced to be filled on the next edit.
+  // isMissingKeyFields in the list. (Until 29 Oct 2026 the next edit forced them
+  // filled; it no longer does — Add and Edit both block only malformed values.)
   // `intakeOnly` = this is a waiting-list candidate on the short intake form,
   // not an employee. Passed explicitly rather than read off the form, because
   // the Add modal signals it with lifecycle_intake while the Edit modal signals
@@ -1981,9 +1982,16 @@ export default function EmployeeManagement() {
     // candidate can never become an active employee.
     const intakeOnly = isCandidate(selectedEmployee) && !hiringMode;
     const errs = computeEmployeeErrors(editForm, intakeOnly);
-    if (Object.values(errs).some(Boolean)) {
-      setEditFormErrors(errs);
+    // Shayan, 29 Oct 2026: Edit now refuses only what Add refuses — malformed
+    // values, never merely absent ones. Forcing every field on edit is what
+    // made people type 123456789 / 0000000000000 to get a save through, which
+    // is worse than a blank the Incomplete badge reports honestly. Missing
+    // fields still show inline; they no longer stop the save, hiring included.
+    const blocking = computeEmployeeErrors(editForm, intakeOnly, false);
+    setEditFormErrors(errs);
+    if (Object.values(blocking).some(Boolean)) {
       setEditSubmitAttempted(true);
+      scrollToFirstError(blocking);
       return;
     }
     // Slot check only blocks when this edit makes the employee newly active on a
