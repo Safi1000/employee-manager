@@ -74,8 +74,7 @@ import {
   pkBankCode,
   isPkWallet,
   validateWalletAccount,
-  validateBankAccountLength,
-} from "../../lib/validation";
+  validateBankAccountLength, cleanPhone } from "../../lib/validation";
 import { useAuth, hasPermission, hasAnyPermission } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
 import { savePdf } from "../../lib/saveFile";
@@ -582,7 +581,7 @@ const paperFormPayload = (f: FormState) => ({
   special_skills: f.special_skills.trim() || null,
   emergency_contact2_name: f.emergency_contact2_name.trim() || null,
   emergency_contact2_relation: f.emergency_contact2_relation.trim() || null,
-  emergency_contact2_phone: f.emergency_contact2_phone.trim() || null,
+  emergency_contact2_phone: cleanPhone(f.emergency_contact2_phone),
   post_office: f.post_office.trim() || null,
   police_station: f.police_station.trim() || null,
   area_nazim: f.area_nazim.trim() || null,
@@ -591,7 +590,7 @@ const paperFormPayload = (f: FormState) => ({
   next_of_kin_name: f.next_of_kin_name.trim() || null,
   next_of_kin_relation: f.next_of_kin_relation.trim() || null,
   next_of_kin_cnic: f.next_of_kin_cnic.trim() || null,
-  next_of_kin_contact: f.next_of_kin_contact.trim() || null,
+  next_of_kin_contact: cleanPhone(f.next_of_kin_contact),
   is_ex_serviceman: f.is_ex_serviceman,
   physical_copy_present: f.physical_copy_present,
   army_number: f.army_number.trim() || null,
@@ -1666,8 +1665,8 @@ export default function EmployeeManagement() {
         .from("employees")
         .insert({
           full_name: form.full_name.trim(),
-          phone: form.phone.trim() || null,
-          secondary_phone: form.secondary_phone.trim() || null,
+          phone: cleanPhone(form.phone),
+          secondary_phone: cleanPhone(form.secondary_phone),
           preferred_location: form.preferred_location.trim() || null,
           location_id: form.location_id || null,
           // "" is not a uuid — and since the client picker moved to Assignments &
@@ -1702,7 +1701,7 @@ export default function EmployeeManagement() {
           current_address: form.current_address.trim() || null,
           emergency_contact_name: form.emergency_contact_name.trim() || null,
           emergency_contact_relation: form.emergency_contact_relation || null,
-          emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+          emergency_contact_phone: cleanPhone(form.emergency_contact_phone),
           reporting_to_employee_id: form.reporting_to_employee_id || null,
           employee_contract_type: form.employee_contract_type || null,
           probation_end_date: form.probation_end_date || null,
@@ -2020,8 +2019,8 @@ export default function EmployeeManagement() {
         .from("employees")
         .update({
           full_name: editForm.full_name.trim(),
-          phone: editForm.phone.trim() || null,
-          secondary_phone: editForm.secondary_phone.trim() || null,
+          phone: cleanPhone(editForm.phone),
+          secondary_phone: cleanPhone(editForm.secondary_phone),
           preferred_location: editForm.preferred_location.trim() || null,
           location_id: editForm.location_id || null,
           ...(postingChanged ? { display_number: null } : {}),
@@ -2062,7 +2061,7 @@ export default function EmployeeManagement() {
           current_address: editForm.current_address.trim() || null,
           emergency_contact_name: editForm.emergency_contact_name.trim() || null,
           emergency_contact_relation: editForm.emergency_contact_relation || null,
-          emergency_contact_phone: editForm.emergency_contact_phone.trim() || null,
+          emergency_contact_phone: cleanPhone(editForm.emergency_contact_phone),
           reporting_to_employee_id: editForm.reporting_to_employee_id || null,
           employee_contract_type: editForm.employee_contract_type || null,
           probation_end_date: editForm.probation_end_date || null,

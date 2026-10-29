@@ -92,6 +92,17 @@ export function validatePhone(value: string | null | undefined): string | null {
   return null;
 }
 
+// What a phone is SAVED as: digits only, keeping a leading "+" (0333-3301234 →
+// 03333301234). Typing may use dashes or spaces; storing one form keeps search,
+// duplicate checks and copy-to-WhatsApp working (Shayan, 29 Oct 2026; 0599
+// cleaned the numbers already on record). Blank → null.
+export function cleanPhone(value: string | null | undefined): string | null {
+  const t = (value ?? "").trim();
+  if (!t) return null;
+  const d = digitsOnly(t);
+  return d ? (t.startsWith("+") ? `+${d}` : d) : null;
+}
+
 // --- Email -------------------------------------------------------------------
 export function validateEmail(value: string | null | undefined): string | null {
   if (isBlank(value)) return null;
