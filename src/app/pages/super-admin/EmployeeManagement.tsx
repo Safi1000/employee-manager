@@ -14,6 +14,7 @@ import Header from "../../components/Header";
 import GuardTimeline from "../../components/GuardTimeline";
 import PayrollAdjustmentHistory from "../../components/PayrollAdjustmentHistory";
 import GuardCapBanner from "../../components/GuardCapBanner";
+import ProfileCompletionPanel from "../../components/ProfileCompletionPanel";
 import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -1212,7 +1213,11 @@ export default function EmployeeManagement() {
         !(cnicQuery.length > 0 && (e.cnic_number ?? "").replace(/\D/g, "").startsWith(cnicQuery))
       )
         return false;
-      if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      // "__none__" (Profile completion › Not under any client): no client, and
+      // not Head Office or a reliever — the same grouping profile_completion() uses.
+      if (clientFilter === "__none__") {
+        if ((e.category === "client" && e.client_id) || e.category === "office_staff" || e.category === "reliever") return false;
+      } else if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
@@ -2532,6 +2537,17 @@ export default function EmployeeManagement() {
         {/* Warns before the database refuses the next guard, so hitting the
             plan limit is never a surprise mid-form. */}
         <GuardCapBanner />
+        {empTab === "active" && (
+          <ProfileCompletionPanel
+            canSetTargets={profile?.role === "super_admin"}
+            onPick={(g) => {
+              setEmpTab("active");
+              setCompletenessFilter("incomplete");
+              setClientFilter(g.bucket === "client" && g.client_id ? g.client_id : g.bucket === "unassigned" ? "__none__" : "all");
+              setCategoryFilter(g.bucket === "office_staff" ? "office_staff" : g.bucket === "reliever" ? "reliever" : "all");
+            }}
+          />
+        )}
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -2592,6 +2608,7 @@ export default function EmployeeManagement() {
                 value={clientFilter}
                 onChange={setClientFilter}
                 allValue="all"
+                extraOption={{ value: "__none__", label: "Not under any client" }}
               />
               <ThemedSelect
                 value={categoryFilter}
