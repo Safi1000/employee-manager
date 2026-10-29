@@ -1597,14 +1597,9 @@ export default function Expenses() {
   const confirmApproval = async (expense: ApprovableExpense, approving: boolean) => {
     setApprovalSubmitting(true);
     setApprovalError(null);
-    const { error: apErr } = await supabase
-      .from("expenses")
-      .update(
-        approving
-          ? { approved_at: new Date().toISOString(), approved_by: profile?.id ?? null }
-          : { approved_at: null },
-      )
-      .eq("id", expense.id);
+    // 0605: sign-off is the sign-off key's own step. A direct UPDATE asked
+    // expenses.edit as well, so a sign-off-only login (the CEO) touched nothing.
+    const { error: apErr } = await supabase.rpc("sign_off_expenses", { p_ids: [expense.id], p_approve: approving });
     setApprovalSubmitting(false);
     // The error stays INSIDE the dialog. Sent to the page-level banner it would
     // render behind the open modal, which is how a refusal becomes a button that
@@ -1619,35 +1614,19 @@ export default function Expenses() {
   const [bulkError, setBulkError] = useState<string | null>(null);
 
   /**
-   * Approve every selected expense in one statement. This is a SET write, so
-   * RLS or a concurrent approval can make it touch fewer rows than asked
-   * without raising — the returned ids are compared against the request and
-   * any shortfall is reported by name rather than passing as success.
+   * Sign off every selected expense in one call (0605). sign_off_expenses
+   * refuses the WHOLE call, naming the expenses, if any is already signed off
+   * or outside the caller's reach — so a smaller set never passes as success.
    */
   const confirmBulkApproval = async () => {
     const ids = selectedRows.map((e) => e.id);
     if (ids.length === 0) return;
     setBulkSubmitting(true);
     setBulkError(null);
-    const { data, error: apErr } = await supabase
-      .from("expenses")
-      .update({ approved_at: new Date().toISOString(), approved_by: profile?.id ?? null })
-      .in("id", ids)
-      .is("approved_at", null)
-      .select("id");
+    const { error: apErr } = await supabase.rpc("sign_off_expenses", { p_ids: ids, p_approve: true });
     setBulkSubmitting(false);
-    if (apErr) { setBulkError(apErr.message); return; }
-    const done = new Set((data ?? []).map((r: { id: string }) => r.id));
-    const missed = selectedRows.filter((e) => !done.has(e.id));
+    if (apErr) { setBulkError(apErr.message); await loadAll(); return; }
     await loadAll();
-    if (missed.length > 0) {
-      setSelectedIds(new Set(missed.map((e) => e.id)));
-      setBulkError(
-        `${done.size} of ${ids.length} signed off. ${missed.length} could not be signed off — already signed off by someone else, or outside what your account may sign off: ` +
-          missed.map((e) => `${formatDate(e.expense_date)} ${e.category_name ?? ""} PKR ${Number(e.amount).toLocaleString()}`).join("; "),
-      );
-      return;
-    }
     setSelectedIds(new Set());
     setBulkOpen(false);
   };
