@@ -820,7 +820,7 @@ export default function Compliance() {
                   Recorded by the system and still open. Acknowledge them on the Alerts page.
                 </p>
               </div>
-              <Link to="/super-admin/alerts" className="text-xs text-brand-600 hover:text-brand-700">
+              <Link to="/app/alerts" className="text-xs text-brand-600 hover:text-brand-700">
                 Open Alerts
               </Link>
             </div>

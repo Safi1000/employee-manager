@@ -49,7 +49,7 @@ export default function GuardCapBanner() {
           </>
         )}
         {" "}
-        <Link to="/super-admin/billing" className="font-semibold underline underline-offset-2">
+        <Link to="/app/billing" className="font-semibold underline underline-offset-2">
           Upgrade your plan
         </Link>
       </div>

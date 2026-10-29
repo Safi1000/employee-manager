@@ -759,7 +759,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
             embedded in a Financial Reports tab that is itself not in the tab
             strip, so the run had no reachable door — and the run is a different
             kind of thing from the rest of this screen, which edits partners
-            rather than posting a month. It is /super-admin/partnership-run,
+            rather than posting a month. It is /app/partnership-run,
             listed under Finance. */}
       </div>
 

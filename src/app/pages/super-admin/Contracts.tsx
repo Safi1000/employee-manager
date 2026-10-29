@@ -414,7 +414,7 @@ export default function Contracts() {
                   click: () => setSheet({ kicker: "Contracts · renewal runway", title: "Ending in 60 days", big: String(book.ending60),
                     note: book.ending60 ? "Soonest first. Each needs a renewal decision." : "No live contract ends in the next 60 days.",
                     rows: book.runway.filter((x) => x.days >= 0 && x.days <= 60).map((x) => ({ label: `${x.client} · ${x.code}`, value: `${x.days} days`, hint: `PKR ${Math.round(x.value).toLocaleString()} a month` })),
-                    link: { to: "/super-admin/compliance?tab=renewals", label: "Open Contract Renewals" } }) },
+                    link: { to: "/app/compliance?tab=renewals", label: "Open Contract Renewals" } }) },
                 { label: "Needs renewal", v: book.needsRenewal.toLocaleString(), sub: "past their end date", tone: book.needsRenewal ? "text-down" : "text-up", on: statusFilter === "needs_renewal", click: () => setStatusFilter(statusFilter === "needs_renewal" ? "all" : "needs_renewal") },
               ].map((t) => {
                 const body = (<><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></>);

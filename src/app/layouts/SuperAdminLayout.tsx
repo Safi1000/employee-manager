@@ -91,74 +91,74 @@ export default function SuperAdminLayout() {
     profile?.role === "super_super_admin" && !!profile.view_as_company;
 
   // Module definitions with their permission gates.
-  const DASHBOARD: LinkDef = { to: "/super-admin", label: "Dashboard", icon: LayoutDashboard };
-  const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
-  const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
-  const SITES_STRENGTH: LinkDef = { to: "/super-admin/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
-  const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
-  const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
-  const ASSIGNMENTS: LinkDef = { to: "/super-admin/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["assignments.view", "employees.edit"] };
-  const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
-  const ATTENDANCE_RUN: LinkDef = { to: "/super-admin/attendance-run", label: "Attendance Run", icon: ClipboardCheck, perms: ["attendance.run_view", "attendance.ops_verify"] };
-  const PAYROLL: LinkDef = { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
-  const PAYROLL_RUN: LinkDef = { to: "/super-admin/payroll-run", label: "Payroll Run", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
-  const PERFORMANCE: LinkDef = { to: "/super-admin/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };
-  const RELIEVER_ATT: LinkDef = { to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
-  const INVENTORY: LinkDef = { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
-  const ROSTER: LinkDef = { to: "/super-admin/roster", label: "Deployment Roster", icon: CalendarRange, perms: ["roster.view", "roster.edit"] };
-  const INCIDENTS: LinkDef = { to: "/super-admin/incidents", label: "Incidents", icon: Siren, perms: ["incidents.view", "incidents.edit"] };
-  const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["banks.view", "accounting.edit"] };
+  const DASHBOARD: LinkDef = { to: "/app", label: "Dashboard", icon: LayoutDashboard };
+  const CLIENTS: LinkDef = { to: "/app/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
+  const CONTRACTS: LinkDef = { to: "/app/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
+  const SITES_STRENGTH: LinkDef = { to: "/app/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
+  const INVOICES: LinkDef = { to: "/app/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
+  const EMPLOYEES: LinkDef = { to: "/app/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
+  const ASSIGNMENTS: LinkDef = { to: "/app/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["assignments.view", "employees.edit"] };
+  const ATTENDANCE: LinkDef = { to: "/app/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
+  const ATTENDANCE_RUN: LinkDef = { to: "/app/attendance-run", label: "Attendance Run", icon: ClipboardCheck, perms: ["attendance.run_view", "attendance.ops_verify"] };
+  const PAYROLL: LinkDef = { to: "/app/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  const PAYROLL_RUN: LinkDef = { to: "/app/payroll-run", label: "Payroll Run", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  const PERFORMANCE: LinkDef = { to: "/app/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };
+  const RELIEVER_ATT: LinkDef = { to: "/app/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
+  const INVENTORY: LinkDef = { to: "/app/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
+  const ROSTER: LinkDef = { to: "/app/roster", label: "Deployment Roster", icon: CalendarRange, perms: ["roster.view", "roster.edit"] };
+  const INCIDENTS: LinkDef = { to: "/app/incidents", label: "Incidents", icon: Siren, perms: ["incidents.view", "incidents.edit"] };
+  const BANKS: LinkDef = { to: "/app/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["banks.view", "accounting.edit"] };
   // Open to everyone (0496): anyone may request an expense. Without expenses.view
   // or .edit the page shows only their own requests (ExpensesEntry).
-  const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses & Advances", icon: Receipt };
-  const CASHFLOW: LinkDef = { to: "/super-admin/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
-  const REPORTS: LinkDef = { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
-  const ACCOUNTANT: LinkDef = { to: "/super-admin/accountant", label: "Accountant", icon: BookOpen, perms: ["accountant.view"] };
-  const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
-  const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
-  const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
-  const REVERSALS: LinkDef = { to: "/super-admin/reversals", label: "Reversals", icon: RotateCcw, perms: ["reversals.execute"] };
-  const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const EXPENSES: LinkDef = { to: "/app/expenses", label: "Expenses & Advances", icon: Receipt };
+  const CASHFLOW: LinkDef = { to: "/app/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
+  const REPORTS: LinkDef = { to: "/app/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
+  const ACCOUNTANT: LinkDef = { to: "/app/accountant", label: "Accountant", icon: BookOpen, perms: ["accountant.view"] };
+  const CHART_OF_ACCOUNTS: LinkDef = { to: "/app/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
+  const PERIOD_CLOSE: LinkDef = { to: "/app/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
+  const AUDIT_LOG: LinkDef = { to: "/app/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
+  const REVERSALS: LinkDef = { to: "/app/reversals", label: "Reversals", icon: RotateCcw, perms: ["reversals.execute"] };
+  const PARTNERS: LinkDef = { to: "/app/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   // The partnership RUN — drafting, reviewing and posting a month — as opposed
   // to the partnership REPORT, which reads one back.
-  const PARTNERSHIP: LinkDef = { to: "/super-admin/partnership", label: "Partnership", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const PARTNERSHIP: LinkDef = { to: "/app/partnership", label: "Partnership", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   // PROFIT_DIST is deliberately absent: the /profit-distribution route was
   // removed because the screen maintained a share model no ledger function
   // reads. A LinkDef pointing at a removed route is worse than no link.
-  const PROJECT_FIN: LinkDef = { to: "/super-admin/project-financing", label: "Project Financing", icon: Briefcase, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
-  const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
-  const DOCUMENTS: LinkDef = { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
-  const TASKS: LinkDef = { to: "/super-admin/tasks", label: "Tasks", icon: Trello };
-  const USERS: LinkDef = { to: "/super-admin/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
-  const SETTINGS: LinkDef = { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
-  const BILLING: LinkDef = { to: "/super-admin/billing", label: "Plan & Billing", icon: CreditCard, perms: ["settings.view", "settings.edit"] };
+  const PROJECT_FIN: LinkDef = { to: "/app/project-financing", label: "Project Financing", icon: Briefcase, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const COMPLIANCE: LinkDef = { to: "/app/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
+  const DOCUMENTS: LinkDef = { to: "/app/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
+  const TASKS: LinkDef = { to: "/app/tasks", label: "Tasks", icon: Trello };
+  const USERS: LinkDef = { to: "/app/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
+  const SETTINGS: LinkDef = { to: "/app/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
+  const BILLING: LinkDef = { to: "/app/billing", label: "Plan & Billing", icon: CreditCard, perms: ["settings.view", "settings.edit"] };
   // New back-office surfaces (Parts II–VII).
-  const TREASURY: LinkDef = { to: "/super-admin/treasury", label: "Treasury & Reserves", icon: Landmark, perms: ["banks.view", "reports.view", "cashflow.view"] };
-  const ASSETS: LinkDef = { to: "/super-admin/assets", label: "Assets & Vehicles", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
-  const FIELD_OPS: LinkDef = { to: "/super-admin/field-ops", label: "Field Operations", icon: Siren, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
-  const COMPLIANCE_CASES: LinkDef = { to: "/super-admin/compliance-cases", label: "Compliance Cases", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
-  const ALERTS: LinkDef = { to: "/super-admin/alerts", label: "Alerts", icon: Bell };
-  const GOVERNANCE: LinkDef = { to: "/super-admin/governance", label: "Governance", icon: Users2, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
-  const RECEIVABLES: LinkDef = { to: "/super-admin/receivables", label: "Receivables", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view"] };
-  const OPENING_BAL: LinkDef = { to: "/super-admin/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
-  // "Regional Operating Expenses" (route /super-admin/regional-scorecard) is
+  const TREASURY: LinkDef = { to: "/app/treasury", label: "Treasury & Reserves", icon: Landmark, perms: ["banks.view", "reports.view", "cashflow.view"] };
+  const ASSETS: LinkDef = { to: "/app/assets", label: "Assets & Vehicles", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
+  const FIELD_OPS: LinkDef = { to: "/app/field-ops", label: "Field Operations", icon: Siren, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
+  const COMPLIANCE_CASES: LinkDef = { to: "/app/compliance-cases", label: "Compliance Cases", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
+  const ALERTS: LinkDef = { to: "/app/alerts", label: "Alerts", icon: Bell };
+  const GOVERNANCE: LinkDef = { to: "/app/governance", label: "Governance", icon: Users2, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
+  const RECEIVABLES: LinkDef = { to: "/app/receivables", label: "Receivables", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view"] };
+  const OPENING_BAL: LinkDef = { to: "/app/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
+  // "Regional Operating Expenses" (route /app/regional-scorecard) is
   // hidden from the nav by request — its LinkDef is intentionally not defined
   // here so it isn't listed. The route still exists in routes.tsx.
-  const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
+  const CLIENT_REL: LinkDef = { to: "/app/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
 
   // Consolidation restructure — merged / renamed / moved homes.
-  const RELIEVERS: LinkDef = { to: "/super-admin/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
-  const DAILY_REPORTS: LinkDef = { to: "/super-admin/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
-  const ASSETS_ISSUANCE: LinkDef = { to: "/super-admin/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
-  const ACCOUNTING_CORE: LinkDef = { to: "/super-admin/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
+  const RELIEVERS: LinkDef = { to: "/app/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
+  const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
+  const ASSETS_ISSUANCE: LinkDef = { to: "/app/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
+  const ACCOUNTING_CORE: LinkDef = { to: "/app/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
   // Super admins only — it grants permissions, so it must not be reachable via
   // the permissions it grants. Matches the route guard in routes.tsx.
-  const ACCESS_GOVERNANCE: LinkDef = { to: "/super-admin/access-governance", label: "Access & Governance", icon: Users, roles: ["super_super_admin", "super_admin"] };
+  const ACCESS_GOVERNANCE: LinkDef = { to: "/app/access-governance", label: "Access & Governance", icon: Users, roles: ["super_super_admin", "super_admin"] };
   // PROFIT_DIST and PARTICIPATION_RULES removed with the route they pointed at.
   // Two labels, one dead screen: "Profit Distribution" was defined and never
   // pushed into a group, "Participation Rules" only ever appeared in the hidden
   // Profit-Share group. A link to a removed route is worse than no link.
-  const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const RMD_STATEMENTS: LinkDef = { to: "/app/partners", label: "RMD Statements", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -207,9 +207,9 @@ export default function SuperAdminLayout() {
     links.push({
       type: "group",
       label: "Me",
-      basePath: "/super-admin/my-profile",
+      basePath: "/app/my-profile",
       variant: "section",
-      children: [{ to: "/super-admin/my-profile", label: "My Profile", icon: UserRound }],
+      children: [{ to: "/app/my-profile", label: "My Profile", icon: UserRound }],
     });
   }
 
@@ -229,7 +229,7 @@ export default function SuperAdminLayout() {
   // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
   // Deployment; billing → Invoices); Client Relationships dissolved (complaints
   // → Incidents, renewals → Compliance, reviews → client record).
-  const contractsClients = buildGroup("Clients & Contracts", "/super-admin/billing", [
+  const contractsClients = buildGroup("Clients & Contracts", "/app/billing", [
     CLIENTS,
     CONTRACTS,
     INVOICES,
@@ -239,7 +239,7 @@ export default function SuperAdminLayout() {
   // WORKFORCE — Payroll now hosts Runs as a tab; Relievers is one thin panel
   // (per-day cost nets against the client, separate from salaried Payroll).
   // Recruitment removed; Performance hidden (route kept, just not in the nav).
-  const workforce = buildGroup("Workforce", "/super-admin/workforce", [
+  const workforce = buildGroup("Workforce", "/app/workforce", [
     EMPLOYEES,
     ASSIGNMENTS,
     ATTENDANCE,
@@ -253,7 +253,7 @@ export default function SuperAdminLayout() {
   // OPERATIONS — Roster killed (supervisor handles it); Deployment merged into
   // Workforce ▸ Assignments & Pay; Field Ops repurposed → Daily Reports;
   // Inventory + Assets merged → Assets & Issuance.
-  const operations = buildGroup("Operations", "/super-admin/operations", [
+  const operations = buildGroup("Operations", "/app/operations", [
     DAILY_REPORTS,
     INCIDENTS,
     ASSETS_ISSUANCE,
@@ -262,7 +262,7 @@ export default function SuperAdminLayout() {
 
   // FINANCE — Opening Balances + Chart of Accounts merged → Accounting Core.
   // Receivables folded into Bank & Ledgers. Treasury moved out to Profit-Share.
-  const finance = buildGroup("Finance", "/super-admin/finance", [
+  const finance = buildGroup("Finance", "/app/finance", [
     BANKS,
     // Unhidden. It was hidden when it was a merge of two screens nobody used;
     // it is now the only way in to the Chart of Accounts, the Trial Balance,
@@ -291,7 +291,7 @@ export default function SuperAdminLayout() {
   const PROFIT_SHARE_HIDDEN = true;
   const profitShare = PROFIT_SHARE_HIDDEN
     ? null
-    : buildGroup("Profit-Share", "/super-admin/partnership", [
+    : buildGroup("Profit-Share", "/app/partnership", [
         TREASURY,
         RMD_STATEMENTS,
         PROJECT_FIN,
@@ -302,14 +302,14 @@ export default function SuperAdminLayout() {
   // Licenses & Renewals and Contract Renewals are tabs of the Compliance
   // Calendar now, so it is the group's only entry.
   // Documents and Compliance Cases hidden (routes kept).
-  const compliance = buildGroup("Compliance", "/super-admin/comply", [
+  const compliance = buildGroup("Compliance", "/app/comply", [
     COMPLIANCE,
   ]);
   if (compliance) links.push(compliance);
 
   // ADMIN — Users & Permissions + Governance merged → Access & Governance.
   // Alerts hidden (route kept).
-  const admin = buildGroup("Admin", "/super-admin/admin", [
+  const admin = buildGroup("Admin", "/app/admin", [
     // TASKS moved to Overview, beneath Dashboard.
     ACCESS_GOVERNANCE,
     AUDIT_LOG,
@@ -321,7 +321,7 @@ export default function SuperAdminLayout() {
 
   const handleExitView = async () => {
     await setViewAsCompany(null);
-    navigate("/super-super-admin", { replace: true });
+    navigate("/platform", { replace: true });
   };
 
   return (

@@ -3,7 +3,7 @@
 // This is deliberately not the snippet Google hands you. That one goes in
 // index.html — and vercel.json rewrites every path to /index.html, so it would
 // load on every route in the app, including the whole CRM. Every navigation
-// inside /super-admin would send its URL to Google.
+// inside /app would send its URL to Google.
 //
 // Instead the tag is injected on demand by <PublicAnalytics>, which is mounted
 // on the marketing and signup routes and nowhere else. Nothing behind a login

@@ -92,7 +92,7 @@ function flattenLinks(items: SidebarItem[]): SidebarLink[] {
 }
 
 /** The link the current path belongs to: exact, else the longest prefix. A
- *  panel's home (/super-admin) only ever matches itself. */
+ *  panel's home (/app) only ever matches itself. */
 function currentLink(links: SidebarLink[], path: string): SidebarLink | null {
   let best: SidebarLink | null = null;
   for (const l of links) {
@@ -219,8 +219,8 @@ export default function Sidebar({ title, links, badges = {} }: SidebarProps) {
                   role="link"
                   tabIndex={0}
                   title={`${badges[l.label].title} — open them`}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate("/super-admin/alerts"); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); navigate("/super-admin/alerts"); } }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate("/app/alerts"); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); navigate("/app/alerts"); } }}
                   className="absolute top-1 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-down text-ink text-[10px] font-bold leading-[18px] text-center hover:ring-2 hover:ring-brand-500"
                 >
                   {badges[l.label].n > 99 ? "99+" : badges[l.label].n}

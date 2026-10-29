@@ -116,17 +116,17 @@ export const useDrill = () => useContext(DrillCtx);
 
 /** Where a source document lives in the app. */
 export const SOURCE_ROUTES: Record<string, { label: string; href: string }> = {
-  invoices: { label: "Invoices", href: "/super-admin/invoices" },
-  invoice_payments: { label: "Receivables", href: "/super-admin/invoices?tab=receivables" },
-  expenses: { label: "Expenses", href: "/super-admin/expenses" },
-  expenses_prepaid_release: { label: "Expenses", href: "/super-admin/expenses" },
-  payable_payments: { label: "Payables", href: "/super-admin/expenses?tab=payables" },
-  payslips: { label: "Payroll", href: "/super-admin/payroll" },
-  payslips_disbursement: { label: "Payroll", href: "/super-admin/payroll" },
-  payroll_adjustments: { label: "Payroll", href: "/super-admin/payroll" },
-  advances: { label: "Expenses — advances", href: "/super-admin/expenses" },
-  partner_account_entries: { label: "Partnership Report", href: "/super-admin/partnership?tab=statements" },
-  custody_transfers: { label: "Cash custody", href: "/super-admin/accounting?tab=cash-custody" },
+  invoices: { label: "Invoices", href: "/app/invoices" },
+  invoice_payments: { label: "Receivables", href: "/app/invoices?tab=receivables" },
+  expenses: { label: "Expenses", href: "/app/expenses" },
+  expenses_prepaid_release: { label: "Expenses", href: "/app/expenses" },
+  payable_payments: { label: "Payables", href: "/app/expenses?tab=payables" },
+  payslips: { label: "Payroll", href: "/app/payroll" },
+  payslips_disbursement: { label: "Payroll", href: "/app/payroll" },
+  payroll_adjustments: { label: "Payroll", href: "/app/payroll" },
+  advances: { label: "Expenses — advances", href: "/app/expenses" },
+  partner_account_entries: { label: "Partnership Report", href: "/app/partnership?tab=statements" },
+  custody_transfers: { label: "Cash custody", href: "/app/accounting?tab=cash-custody" },
 };
 
 /** The table a journal entry's source_id points into. */

@@ -165,7 +165,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
     if (embed || (activeTab !== "receivables" && activeTab !== "payables")) return;
     const q = new URLSearchParams(searchParams);
     q.set("tab", activeTab);
-    navigate(`${activeTab === "receivables" ? "/super-admin/invoices" : "/super-admin/expenses"}?${q.toString()}`, { replace: true });
+    navigate(`${activeTab === "receivables" ? "/app/invoices" : "/app/expenses"}?${q.toString()}`, { replace: true });
   }, [embed, activeTab, searchParams, navigate]);
   useEffect(() => { if (embed && activeTab !== embed) setActiveTab(embed); }, [embed, activeTab]);
 
@@ -191,8 +191,8 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   // where those live now, rather than shown an empty page.
   useEffect(() => {
     if (embed || visibleTabs.length > 0) return;
-    if (hasPermission(profile, "receivables.view")) navigate("/super-admin/invoices?tab=receivables", { replace: true });
-    else if (hasPermission(profile, "payables.view")) navigate("/super-admin/expenses?tab=payables", { replace: true });
+    if (hasPermission(profile, "receivables.view")) navigate("/app/invoices?tab=receivables", { replace: true });
+    else if (hasPermission(profile, "payables.view")) navigate("/app/expenses?tab=payables", { replace: true });
   }, [embed, visibleTabs, profile, navigate]);
   useEffect(() => {
     if (visibleTabs.length === 0) return;

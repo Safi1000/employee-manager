@@ -62,21 +62,21 @@ const KIND_LABEL: Record<RowKind, string> = {
 };
 
 const KIND_HREF: Record<RowKind, string> = {
-  case: "/super-admin/compliance-cases",
-  statutory_filing: "/super-admin/compliance",
-  weapon_licence: "/super-admin/employees",
-  guard_licence: "/super-admin/employees",
-  medical_fitness: "/super-admin/employees",
-  probation_end: "/super-admin/employees",
-  cnic: "/super-admin/employees",
-  weapons_cert: "/super-admin/employees",
-  refresher: "/super-admin/employees",
-  guard_document: "/super-admin/documents",
-  training: "/super-admin/employees",
-  inventory_licence: "/super-admin/assets-issuance",
-  contract_end: "/super-admin/contracts",
-  client_contract_end: "/super-admin/clients",
-  important_date: "/super-admin/compliance",
+  case: "/app/compliance-cases",
+  statutory_filing: "/app/compliance",
+  weapon_licence: "/app/employees",
+  guard_licence: "/app/employees",
+  medical_fitness: "/app/employees",
+  probation_end: "/app/employees",
+  cnic: "/app/employees",
+  weapons_cert: "/app/employees",
+  refresher: "/app/employees",
+  guard_document: "/app/documents",
+  training: "/app/employees",
+  inventory_licence: "/app/assets-issuance",
+  contract_end: "/app/contracts",
+  client_contract_end: "/app/clients",
+  important_date: "/app/compliance",
 };
 
 // One row of compliance_upcoming. days_remaining is signed and computed by the

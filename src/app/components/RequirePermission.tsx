@@ -7,7 +7,7 @@ import { hasAnyPermission, useAuth } from "../lib/auth";
 export default function RequirePermission({
   any,
   children,
-  fallback = "/super-admin",
+  fallback = "/app",
 }: {
   any: string[];
   children: ReactNode;

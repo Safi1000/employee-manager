@@ -9,7 +9,7 @@ import ContractRenewals from "./ContractRenewals";
 // separate places asking the same question — what runs out next — so they are
 // three tabs instead of three destinations.
 //
-// The old /super-admin/licences route redirects here (?tab=licences), so any
+// The old /app/licences route redirects here (?tab=licences), so any
 // bookmark still lands on the right panel.
 export default function ComplianceHub() {
   return (

@@ -557,7 +557,7 @@ export default function AuditLog() {
                           <span className="flex items-center justify-between gap-3">
                             <span>{summary(e.changes)}</span>
                             {e.record_id && e.action !== "delete" && REVERSIBLE_TABLES.has(e.table_name) && (
-                              <Link to={`/super-admin/reversals?reverse=${e.record_id}`} onClick={(ev) => ev.stopPropagation()}
+                              <Link to={`/app/reversals?reverse=${e.record_id}`} onClick={(ev) => ev.stopPropagation()}
                                 className="flex-shrink-0 rounded-lg border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-brand-500/60"
                                 title="Open this record in Reversals">
                                 Reverse →

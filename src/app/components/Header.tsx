@@ -167,7 +167,7 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
                 {live && <span className="live-dot w-2 h-2 rounded-full bg-brand-500 flex-shrink-0" aria-hidden="true" />}
                 <span className="lbl truncate">{line}</span>
                 {changed && (
-                  <Link to="/super-admin/audit-log" title={`Changes others made since ${new Date(changed.since).toLocaleString()}`}
+                  <Link to="/app/audit-log" title={`Changes others made since ${new Date(changed.since).toLocaleString()}`}
                     className="ml-1 flex-shrink-0 rounded-full border border-brand-500/50 px-2 py-0.5 text-[10px] font-semibold text-brand-500 hover:bg-brand-500/10">
                     {changed.n} change{changed.n === 1 ? "" : "s"} since you last looked
                   </Link>

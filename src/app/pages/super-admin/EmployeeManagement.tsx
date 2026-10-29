@@ -3590,7 +3590,7 @@ export default function EmployeeManagement() {
                   <span className="flex-1">
                     Client, location, branch, department, shift, salary, allowance and joining date are
                     managed on{" "}
-                    <Link to="/super-admin/assignments" className="font-medium text-brand-700 dark:text-brand-500 hover:underline">
+                    <Link to="/app/assignments" className="font-medium text-brand-700 dark:text-brand-500 hover:underline">
                       Assignments &amp; Pay
                     </Link>
                     , one guard or a whole client at a time.

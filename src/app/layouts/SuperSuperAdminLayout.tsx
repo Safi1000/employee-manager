@@ -11,7 +11,7 @@ import DriveLinkGuard from "../components/DriveLinkGuard";
 
 export default function SuperSuperAdminLayout() {
   const links = [
-    { to: "/super-super-admin", label: "Companies", icon: Building2 },
+    { to: "/platform", label: "Companies", icon: Building2 },
   ];
   return (
     <SecurityGate>

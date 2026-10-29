@@ -883,7 +883,7 @@ export default function PayrollRun() {
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Move to Review <ArrowRight className="w-4 h-4 ml-1.5" /></>}
                         </Button>
                       ) : (
-                        <Button size="sm" variant="ghost" onClick={() => navigate("/super-admin/attendance-run")}>
+                        <Button size="sm" variant="ghost" onClick={() => navigate("/app/attendance-run")}>
                           Open attendance <ArrowRight className="w-4 h-4 ml-1.5" />
                         </Button>
                       )}
@@ -991,7 +991,7 @@ export default function PayrollRun() {
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 dark:text-success-500">
                           <Lock className="w-3.5 h-3.5" /> Finance verified
                         </span>
-                        <Button size="sm" variant="secondary" onClick={() => navigate("/super-admin/payroll")}>
+                        <Button size="sm" variant="secondary" onClick={() => navigate("/app/payroll")}>
                           Disburse in Payslips <ArrowRight className="w-4 h-4 ml-1.5" />
                         </Button>
                       </>

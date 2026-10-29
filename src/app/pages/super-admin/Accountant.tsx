@@ -80,7 +80,7 @@ export default function Accountant() {
               <span className={`font-ledger text-2xl font-semibold leading-none ${red ? "text-down" : "text-up"}`}>{red == null ? "…" : red}</span>
               <span className="text-xs text-muted-foreground">{red == null ? "running the nightly controls…" : red ? "open Checks for the rows behind each" : "every control is green"}</span>
             </button>
-            <Link to="/super-admin/period-close" className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 hover:border-brand-500/70">
+            <Link to="/app/period-close" className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 hover:border-brand-500/70">
               <span className="lbl">{monthLabel(period)}</span>
               <span className={`font-display text-2xl font-bold leading-none ${closed ? "text-up" : "text-heed"}`}>{closed == null ? "…" : closed ? "Closed" : "Open"}</span>
               <span className="text-xs text-muted-foreground">{closed ? "locked — reopen from Period Close" : "close it from Period Close once the checks are clear"}</span>

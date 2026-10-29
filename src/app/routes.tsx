@@ -1,5 +1,5 @@
 import { lazyPage, RouteErrorScreen } from "./lib/lazyPage";
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, Navigate, useLocation } from "react-router";
 // Every screen is its own chunk, fetched the first time it is visited. Before
 // this the whole app — ~60 pages, jsPDF, xlsx, the landing site — was one
 // 3.6 MB file (950 KB gzipped) that had to download and parse before even the
@@ -108,6 +108,12 @@ const publicRoutes = [
   { path: "/signup/complete", Component: SignupComplete },
 ];
 
+/** An old /super-admin… or /super-super-admin… address, sent to the same page under its new prefix. */
+function LegacyPrefix({ from, to }: { from: string; to: string }) {
+  const { pathname, search, hash } = useLocation();
+  return <Navigate to={`${to}${pathname.slice(from.length)}${search}${hash}`} replace />;
+}
+
 export const router = createBrowserRouter([
   // Everything public sits under one pathless layout route whose only job is to
   // switch Google Analytics on. The panels below are deliberately OUTSIDE it:
@@ -119,7 +125,7 @@ export const router = createBrowserRouter([
     children: publicRoutes,
   },
   {
-    path: "/super-super-admin",
+    path: "/platform",
     errorElement: <RouteErrorScreen />,
     element: (
       <RequireAuth roles={["super_super_admin"]}>
@@ -132,7 +138,7 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    path: "/super-admin",
+    path: "/app",
     errorElement: <RouteErrorScreen />,
     element: (
       <RequireAuth roles={["super_admin", "hr", "accounting", "ops_manager", "ops_director", "finance_director"]}>
@@ -147,26 +153,26 @@ export const router = createBrowserRouter([
       // anyone with accounting.edit or payroll.approve widen their own access.
       // Role, not permission — same guard the Audit Log uses.
       { path: "access-governance", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AccessGovernance /></RequireAuth> },
-      { path: "users", element: <Navigate to="/super-admin/access-governance?tab=users" replace /> },
+      { path: "users", element: <Navigate to="/app/access-governance?tab=users" replace /> },
       { path: "clients", element: guard(["clients.view", "clients.edit"], <Clients />) },
       { path: "contracts", element: guard(["contracts.view", "contracts.edit"], <Contracts />) },
       // Deployment merged into Workforce ▸ Assignments & Pay: the contracted-vs-
       // enrolled reconciliation now sits on the same screen as the guards it counts.
-      { path: "deployment", element: <Navigate to="/super-admin/assignments" replace /> },
-      { path: "sites-strength", element: <Navigate to="/super-admin/assignments" replace /> },
+      { path: "deployment", element: <Navigate to="/app/assignments" replace /> },
+      { path: "sites-strength", element: <Navigate to="/app/assignments" replace /> },
       // Licenses & Renewals and the contract renewal pipeline are tabs of the
       // Compliance Calendar now — one home for everything with an expiry on it.
-      { path: "licences", element: <Navigate to="/super-admin/compliance?tab=licences" replace /> },
+      { path: "licences", element: <Navigate to="/app/compliance?tab=licences" replace /> },
       // Deployment Roster killed (supervisor handles daily assignment) → Assignments & Pay.
-      { path: "roster", element: <Navigate to="/super-admin/assignments" replace /> },
+      { path: "roster", element: <Navigate to="/app/assignments" replace /> },
       // Incidents now also hosts client complaints (from dissolved Client Relationships).
       { path: "incidents", element: guard(["incidents.view", "incidents.edit"], <IncidentsHub />) },
       // Opening Balances + Chart of Accounts (which hosts TB + GL) merged → Accounting Core.
       { path: "accounting-core", element: guard(["coa.view"], <AccountingCore />) },
-      { path: "chart-of-accounts", element: <Navigate to="/super-admin/accounting-core?tab=coa" replace /> },
-      { path: "trial-balance", element: <Navigate to="/super-admin/accounting-core?tab=tb" replace /> },
-      { path: "journal", element: <Navigate to="/super-admin/accounting-core?tab=journal" replace /> },
-      { path: "general-ledger", element: <Navigate to="/super-admin/accounting-core?tab=journal" replace /> },
+      { path: "chart-of-accounts", element: <Navigate to="/app/accounting-core?tab=coa" replace /> },
+      { path: "trial-balance", element: <Navigate to="/app/accounting-core?tab=tb" replace /> },
+      { path: "journal", element: <Navigate to="/app/accounting-core?tab=journal" replace /> },
+      { path: "general-ledger", element: <Navigate to="/app/accounting-core?tab=journal" replace /> },
       { path: "period-close", element: guard(["period_close.manage"], <PeriodClose />) },
       { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
       // 0502-0506: undo a recorded action.
@@ -201,10 +207,10 @@ export const router = createBrowserRouter([
         ]} />
       )) },
       { path: "payroll-run", element: guard(["payroll.view", "payroll.edit"], <PayrollRun />) },
-      { path: "payroll-runs", element: <Navigate to="/super-admin/payroll" replace /> },
+      { path: "payroll-runs", element: <Navigate to="/app/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       // Recruitment page deleted — intake is set on the employee form itself.
-      { path: "recruitment", element: <Navigate to="/super-admin/employees" replace /> },
+      { path: "recruitment", element: <Navigate to="/app/employees" replace /> },
       // Relievers (DECIDED 2026-10-23): the pool board — who is where, the gaps,
       // days per client — and their attendance. Pay is in the Payroll Run, under
       // "Relievers", like every other group.
@@ -214,8 +220,8 @@ export const router = createBrowserRouter([
           { key: "attendance", label: "Attendance", render: () => <AttendanceManagement relieversOnly /> },
         ]} />
       )) },
-      { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers?tab=attendance" replace /> },
-      { path: "relievers/payroll", element: <Navigate to="/super-admin/payroll-run" replace /> },
+      { path: "relievers/attendance", element: <Navigate to="/app/relievers?tab=attendance" replace /> },
+      { path: "relievers/payroll", element: <Navigate to="/app/payroll-run" replace /> },
       { path: "accounting", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Accounting />) },
       // Financial Reports, rebuilt (Overview, Client profit, Statements,
       // Ledgers, Scenarios). The Partnership Report below is a separate page.
@@ -229,23 +235,23 @@ export const router = createBrowserRouter([
       { path: "partnership", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], (
         <PartnershipPage />
       )) },
-      { path: "partnership-report", element: <Navigate to="/super-admin/partnership?tab=partners" replace /> },
-      { path: "partnership-run", element: <Navigate to="/super-admin/partnership?tab=months" replace /> },
+      { path: "partnership-report", element: <Navigate to="/app/partnership?tab=partners" replace /> },
+      { path: "partnership-run", element: <Navigate to="/app/partnership?tab=months" replace /> },
       // Everyone (0496): requesting is open; ExpensesEntry shows the ledger only to expenses.view/edit.
       { path: "expenses", element: <ExpensesEntry /> },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
       { path: "treasury", element: guard(["banks.view", "reports.view", "cashflow.view"], <Treasury />) },
       // Receivables folded into Bank & Ledgers (Accounting has a Receivables tab).
-      { path: "receivables", element: <Navigate to="/super-admin/invoices?tab=receivables" replace /> },
-      { path: "opening-balances", element: <Navigate to="/super-admin/accounting-core?tab=opening" replace /> },
+      { path: "receivables", element: <Navigate to="/app/invoices?tab=receivables" replace /> },
+      { path: "opening-balances", element: <Navigate to="/app/accounting-core?tab=opening" replace /> },
       { path: "regional-scorecard", element: guard(["reports.view", "banks.view"], <RegionalScorecard />) },
       // Client Relationships dissolved: complaints → Incidents, renewals → Compliance,
       // reviews → client record. Landing on the client list.
-      { path: "client-relationships", element: <Navigate to="/super-admin/clients" replace /> },
+      { path: "client-relationships", element: <Navigate to="/app/clients" replace /> },
       // Field Operations repurposed → Daily Reports (date-wise client report → PDF + record).
       { path: "daily-reports", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <DailyReports />) },
-      { path: "field-ops", element: <Navigate to="/super-admin/daily-reports" replace /> },
+      { path: "field-ops", element: <Navigate to="/app/daily-reports" replace /> },
       { path: "compliance-cases", element: guard(["compliance.view", "compliance.edit"], <ComplianceCases />) },
       // Assets & Issuance — tabs: Store | Issuance | Clearance | Register.
       // Inventory.tsx was deleted with this rebuild: it read inventory_items
@@ -253,12 +259,12 @@ export const router = createBrowserRouter([
       // neither of which can carry two costs or a guard-to-guard handover. Both
       // tables were empty on production, so nothing was migrated.
       { path: "assets-issuance", element: guard(["inventory.view", "inventory.edit", "banks.view"], <AssetsIssuance />) },
-      { path: "assets", element: <Navigate to="/super-admin/assets-issuance?tab=register" replace /> },
+      { path: "assets", element: <Navigate to="/app/assets-issuance?tab=register" replace /> },
       { path: "alerts", element: <Alerts /> },
-      { path: "governance", element: <Navigate to="/super-admin/access-governance?tab=governance" replace /> },
-      { path: "partners", element: <Navigate to="/super-admin/partnership?tab=statements" replace /> },
+      { path: "governance", element: <Navigate to="/app/access-governance?tab=governance" replace /> },
+      { path: "partners", element: <Navigate to="/app/partnership?tab=statements" replace /> },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
-      { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
+      { path: "cash-custody", element: <Navigate to="/app/accounting?tab=cash-custody" replace /> },
       // PROFIT DISTRIBUTION: ROUTE REMOVED. The screen maintained
       // profit_distribution_rules / profit_distribution_rule_lines /
       // referral_arrangements, which NO ledger function reads — configuring a
@@ -267,7 +273,7 @@ export const router = createBrowserRouter([
       // tables is not, and the referral model it describes has no equivalent
       // anywhere else yet. See the 0078b subsystem report.
       { path: "project-financing", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <ProjectFinancing />) },
-      { path: "inventory", element: <Navigate to="/super-admin/assets-issuance?tab=issuance" replace /> },
+      { path: "inventory", element: <Navigate to="/app/assets-issuance?tab=issuance" replace /> },
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <ComplianceHub />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
       { path: "settings", element: guard(["settings.view", "settings.edit"], <Settings />) },
@@ -282,9 +288,17 @@ export const router = createBrowserRouter([
     ],
   },
   // Legacy panel paths redirect to the unified panel.
-  { path: "/hr", element: <Navigate to="/super-admin" replace /> },
-  { path: "/hr/*", element: <Navigate to="/super-admin" replace /> },
-  { path: "/accounts", element: <Navigate to="/super-admin" replace /> },
-  { path: "/accounts/*", element: <Navigate to="/super-admin" replace /> },
+  { path: "/hr", element: <Navigate to="/app" replace /> },
+  { path: "/hr/*", element: <Navigate to="/app" replace /> },
+  { path: "/accounts", element: <Navigate to="/app" replace /> },
+  { path: "/accounts/*", element: <Navigate to="/app" replace /> },
+  // 2026-10-29: the panels moved from /super-admin and /super-super-admin to
+  // /app and /platform (every role shares one panel; the old name showed
+  // "super-admin" in everyone's address bar). Old links — bookmarks, emails,
+  // Stripe's billing return — land on the same page at the new address.
+  { path: "/super-admin/*", element: <LegacyPrefix from="/super-admin" to="/app" /> },
+  { path: "/super-admin", element: <LegacyPrefix from="/super-admin" to="/app" /> },
+  { path: "/super-super-admin/*", element: <LegacyPrefix from="/super-super-admin" to="/platform" /> },
+  { path: "/super-super-admin", element: <LegacyPrefix from="/super-super-admin" to="/platform" /> },
   { path: "*", element: <Navigate to="/login" replace /> },
 ]);

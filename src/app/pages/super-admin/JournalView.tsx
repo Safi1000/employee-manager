@@ -81,22 +81,22 @@ const monthLabel = (iso: string) =>
 // `focusType` travels with the id because three destinations serve two source
 // tables each and a bare uuid does not say which table it came from.
 const SOURCE_ROUTE: Record<string, { path: string; label: string }> = {
-  invoices: { path: "/super-admin/invoices", label: "Invoice" },
-  payslips: { path: "/super-admin/payroll", label: "Payslip" },
+  invoices: { path: "/app/invoices", label: "Invoice" },
+  payslips: { path: "/app/payroll", label: "Payslip" },
   // The disbursement entry hangs off the SAME payslip id — verified on
   // production, 120 of 120. It had no route at all, which left the second
   // largest source in the ledger with no drill-down.
-  payslips_disbursement: { path: "/super-admin/payroll", label: "Payslip disbursement" },
-  expenses: { path: "/super-admin/expenses", label: "Expense" },
-  advances: { path: "/super-admin/expenses", label: "Advance" },
-  cheques: { path: "/super-admin/accounting?tab=banks", label: "Cheque" },
+  payslips_disbursement: { path: "/app/payroll", label: "Payslip disbursement" },
+  expenses: { path: "/app/expenses", label: "Expense" },
+  advances: { path: "/app/expenses", label: "Advance" },
+  cheques: { path: "/app/accounting?tab=banks", label: "Cheque" },
   custody_transfers: {
-    path: "/super-admin/accounting?tab=cash-custody",
+    path: "/app/accounting?tab=cash-custody",
     label: "Custody transfer",
   },
-  partner_account_entries: { path: "/super-admin/partners", label: "Partner entry" },
+  partner_account_entries: { path: "/app/partners", label: "Partner entry" },
   opening_balance_batches: {
-    path: "/super-admin/accounting-core?tab=opening",
+    path: "/app/accounting-core?tab=opening",
     label: "Opening balance",
   },
 };

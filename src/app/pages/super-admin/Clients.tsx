@@ -1280,7 +1280,7 @@ export default function Clients() {
                       open: () => setSheet({ kicker, title: "Owed to us, by client", big: `PKR ${Math.round(portfolio.owed).toLocaleString()}`,
                         rows: rows.map((r) => ({ r, owed: owedByClient.get(r.id)?.owed ?? 0 })).filter((x) => Math.round(x.owed) !== 0)
                           .sort((a, b) => b.owed - a.owed).map((x) => ({ label: x.r.name, value: Math.round(x.owed).toLocaleString() })),
-                        link: { to: "/super-admin/invoices?tab=receivables", label: "Open receivables" } }) }
+                        link: { to: "/app/invoices?tab=receivables", label: "Open receivables" } }) }
                   : { label: "Active clients", v: portfolio.active.toLocaleString(), sub: `of ${portfolio.total} on the books`, tone: "text-foreground",
                       open: () => setSheet({ kicker, title: "Active clients", big: portfolio.active.toLocaleString(), rows: guardRows }) },
                 { label: "Largest client", v: `${Math.round(portfolio.topShare * 100)}%`, sub: portfolio.top ? `of guards at ${portfolio.top.name}` : "—", tone: portfolio.topShare > 0.3 ? "text-down" : "text-foreground",

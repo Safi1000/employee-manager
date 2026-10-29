@@ -19,13 +19,13 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 // All non-SSA users share one panel; sidebar items filter by per-user permissions.
 export const ROLE_HOMES: Record<UserRole, string> = {
-  super_super_admin: "/super-super-admin",
-  super_admin: "/super-admin",
-  hr: "/super-admin",
-  accounting: "/super-admin",
-  ops_manager: "/super-admin",
-  ops_director: "/super-admin",
-  finance_director: "/super-admin",
+  super_super_admin: "/platform",
+  super_admin: "/app",
+  hr: "/app",
+  accounting: "/app",
+  ops_manager: "/app",
+  ops_director: "/app",
+  finance_director: "/app",
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {

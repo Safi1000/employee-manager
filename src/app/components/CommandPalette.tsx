@@ -84,11 +84,11 @@ export default function CommandPalette({ links, onChangePassword }: { links: Pal
           go(path);
         };
         for (const r of (cl.data ?? []) as { id: string; name: string; client_code: string | null }[])
-          out.push({ key: `c${r.id}`, group: "Clients", title: r.name, meta: r.client_code ?? undefined, icon: Building2, run: searchThen("/super-admin/clients", "Clients.search", r.name) });
+          out.push({ key: `c${r.id}`, group: "Clients", title: r.name, meta: r.client_code ?? undefined, icon: Building2, run: searchThen("/app/clients", "Clients.search", r.name) });
         for (const r of (em.data ?? []) as { id: string; full_name: string; guard_code: string | null; employee_code: string | null; lifecycle_state: string | null }[])
-          out.push({ key: `e${r.id}`, group: "Guards & staff", title: r.full_name, meta: [r.guard_code ?? r.employee_code, r.lifecycle_state && r.lifecycle_state !== "active" ? r.lifecycle_state.replace(/_/g, " ") : null].filter(Boolean).join(" · "), icon: UserCircle, run: searchThen("/super-admin/employees", "EmployeeManagement.search", r.full_name) });
+          out.push({ key: `e${r.id}`, group: "Guards & staff", title: r.full_name, meta: [r.guard_code ?? r.employee_code, r.lifecycle_state && r.lifecycle_state !== "active" ? r.lifecycle_state.replace(/_/g, " ") : null].filter(Boolean).join(" · "), icon: UserCircle, run: searchThen("/app/employees", "EmployeeManagement.search", r.full_name) });
         for (const r of (inv.data ?? []) as unknown as { id: string; invoice_number: string; client: { name: string } | null }[])
-          out.push({ key: `i${r.id}`, group: "Invoices", title: r.invoice_number, meta: r.client?.name, icon: FileText, run: () => go(`/super-admin/invoices?focus=${r.id}&focusType=invoices`) });
+          out.push({ key: `i${r.id}`, group: "Invoices", title: r.invoice_number, meta: r.client?.name, icon: FileText, run: () => go(`/app/invoices?focus=${r.id}&focusType=invoices`) });
         setHits(out);
         setBusy(false);
       })();
@@ -103,14 +103,14 @@ export default function CommandPalette({ links, onChangePassword }: { links: Pal
     // Things to DO (2026-10-21): each opens the form on its page, and is only
     // offered when the page itself is one this user can open.
     const doIt: Item[] = ([
-      { key: "do:expense", title: "New expense", meta: "Expenses & Advances", icon: Receipt, page: "/super-admin/expenses", to: "/super-admin/expenses?new=expense" },
-      { key: "do:advance", title: "New advance to a guard", meta: "Expenses & Advances", icon: HandCoins, page: "/super-admin/expenses", to: "/super-admin/expenses?new=advance" },
-      { key: "do:invoice", title: "New invoice", meta: "Invoices", icon: Plus, page: "/super-admin/invoices", to: "/super-admin/invoices?new=invoice" },
-      { key: "do:receipt", title: "Record a receipt from a client", meta: "Invoices · Receivables", icon: HandCoins, page: "/super-admin/invoices", to: "/super-admin/invoices?tab=receivables" },
-      { key: "do:generate", title: "Generate this month's invoices", meta: "Invoices · Generate", icon: FileText, page: "/super-admin/invoices", to: "/super-admin/invoices?tab=generate" },
-      { key: "do:task", title: "New task", meta: "Task Board", icon: ListTodo, page: "/super-admin/tasks", to: "/super-admin/tasks?new=task" },
-      { key: "do:attendance", title: "Mark attendance", meta: "Attendance", icon: CalendarCheck, page: "/super-admin/attendance", to: "/super-admin/attendance" },
-      { key: "do:employee", title: "Add an employee", meta: "Employees", icon: UserPlus, page: "/super-admin/employees", to: "/super-admin/employees" },
+      { key: "do:expense", title: "New expense", meta: "Expenses & Advances", icon: Receipt, page: "/app/expenses", to: "/app/expenses?new=expense" },
+      { key: "do:advance", title: "New advance to a guard", meta: "Expenses & Advances", icon: HandCoins, page: "/app/expenses", to: "/app/expenses?new=advance" },
+      { key: "do:invoice", title: "New invoice", meta: "Invoices", icon: Plus, page: "/app/invoices", to: "/app/invoices?new=invoice" },
+      { key: "do:receipt", title: "Record a receipt from a client", meta: "Invoices · Receivables", icon: HandCoins, page: "/app/invoices", to: "/app/invoices?tab=receivables" },
+      { key: "do:generate", title: "Generate this month's invoices", meta: "Invoices · Generate", icon: FileText, page: "/app/invoices", to: "/app/invoices?tab=generate" },
+      { key: "do:task", title: "New task", meta: "Task Board", icon: ListTodo, page: "/app/tasks", to: "/app/tasks?new=task" },
+      { key: "do:attendance", title: "Mark attendance", meta: "Attendance", icon: CalendarCheck, page: "/app/attendance", to: "/app/attendance" },
+      { key: "do:employee", title: "Add an employee", meta: "Employees", icon: UserPlus, page: "/app/employees", to: "/app/employees" },
     ] as (Omit<Item, "group" | "run"> & { page: string; to: string })[])
       .filter((a) => byPath.has(a.page))
       .map((a) => ({ key: a.key, group: "Do", title: a.title, meta: a.meta, icon: a.icon, run: () => go(a.to) }));

@@ -111,14 +111,14 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const spare = cashTotal + dueFirst - payNeed;
 
   const attention = [
-    d.can.compliance && d.licencesOverdue > 0 && { n: d.licencesOverdue, text: "guards with an expired document", to: "/super-admin/compliance" },
-    d.can.compliance && d.licencesExpiring - d.licencesOverdue > 0 && { n: d.licencesExpiring - d.licencesOverdue, text: "guard documents expiring in 30 days", to: "/super-admin/compliance" },
-    d.can.incidents && d.openIncidents > 0 && { n: d.openIncidents, text: "open incidents", to: "/super-admin/incidents" },
-    d.can.contracts && d.contractsEnding.length > 0 && { n: d.contractsEnding.length, text: "contracts ending in 60 days", to: "/super-admin/contracts" },
-    d.can.periodClose && d.periodClosedThisMonth === false && d.lastClosedMonth && { n: "!", text: `last closed: ${formatDate(d.lastClosedMonth)}`, to: "/super-admin/period-close" },
+    d.can.compliance && d.licencesOverdue > 0 && { n: d.licencesOverdue, text: "guards with an expired document", to: "/app/compliance" },
+    d.can.compliance && d.licencesExpiring - d.licencesOverdue > 0 && { n: d.licencesExpiring - d.licencesOverdue, text: "guard documents expiring in 30 days", to: "/app/compliance" },
+    d.can.incidents && d.openIncidents > 0 && { n: d.openIncidents, text: "open incidents", to: "/app/incidents" },
+    d.can.contracts && d.contractsEnding.length > 0 && { n: d.contractsEnding.length, text: "contracts ending in 60 days", to: "/app/contracts" },
+    d.can.periodClose && d.periodClosedThisMonth === false && d.lastClosedMonth && { n: "!", text: `last closed: ${formatDate(d.lastClosedMonth)}`, to: "/app/period-close" },
     // A week out from payday and the money in hand plus what clients owe
     // inside 30 days will not cover last month's payroll.
-    d.can.accounting && d.can.payroll && c && ar && payNeed > 0 && daysToPayday <= 7 && spare < 0 && { n: mil(-spare), text: `short for the salary run in ${daysToPayday} day${daysToPayday === 1 ? "" : "s"}`, to: "/super-admin/payroll" },
+    d.can.accounting && d.can.payroll && c && ar && payNeed > 0 && daysToPayday <= 7 && spare < 0 && { n: mil(-spare), text: `short for the salary run in ${daysToPayday} day${daysToPayday === 1 ? "" : "s"}`, to: "/app/payroll" },
   ].filter(Boolean) as { n: number | string; text: string; to: string }[];
 
   // ---- run rate ----
@@ -138,9 +138,9 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const fall = useMemo(() => {
     if (!cm) return [];
     const steps: { label: string; v: number; kind?: "edge"; to: string }[] = [
-      { label: "Start of month", v: cm.opening, kind: "edge", to: "/super-admin/accounting" },
-      ...cm.flows.map((f) => ({ label: f.label, v: f.v, to: f.key === "clients" ? "/super-admin/invoices" : f.key === "salaries" ? "/super-admin/payroll" : f.key === "expenses" || f.key === "advances" ? "/super-admin/expenses" : "/super-admin/accounting" })),
-      { label: "Today", v: cm.closing, kind: "edge", to: "/super-admin/accounting" },
+      { label: "Start of month", v: cm.opening, kind: "edge", to: "/app/accounting" },
+      ...cm.flows.map((f) => ({ label: f.label, v: f.v, to: f.key === "clients" ? "/app/invoices" : f.key === "salaries" ? "/app/payroll" : f.key === "expenses" || f.key === "advances" ? "/app/expenses" : "/app/accounting" })),
+      { label: "Today", v: cm.closing, kind: "edge", to: "/app/accounting" },
     ];
     let run = 0, top = 1;
     for (const st of steps) { run = st.kind ? st.v : run + st.v; top = Math.max(top, run, st.kind ? st.v : 0); }
@@ -185,7 +185,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
       { label: "Absent", value: fmt(s.absent), hint: "Leaves the post short" },
       { label: "Difference", value: fmt(s.onPost - s.contracted) },
     ],
-    link: { to: "/super-admin/attendance", label: "Open attendance" },
+    link: { to: "/app/attendance", label: "Open attendance" },
   });
 
   // A short client's sheet also names the relievers free in its region on the
@@ -240,7 +240,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                 kicker: "Right now", title: "Short of contract", big: fmt(shortHeads),
                 note: sites ? "Clients with fewer guards on strength (present, double duty or on leave) than their contracts ask for." : "Coverage by client needs the contract cover figures; showing today's attendance instead.",
                 rows: short.slice(0, 12).map((s) => ({ label: s.name, value: `${s.contracted - s.onPost} short`, hint: s.region })),
-                link: { to: "/super-admin/attendance", label: "Open attendance" },
+                link: { to: "/app/attendance", label: "Open attendance" },
               })}
               className="flex-[1_1_300px] flex gap-5 items-center"
               label="Guards on strength now"
@@ -264,14 +264,14 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           )}
           <div className="flex-[999_1_420px] grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
             {(d.can.invoices || d.can.reports) && billed != null && (
-              <BandStat to="/super-admin/invoices" label={`Billed for ${billLabel}`} value={mil(billed)}
+              <BandStat to="/app/invoices" label={`Billed for ${billLabel}`} value={mil(billed)}
                 sub={c?.expectedClients ? `${c.billedClients} of ${c.expectedClients} contracted clients` : billedPrev ? `${prevLabel}: ${mil(billedPrev)}` : "by service month"}
                 tone={c?.notBilled && c.notBilled.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
             )}
-            {d.can.receivables && c?.receiptsMtd != null && <BandStat to="/super-admin/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
-            {d.can.accounting && <BandStat to="/super-admin/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
-            {tally && <BandStat to="/super-admin/accounting" label="Banks tallied" value={tally.value} sub={tally.sub} tone={tally.tone} title={tally.tip} />}
-            {d.can.receivables && ar && <BandStat to="/super-admin/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
+            {d.can.receivables && c?.receiptsMtd != null && <BandStat to="/app/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
+            {d.can.accounting && <BandStat to="/app/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
+            {tally && <BandStat to="/app/accounting" label="Banks tallied" value={tally.value} sub={tally.sub} tone={tally.tone} title={tally.tip} />}
+            {d.can.receivables && ar && <BandStat to="/app/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
         </div>
 
@@ -365,7 +365,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                     kicker: `Billed for ${billLabel} more than 10% off the contract`, title: "Billed off contract", big: String(c.offContract!.length),
                     note: "Each client's invoices for the month against its contract value at the line rates in force on the month's last day. Over can be extra posts or a second invoice for the month; under can be missing posts or a short invoice.",
                     rows: c.offContract!.slice(0, 20).map((x) => ({ label: x.name, value: `${Math.round((x.billed / x.value) * 100)}%`, hint: `${fmt(x.billed)} billed · ${fmt(x.value)} contract` })),
-                    link: { to: "/super-admin/invoices", label: "Open invoices" },
+                    link: { to: "/app/invoices", label: "Open invoices" },
                   })} className="text-[13px] text-warning-700 dark:text-warning-500 inline-flex items-center gap-1.5">
                     <span className="group-hover:underline">{c.offContract.length} client{c.offContract.length > 1 ? "s" : ""} billed more than 10% off contract</span><ArrowRight className="w-3.5 h-3.5" />
                   </Hit>
@@ -375,7 +375,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                     kicker: `Live contract in ${billLabel}, no invoice for it`, title: "Clients to invoice", big: String(missing.length),
                     note: `Each had a guard-deployment contract running in ${billLabel} and has no invoice for that service month yet. Contracts that began after ${billLabel} are left out.`,
                     rows: missing.slice(0, 20).map((x) => ({ label: x.name, value: `${x.heads} heads` })),
-                    link: { to: "/super-admin/invoices?tab=generate", label: "Generate invoices" },
+                    link: { to: "/app/invoices?tab=generate", label: "Generate invoices" },
                   })} className="text-[13px] text-brand-700 dark:text-brand-500 inline-flex items-center gap-1.5">
                     <span className="group-hover:underline">See the {missing.length} client{missing.length > 1 ? "s" : ""} still to invoice for {billLabel}</span><ArrowRight className="w-3.5 h-3.5" />
                   </Hit>
@@ -407,7 +407,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
       <div className="flex flex-wrap gap-4 md:gap-5 items-stretch">
         {d.show("cash_month") && d.can.accounting && cm && (
           <Card kicker="Cash this month · from the ledger" title={`From ${mil(cm.opening)} to ${mil(cm.closing)}`} className="flex-[1_1_420px]"
-            aside={<Link to="/super-admin/accounting" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">By account</Link>}>
+            aside={<Link to="/app/accounting" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">By account</Link>}>
             {fall.map((f) => (
               <Link key={f.label} to={f.to} className="grid grid-cols-[170px_minmax(0,1fr)_88px] gap-3 items-center min-h-8 text-[13px] group">
                 <span className={`group-hover:underline ${f.kind ? "font-bold" : ""}`}>{f.label}</span>
@@ -419,7 +419,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             ))}
             <p className="text-xs text-muted-foreground">Every bank and cash account, read from the ledger. Moves between our own accounts net to nothing; tap a line for where it was recorded.</p>
             {d.can.accounting && Math.abs(cm.closing - cashTotal) >= 1000 && (
-              <Link to="/super-admin/accounting-core" className="rounded-xl border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:text-warning-500 hover:underline">
+              <Link to="/app/accounting-core" className="rounded-xl border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:text-warning-500 hover:underline">
                 The ledger holds {mil(cm.closing)} on these accounts; the recorded bank and cash balances say {mil(cashTotal)}. The {mil(Math.abs(cashTotal - cm.closing))} between them is mostly opening balances from before the ledger began that were never posted — post them in Opening Balances and the two will agree.
               </Link>
             )}
@@ -430,7 +430,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           <Card kicker={`Client margins · ${new Date(`${c.clientMap.month}T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}`}
             title={ranked.length ? <>{pct(rkRev ? rkNet / rkRev : 0)} margin on {mil(rkRev)}</> : "No client has its cost recorded yet"}
             className="flex-[1_1_460px]"
-            aside={<Link to="/super-admin/reports" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Client profit</Link>}>
+            aside={<Link to="/app/reports" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Client profit</Link>}>
             <p className="text-xs text-muted-foreground -mt-1">After payroll, direct costs, regional overhead and head office — best net first.</p>
             <ul className="flex flex-col divide-y divide-border">
               {ranked.map((r) => {
@@ -444,7 +444,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                         kicker: `${r.region} · revenue basis`, title: r.name, big: `${pct(m)} margin`,
                         note: "Last full month, with regional overhead and head office as currently set — the same client P&L Financial Reports shows.",
                         rows: [{ label: "Revenue", value: fmt(r.revenue) }, { label: "Payroll & direct cost", value: fmt(r.direct) }, { label: "Net", value: fmt(r.net) }, { label: "Contracted guards", value: fmt(r.guards) }],
-                        link: { to: "/super-admin/reports", label: "Open client profit" },
+                        link: { to: "/app/reports", label: "Open client profit" },
                       })}>
                       <div className="flex items-baseline gap-2 text-sm">
                         <span className="truncate text-foreground">{r.name}</span>
@@ -492,7 +492,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           const slipPct = p.slips ? p.paidSlips / p.slips : 0;
           return (
             <Card kicker={`Payroll · ${new Date(`${c.billMonth}T00:00:00`).toLocaleDateString(undefined, { month: "long" })}`} title={left < 1 ? "Every salary is paid" : `${mil(left)} still to pay`} className="flex-[1_1_320px]"
-              aside={<Link to="/super-admin/payroll" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Open payroll</Link>}>
+              aside={<Link to="/app/payroll" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Open payroll</Link>}>
               <div className="flex flex-col gap-1.5">
                 <div className="relative h-3 rounded-full bg-muted overflow-hidden">
                   <div className={`absolute inset-y-0 left-0 rounded-full ${slipPct >= 1 ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${Math.min(100, slipPct * 100)}%` }} />
@@ -513,7 +513,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
           const net = w.joined - w.left;
           return (
             <Card kicker="Workforce · this month" title={`${fmt(w.active)} on the books`} className="flex-[1_1_300px]"
-              aside={<Link to="/super-admin/employees" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Open employees</Link>}>
+              aside={<Link to="/app/employees" className="text-[13px] text-brand-700 dark:text-brand-500 hover:underline">Open employees</Link>}>
               <div className="flex items-end gap-6">
                 <div className="flex flex-col">
                   <span className="font-display text-3xl font-extrabold text-success-700 dark:text-success-500">+{w.joined}</span>
@@ -545,7 +545,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   <Hit key={r.clientId} onClick={() => setSheet({
                     kicker: "Receivables", title: r.name, big: `${fmt(t)} owed`, note: "Open invoices by age. Chase the oldest first.",
                     rows: AGE.map((a, i) => ({ label: `${a.label}${i === 0 ? "" : " days"}`, value: fmt(r.buckets[i]) })),
-                    link: { to: "/super-admin/invoices?tab=receivables", label: "Open receivables" },
+                    link: { to: "/app/invoices?tab=receivables", label: "Open receivables" },
                   })} className="grid grid-cols-[150px_minmax(0,1fr)_76px] gap-3 items-center min-h-[34px] text-[13px]">
                     <span className="truncate group-hover:underline">{r.name}</span>
                     <span className="flex h-3.5 rounded-full overflow-hidden bg-muted/70">
@@ -571,7 +571,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   kicker: "Region · last full month", title: r.name, big: fmt(r.net),
                   note: `Profit after regional overhead${r.charged ? " and its head-office share" : r.charged === false ? ". Head office is not charged to this region" : ""}.`,
                   rows: [{ label: "Revenue", value: fmt(r.revenue) }, { label: "Margin", value: pct(r.net / Math.max(1, r.revenue)) }, { label: "Guards on strength", value: rq ? `${o} / ${rq}` : "—" }, { label: "Invoices, last 6 months", value: r.trend.map(mil).join(" → ") }],
-                  link: { to: "/super-admin/reports", label: "Open in Financial Reports" },
+                  link: { to: "/app/reports", label: "Open in Financial Reports" },
                 })} className="bg-card border border-border rounded-[18px] p-4 flex flex-col gap-2.5 hover:border-brand-500/60">
                   <span className="flex flex-col items-start gap-1 w-full min-w-0">
                     <span className="font-display text-lg font-bold group-hover:underline truncate max-w-full">{r.name}</span>
@@ -611,7 +611,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                       ? "Their share of their region's profit after its head-office charge, cash basis, as the partnership run computes it."
                       : "The equity share: what is left of every region's profit after the regional partners, cash basis.",
                     rows: r.parts.map((x) => ({ label: x.region, value: fmt(x.amount), hint: x.sharePct != null && r.kind === "regional" ? `${x.sharePct}%` : undefined })),
-                    link: { to: "/super-admin/partnership?tab=months", label: "Open Partnership Run" },
+                    link: { to: "/app/partnership?tab=months", label: "Open Partnership Run" },
                   })}>
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="text-sm text-foreground font-medium group-hover:underline truncate">{r.name}
@@ -625,7 +625,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                   </Hit>
                 ))}
                 {pp.undeclared.length > 0 && (
-                  <Link to="/super-admin/partnership?tab=months" className="text-xs text-heed hover:underline">
+                  <Link to="/app/partnership?tab=months" className="text-xs text-heed hover:underline">
                     {pp.undeclared.join(", ")}: profit not declared for {month} yet — counts as nothing until it is.
                   </Link>
                 )}
@@ -653,7 +653,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                     onClick={() => setSheet({
                       kicker: a.days_remaining < 0 ? `Overdue by ${-a.days_remaining} days` : `Due in ${a.days_remaining} days`,
                       title: a.title, big: formatDate(a.due_date), note: a.category || undefined,
-                      link: { to: "/super-admin/compliance", label: "Open compliance" },
+                      link: { to: "/app/compliance", label: "Open compliance" },
                     })}
                     className="absolute -translate-x-1/2 flex flex-col items-center gap-1" style={{ left: `${(pos / 30) * 100}%`, top: i % 2 ? 36 : 0 }}>
                     <span className={`whitespace-nowrap max-w-[180px] truncate text-xs font-semibold px-2.5 py-1.5 rounded-lg ${urgent ? "bg-foreground text-background" : "bg-muted text-foreground border border-border"}`}>
@@ -681,7 +681,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
               </div>
             ))}
           </div>
-          <Link to="/super-admin/alerts" className="self-start inline-flex items-center gap-1.5 text-[13px] text-brand-700 dark:text-brand-500 hover:underline">All alerts <ArrowRight className="w-3.5 h-3.5" /></Link>
+          <Link to="/app/alerts" className="self-start inline-flex items-center gap-1.5 text-[13px] text-brand-700 dark:text-brand-500 hover:underline">All alerts <ArrowRight className="w-3.5 h-3.5" /></Link>
         </Card>
       )}
 

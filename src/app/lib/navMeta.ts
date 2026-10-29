@@ -1,7 +1,7 @@
 /**
  * Which sidebar section a route belongs to, for the kicker line in each page's
  * band ("FINANCE · GUARDS AND GUIDES"). Keyed by the first path segment after
- * the role prefix (/super-admin/<key>/…). Mirrors the groups SuperAdminLayout
+ * the role prefix (/app/<key>/…). Mirrors the groups SuperAdminLayout
  * builds; a route missing here simply shows the company name alone.
  */
 const SECTION_OF: Record<string, string> = {

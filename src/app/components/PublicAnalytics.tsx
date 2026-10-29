@@ -7,8 +7,8 @@ import { trackPageView } from "../lib/analytics";
  * beneath it — the landing page, login and the two signup steps — and nowhere
  * else.
  *
- * The whole point is what it does NOT wrap. /super-admin and
- * /super-super-admin sit outside it, so no authenticated URL, and nothing about
+ * The whole point is what it does NOT wrap. /app and
+ * /platform sit outside it, so no authenticated URL, and nothing about
  * an employee, client or tenant, is ever sent to Google. Putting the tag in
  * index.html instead would have covered every route, because vercel.json
  * rewrites all paths to it.

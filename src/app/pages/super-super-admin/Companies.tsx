@@ -151,7 +151,7 @@ export default function Companies() {
       setError(err);
       return;
     }
-    navigate("/super-admin", { replace: true });
+    navigate("/app", { replace: true });
   };
 
   const openSubscription = async (c: CompanyRow) => {
@@ -410,7 +410,7 @@ export default function Companies() {
                           <Power className="w-3 h-3" /> {c.active ? "Deactivate" : "Activate"}
                         </button>
                         <Link
-                          to={`/super-super-admin/companies/${c.id}`}
+                          to={`/platform/companies/${c.id}`}
                           className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border text-brand-700 hover:bg-brand-50"
                         >
                           Users <ArrowRight className="w-3 h-3" />

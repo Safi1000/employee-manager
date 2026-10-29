@@ -226,7 +226,7 @@ export default function ContractRenewals() {
                         className="w-full px-2 py-1 border border-border rounded-lg bg-card text-xs text-foreground placeholder:text-muted-foreground"
                       />
                       {r.stage === "renewed" && liveContract.get(r.client_id) && (
-                        <Link to={`/super-admin/contracts?renew=${liveContract.get(r.client_id)}`}
+                        <Link to={`/app/contracts?renew=${liveContract.get(r.client_id)}`}
                           className="rounded-lg bg-brand-500/15 text-brand-700 dark:text-brand-500 px-2.5 py-1.5 text-xs font-semibold text-center hover:bg-brand-500/25">
                           Renew the contract → carries its lines over
                         </Link>

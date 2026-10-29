@@ -118,7 +118,7 @@ export default function CompanyDetail() {
         subtitle={company ? `Tenant ${company.id}` : loading ? "Loading…" : "Company not found"}
         actions={
           <div className="flex items-center gap-2">
-            <Link to="/super-super-admin" className="inline-flex items-center gap-1 rounded-xl border border-border px-3 min-h-10 text-sm text-muted-foreground hover:text-foreground">
+            <Link to="/platform" className="inline-flex items-center gap-1 rounded-xl border border-border px-3 min-h-10 text-sm text-muted-foreground hover:text-foreground">
               <ArrowLeft className="w-4 h-4" /> All companies
             </Link>
             {company && (

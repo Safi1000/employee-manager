@@ -85,7 +85,7 @@ export default function SignupComplete() {
       navigate("/login", { replace: true });
       return;
     }
-    navigate("/super-admin", { replace: true });
+    navigate("/app", { replace: true });
   };
 
   const inputClass =
