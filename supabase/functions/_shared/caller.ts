@@ -32,10 +32,14 @@ export async function resolveCaller(req: Request): Promise<Caller | null> {
   if (error || !data.user) return null;
   const { data: p } = await admin
     .from("profiles")
-    .select("company_id, role, view_as_company")
+    .select("company_id, role, view_as_company, user_type")
     .eq("id", data.user.id)
     .maybeSingle();
   if (!p) return null;
+  // 0607: a site-supervisor login acts for no company here. It reaches only the
+  // field_* database functions, through the API gate; no Edge Function that
+  // resolves a caller (Drive files, uploads, backups, digests) serves it.
+  if (p.user_type === "site_supervisor") return null;
   const isSSA = p.role === "super_super_admin";
   return {
     userId: data.user.id,
