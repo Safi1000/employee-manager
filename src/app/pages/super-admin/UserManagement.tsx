@@ -20,6 +20,7 @@ import { usePageState } from "../../lib/pageState";
 import UserSecurityModal, { deviceLabel, type UserSecurity } from "../../components/UserSecurityModal";
 import DrivePrivacyCard from "../../components/DrivePrivacyCard";
 import BackupCard from "../../components/BackupCard";
+import SecurityDigestCard from "../../components/SecurityDigestCard";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -511,7 +512,7 @@ export default function UserManagement() {
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
-        {(profile?.role === "super_admin" || profile?.role === "super_super_admin") && (<><BackupCard /><DrivePrivacyCard /></>)}
+        {(profile?.role === "super_admin" || profile?.role === "super_super_admin") && (<><SecurityDigestCard companyId={company?.id ?? profile?.company_id ?? null} /><BackupCard /><DrivePrivacyCard /></>)}
 
         <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center gap-3">
