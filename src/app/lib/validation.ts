@@ -134,6 +134,8 @@ export const PK_BANKS: readonly { code: string | null; name: string; wallet?: tr
   { code: "BAHL", name: "Bank Al Habib", lengths: [17] },
   { code: "ALFH", name: "Bank Alfalah", lengths: [14, 18] },
   { code: "KHYB", name: "Bank of Khyber" },
+  // Bank of AJK pays the BAJK guards (0603). IBAN code not verified — leave null.
+  { code: null, name: "Bank of AJK" },
   { code: "BPUN", name: "Bank of Punjab", lengths: [16, 17] },
   { code: "BKIP", name: "BankIslami", lengths: [15] },
   { code: "DUIB", name: "Dubai Islamic Bank Pakistan", lengths: [10] },
