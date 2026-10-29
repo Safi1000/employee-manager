@@ -4,7 +4,6 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { isCompanyWide } from "../lib/navMeta";
 import { useNavBadges } from "../lib/navBadges";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
-import AiChatWidget from "../components/AiChatWidget";
 import InactivityLogout from "../components/InactivityLogout";
 import SecurityGate from "../components/SecurityGate";
 import RegionSelector from "../components/RegionSelector";
@@ -377,7 +376,6 @@ export default function SuperAdminLayout() {
             </Suspense>
           </ScrollMemory>
         </div>
-        <AiChatWidget />
         <InactivityLogout />
         <DriveLinkGuard />
       </div>
