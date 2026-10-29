@@ -1,4 +1,0 @@
-import { ComplianceCases } from "../../screens/compliance/Compliance";
-import { page } from "../../navigation/page";
-
-export default page("/compliance-cases", ComplianceCases);

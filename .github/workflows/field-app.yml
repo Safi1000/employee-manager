@@ -1,0 +1,86 @@
+# Builds the GGS Field Android app (mobile/) into a signed APK, shared
+# privately (WhatsApp) — there is no store listing yet. Run it from the
+# Actions tab ("Run workflow"), or it runs on its own when mobile/ changes.
+# The APK is attached to the run under Artifacts.
+#
+# Signing: one key, forever. Android installs an update only if it is signed
+# with the same key as the copy already on the phone, so losing this key means
+# every supervisor uninstalls and reinstalls (and their phone then needs
+# approving again). The key lives in three repository secrets:
+#   FIELD_KEYSTORE_B64       the .p12 keystore, base64
+#   FIELD_KEYSTORE_PASSWORD  its password
+#   FIELD_KEY_ALIAS          the key's alias inside it
+# The build refuses without them rather than sign with a throwaway key.
+
+name: Field app APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/field-app.yml"]
+
+concurrency:
+  group: field-app
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      # Public anon key — the same one the web app ships. What a field login can
+      # reach is decided by api_request_gate, not by this key.
+      EXPO_PUBLIC_SUPABASE_URL: https://mmkfpnshxjcyijhuydgr.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ta2ZwbnNoeGpjeWlqaHV5ZGdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NTk2MzQsImV4cCI6MjA5NDAzNTYzNH0.vR-Ct4S2Khh_sbeflGOZNp_pONGPJecWqUYSW6dw8JU
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Signing key present?
+        env:
+          KS: ${{ secrets.FIELD_KEYSTORE_B64 }}
+          KP: ${{ secrets.FIELD_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.FIELD_KEY_ALIAS }}
+        run: |
+          if [ -z "$KS" ] || [ -z "$KP" ] || [ -z "$KA" ]; then
+            echo "::error::FIELD_KEYSTORE_B64, FIELD_KEYSTORE_PASSWORD and FIELD_KEY_ALIAS must be set as repository secrets. See the header of this workflow."
+            exit 1
+          fi
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/field.p12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx expo prebuild --platform android --no-install
+
+      - name: Build signed APK
+        working-directory: mobile/android
+        env:
+          KP: ${{ secrets.FIELD_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.FIELD_KEY_ALIAS }}
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/field.p12" \
+            -Pandroid.injected.signing.store.password="$KP" \
+            -Pandroid.injected.signing.key.alias="$KA" \
+            -Pandroid.injected.signing.key.password="$KP"
+          mv app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/ggs-field-${{ github.run_number }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ggs-field-${{ github.run_number }}
+          path: ${{ runner.temp }}/ggs-field-${{ github.run_number }}.apk
+          retention-days: 30

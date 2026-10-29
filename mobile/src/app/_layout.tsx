@@ -10,14 +10,10 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
-import { T } from "../components/Text";
+import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { OverlayProvider } from "../components/Sheet";
-import { DataProvider, useDB } from "../data/store";
-import { AuthProvider, useAuth } from "../lib/auth";
-import { RegionProvider } from "../lib/region";
-import { ThemeProvider, useTheme, useThemeCtx } from "../theme/ThemeProvider";
+import { FieldProvider, useField } from "../lib/field";
+import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
 
 export default function RootLayout() {
   const [loaded] = useFonts({
@@ -27,65 +23,35 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <AuthProvider>
-          <DataProvider>
-            <RegionProvider>
-              <OverlayProvider>{loaded ? <Root /> : <Splash />}</OverlayProvider>
-            </RegionProvider>
-          </DataProvider>
-        </AuthProvider>
+        <FieldProvider>{loaded ? <Root /> : <Splash />}</FieldProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
-function Splash({ label }: { label?: string }) {
+function Splash() {
   const t = useTheme();
   return (
-    <View style={{ flex: 1, backgroundColor: t.bg, alignItems: "center", justifyContent: "center", gap: 12 }}>
+    <View style={{ flex: 1, backgroundColor: t.bg, alignItems: "center", justifyContent: "center" }}>
       <ActivityIndicator color={t.brand[500]} />
-      {label ? <T v="small" muted>{label}</T> : null}
-    </View>
-  );
-}
-
-/** Live mode: the first load failed, so there is nothing true to show. Say so and offer a retry. */
-function LoadFailed({ message, retry, signOut }: { message: string; retry: () => void; signOut: () => void }) {
-  const t = useTheme();
-  return (
-    <View style={{ flex: 1, backgroundColor: t.bg, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 }}>
-      <T v="h3">{"Couldn't load your data"}</T>
-      <T v="small" muted style={{ textAlign: "center" }}>{message}</T>
-      <Pressable onPress={retry} style={{ paddingVertical: 10, paddingHorizontal: 18, borderRadius: 10, backgroundColor: t.brand[500] }}>
-        <T v="smallStrong" color={t.onBrand}>Try again</T>
-      </Pressable>
-      <Pressable onPress={signOut}><T v="small" muted>Sign out</T></Pressable>
     </View>
   );
 }
 
 function Root() {
   const t = useTheme();
-  const { profile, loading, signOut } = useAuth();
-  const data = useDB();
-  // The company brand colour (companies.theme) applies for everyone, as on the web.
-  const { setBrandKey } = useThemeCtx();
-  const companyTheme = data.db.company.theme;
-  React.useEffect(() => { if (companyTheme) setBrandKey(companyTheme); }, [companyTheme]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (loading) return <Splash />;
-  // First live load: hold the shell until real data is in, so no screen renders
-  // "0 guards" for a company that has hundreds.
-  if (profile && data.loading && data.v === 0) return <Splash label="Loading your company…" />;
-  if (profile && data.error && data.v === 0) return <LoadFailed message={data.error} retry={() => void data.reload()} signOut={() => void signOut()} />;
+  const { phase } = useField();
+  if (phase === "loading") return <Splash />;
   return (
     <>
       <StatusBar style={t.dark ? "light" : "dark"} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
-        <Stack.Protected guard={!profile}>
+        <Stack.Protected guard={phase !== "ready"}>
           <Stack.Screen name="login" />
         </Stack.Protected>
-        <Stack.Protected guard={!!profile}>
-          <Stack.Screen name="(app)" />
+        <Stack.Protected guard={phase === "ready"}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="site/[id]" />
         </Stack.Protected>
       </Stack>
     </>
