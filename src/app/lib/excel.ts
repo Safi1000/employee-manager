@@ -10,6 +10,7 @@ async function ensureXlsx() {
 }
 
 import { saveBlob, mimeFor } from "./saveFile";
+import { exportStamp, exporterName } from "./exportStamp";
 
 const DEFAULT_COMPANY = "Guards & Guides Security Services (Pvt.) Limited";
 
@@ -34,6 +35,11 @@ function mergeCell(
 // share sheet on a phone. Fire-and-forget: every caller is a click handler that
 // has never awaited this, and the failure mode (no file) is self-evident.
 function downloadWorkbook(wb: XLSXNS.WorkBook, fileName: string) {
+  // 0595: the workbook names who took it — an "Exported" sheet and the author.
+  if (!wb.SheetNames.includes("Exported")) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[exportStamp()], [`File: ${fileName}`]]), "Exported");
+  }
+  wb.Props = { ...(wb.Props ?? {}), Author: exporterName(), Company: "Bastion" };
   const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   void saveBlob(new Blob([bytes], { type: mimeFor(fileName) }), fileName);
 }

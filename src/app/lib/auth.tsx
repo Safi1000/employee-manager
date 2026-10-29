@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import type { Session } from "@supabase/supabase-js";
 import { supabase, type Company, type Profile, type UserRole } from "./supabase";
 import { applyTheme } from "./theme";
+import { setExporter } from "./exportStamp";
 
 type AuthCtx = {
   session: Session | null;
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
       const p = (data as Profile) ?? null;
       setProfile(p);
+      setExporter(p?.full_name ?? p?.email ?? null);
       loadedUserIdRef.current = p ? userId : null;
 
       if (!p) return false;

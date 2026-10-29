@@ -78,6 +78,7 @@ import {
 } from "../../lib/validation";
 import { useAuth, hasPermission, hasAnyPermission } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
+import { savePdf } from "../../lib/saveFile";
 
 // Rows painted per page of the roster list. See renderEmployeeList.
 const EMPLOYEE_PAGE_SIZE = 50;
@@ -4305,7 +4306,7 @@ function BulkGenerateModal({
       }
       setDone((n) => n + 1);
     }
-    if (started) combined.save(`${docType === "data_form" ? "data-forms" : "id-cards"}-${employees.length}.pdf`);
+    if (started) void savePdf(combined, `${docType === "data_form" ? "data-forms" : "id-cards"}-${employees.length}.pdf`);
     setFailures(fails); setFinished(true); setRunning(false);
   };
 

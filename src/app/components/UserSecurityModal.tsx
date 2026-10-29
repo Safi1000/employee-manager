@@ -23,6 +23,7 @@ export type UserSecurity = {
 };
 
 type LoginEvent = { id: string; logged_in_at: string; ip: string | null; user_agent: string | null; new_device: boolean };
+type ExportRow = { id: string; exported_at: string; file_name: string; screen: string | null };
 
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -44,6 +45,7 @@ export default function UserSecurityModal({
   onChanged: () => void;
 }) {
   const [events, setEvents] = useState<LoginEvent[] | null>(null);
+  const [exports, setExports] = useState<ExportRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -52,6 +54,10 @@ export default function UserSecurityModal({
     void supabase.from("login_events").select("id, logged_in_at, ip, user_agent, new_device")
       .eq("user_id", user.id).order("logged_in_at", { ascending: false }).limit(50)
       .then(({ data }) => setEvents((data ?? []) as LoginEvent[]));
+    // 0595: files this login downloaded.
+    void supabase.from("export_log").select("id, exported_at, file_name, screen")
+      .eq("user_id", user.id).order("exported_at", { ascending: false }).limit(20)
+      .then(({ data }) => setExports((data ?? []) as ExportRow[]));
   }, [user.id]);
 
   const run = async (key: string, fn: () => PromiseLike<{ error: unknown }>, done: string) => {
@@ -159,6 +165,20 @@ export default function UserSecurityModal({
             </div>
           )}
         </div>
+
+        {exports.length > 0 && (
+          <div>
+            <h4 className="lbl mb-2">Recent exports</h4>
+            <ul className="max-h-48 overflow-y-auto divide-y divide-border rounded-lg border border-border text-xs">
+              {exports.map((x) => (
+                <li key={x.id} className="flex items-center justify-between gap-3 px-2.5 py-1.5">
+                  <span className="truncate text-foreground" title={x.file_name}>{x.file_name}</span>
+                  <span className="shrink-0 text-muted-foreground">{when(x.exported_at)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </Modal>
   );

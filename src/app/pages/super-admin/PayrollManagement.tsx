@@ -37,6 +37,7 @@ import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWind
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { usePageState, PageStateScope } from "../../lib/pageState";
+import { savePdf } from "../../lib/saveFile";
 
 type EmployeeRow = Employee & { client_name: string | null };
 
@@ -2282,7 +2283,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     line("Status", row.status);
     line("Disbursed", row.disbursed ? "Yes" : "No");
-    doc.save(`payslip_${empDisplay(row.employee)}_${row.period_month}.pdf`);
+    void savePdf(doc, `payslip_${empDisplay(row.employee)}_${row.period_month}.pdf`);
   };
 
   const isCurrent = selectedPeriod === currentPeriod;
