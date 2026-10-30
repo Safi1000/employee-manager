@@ -1,7 +1,14 @@
-# Builds the GGS Field Android app (mobile/) into a signed APK, shared
-# privately (WhatsApp) — there is no store listing yet. Run it from the
-# Actions tab ("Run workflow"), or it runs on its own when mobile/ changes.
-# The APK is attached to the run under Artifacts.
+# Builds the GGS Field Android app (mobile/) into a signed APK — shared
+# privately (WhatsApp) for testing — and a signed app bundle (.aab), which is
+# what Google Play takes. Run it from the Actions tab ("Run workflow"), or it
+# runs on its own when mobile/ changes. Both are attached to the run under
+# Artifacts.
+#
+# Phones only: the build carries the two ARM processor types every Android
+# phone uses (arm64-v8a, armeabi-v7a) and leaves out the x86 ones only
+# emulators need, which roughly halves the APK. Play cuts the .aab per phone
+# anyway. The same key signs both; on Play it is the upload key (Play App
+# Signing holds the key that signs what phones download).
 #
 # Signing: one key, forever. Android installs an update only if it is signed
 # with the same key as the copy already on the phone, so losing this key means
@@ -66,21 +73,29 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx expo prebuild --platform android --no-install
 
-      - name: Build signed APK
+      - name: Build signed APK and app bundle
         working-directory: mobile/android
         env:
           KP: ${{ secrets.FIELD_KEYSTORE_PASSWORD }}
           KA: ${{ secrets.FIELD_KEY_ALIAS }}
         run: |
-          ./gradlew assembleRelease --no-daemon \
+          ./gradlew assembleRelease bundleRelease --no-daemon \
+            -PreactNativeArchitectures=arm64-v8a,armeabi-v7a \
             -Pandroid.injected.signing.store.file="$RUNNER_TEMP/field.p12" \
             -Pandroid.injected.signing.store.password="$KP" \
             -Pandroid.injected.signing.key.alias="$KA" \
             -Pandroid.injected.signing.key.password="$KP"
           mv app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/ggs-field-${{ github.run_number }}.apk"
+          mv app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/ggs-field-${{ github.run_number }}.aab"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ggs-field-${{ github.run_number }}
           path: ${{ runner.temp }}/ggs-field-${{ github.run_number }}.apk
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ggs-field-${{ github.run_number }}-play-bundle
+          path: ${{ runner.temp }}/ggs-field-${{ github.run_number }}.aab
           retention-days: 30

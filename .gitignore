@@ -50,3 +50,4 @@ scripts/_attendance-window-lifted.mjs
 docs/audits/*eobi-deductions*
 *CNIC*.csv
 *cnic*.csv
+builds/

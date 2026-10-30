@@ -77,8 +77,8 @@ when we get there.
    answers (the app uses the camera and location, and shows only staff data).
    You submit from your account.
 
-We can keep the app **unlisted / for your staff only**, so it doesn't show in
-public searches.
+We can keep the app **for your staff only** by publishing on a closed testing
+track with a tester list, so it doesn't show in public searches.
 
 ---
 

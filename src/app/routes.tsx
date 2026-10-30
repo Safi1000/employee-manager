@@ -75,6 +75,7 @@ const MyProfile = lazyPage(() => import("./pages/super-admin/MyProfile"));
 const DailyReports = lazyPage(() => import("./pages/super-admin/DailyReports"));
 const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const FieldReview = lazyPage(() => import("./pages/super-admin/FieldReview"));
+const FieldAppPrivacy = lazyPage(() => import("./pages/FieldAppPrivacy"));
 const FieldActivityPage = lazyPage(() => import("./pages/super-admin/FieldActivity"));
 const IncidentsHub = lazyPage(() => import("./pages/super-admin/IncidentsHub"));
 
@@ -110,6 +111,8 @@ const publicRoutes = [
   // company is actually created — but only if the payment is confirmed.
   { path: "/signup", Component: Signup },
   { path: "/signup/complete", Component: SignupComplete },
+  // The field app's privacy policy — the page Google Play and the App Store link to.
+  { path: "/privacy/field-app", Component: FieldAppPrivacy },
 ];
 
 /** An old /super-admin… or /super-super-admin… address, sent to the same page under its new prefix. */
