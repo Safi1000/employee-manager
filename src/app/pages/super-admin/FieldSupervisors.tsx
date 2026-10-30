@@ -8,6 +8,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
 import { supabase, friendlyDbError } from "../../lib/supabase";
+import { useRegion } from "../../lib/region";
 
 /**
  * Operations ▸ Field Supervisors (30 Oct 2026). Replaces the Field accounts card
@@ -25,6 +26,10 @@ import { supabase, friendlyDbError } from "../../lib/supabase";
  * page and the phone cannot disagree. A supervisor's total is the sum over
  * their sites (a guard sits on one site's roster only). Nothing is added up
  * here beyond those per-site counts.
+ *
+ * The region switch in the top bar narrows both views and the headline figures
+ * to that region's clients (clients.branch_id); a supervisor shows when any of
+ * their sites is in it.
  *
  * Super admins only, like every admin_field_* function. A supervisor signs in
  * with their employee code + a 6-digit PIN on ONE approved phone and sees only
@@ -198,7 +203,7 @@ export default function FieldSupervisors() {
   const [openSup, setOpenSup] = useState<Record<string, boolean>>({});
   const [openClient, setOpenClient] = useState<Record<string, boolean>>({});
   const [q, setQ] = useState("");
-  const [region, setRegion] = useState("");
+  const { region } = useRegion();
   const [onlyUncovered, setOnlyUncovered] = useState(false);
   // modals
   const [creating, setCreating] = useState(false);
@@ -234,11 +239,12 @@ export default function FieldSupervisors() {
   }, [empQ, emps]);
 
   const coverById = useMemo(() => new Map((cover ?? []).map((c) => [c.site_id, c])), [cover]);
-  const regions = useMemo(() => [...new Set((cover ?? []).map((c) => c.region).filter(Boolean) as string[])].sort(), [cover]);
+  // The top-bar region, by the branch name admin_field_coverage returns.
+  const regionCover = useMemo(() => (cover ?? []).filter((c) => !region || c.region === region.name), [cover, region]);
 
   // Headline figures — each a count over admin_field_coverage's per-site rows.
   const stats = useMemo(() => {
-    const rows = cover ?? [];
+    const rows = regionCover;
     const manned = rows.filter((c) => c.guards > 0);
     return {
       logins: (accounts ?? []).filter((a) => !a.disabled_at).length,
@@ -249,16 +255,15 @@ export default function FieldSupervisors() {
       guardsTotal: manned.reduce((n, c) => n + c.guards, 0),
       uncovered: manned.filter((c) => !isCovered(c)).length,
     };
-  }, [accounts, cover]);
+  }, [accounts, regionCover]);
 
   const clientGroups = useMemo(() => {
     const term = q.trim().toLowerCase();
-    let rows = cover ?? [];
-    if (region) rows = rows.filter((c) => c.region === region);
+    let rows = regionCover;
     if (onlyUncovered) rows = rows.filter((c) => c.guards > 0 && !isCovered(c));
     if (term) rows = rows.filter((c) => `${c.client_name} ${c.site_name} ${c.location ?? ""} ${c.supervisors.map((s) => s.name).join(" ")}`.toLowerCase().includes(term));
     return groupByClient(rows).sort((a, b) => b.guards - a.guards || a.client_name.localeCompare(b.client_name));
-  }, [cover, q, region, onlyUncovered]);
+  }, [regionCover, q, onlyUncovered]);
 
   const supRows = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -267,9 +272,10 @@ export default function FieldSupervisors() {
         const sites = a.sites.map((s) => coverById.get(s.id)).filter(Boolean) as Cover[];
         return { a, sites, groups: groupByClient(sites), guards: sites.reduce((n, s) => n + s.guards, 0), flagged: sites.reduce((n, s) => n + s.flagged, 0) };
       })
+      .filter((r) => !region || r.sites.some((s) => s.region === region.name))
       .filter((r) => !term || `${r.a.name} ${r.a.employee_code ?? ""} ${r.sites.map((s) => `${s.client_name} ${s.site_name}`).join(" ")}`.toLowerCase().includes(term))
       .sort((x, y) => Number(!!x.a.disabled_at) - Number(!!y.a.disabled_at) || x.a.name.localeCompare(y.a.name));
-  }, [accounts, coverById, q]);
+  }, [accounts, coverById, q, region]);
 
   const pinOk = /^\d{6}$/.test(pin);
 
@@ -392,15 +398,9 @@ export default function FieldSupervisors() {
                 className="w-full rounded-md border border-border bg-card py-2 pl-10 pr-3 text-sm text-foreground" />
             </div>
             {view === "clients" && (
-              <>
-                <select value={region} onChange={(e) => setRegion(e.target.value)} className="rounded-md border border-border bg-card px-2.5 py-2 text-sm text-foreground">
-                  <option value="">All regions</option>
-                  {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
                 <label className="flex select-none items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
                   <input type="checkbox" checked={onlyUncovered} onChange={(e) => setOnlyUncovered(e.target.checked)} /> Only sites with nobody
                 </label>
-              </>
             )}
           </div>
         </div>
@@ -410,7 +410,7 @@ export default function FieldSupervisors() {
         ) : view === "supervisors" ? (
           supRows.length === 0 ? (
             <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-              {accounts!.length ? "No supervisor matches the search." : "No field logins yet. Use New field login to create the first one."}
+              {accounts!.length ? (region ? `No supervisor covers a site in ${region.name}${q.trim() ? " that matches the search" : ""}.` : "No supervisor matches the search.") : "No field logins yet. Use New field login to create the first one."}
             </div>
           ) : (
             <div className="flex flex-col gap-3">
@@ -545,7 +545,7 @@ export default function FieldSupervisors() {
                         {g.flagged > 0 && <span className="text-heed">{g.flagged} flagged</span>}
                         {manned === 0 ? <span className="text-muted-foreground">no guards posted</span>
                           : coveredManned === manned ? <span className="text-up">covered</span>
-                          : <span className="font-semibold text-heed">{manned - coveredManned} of {manned} sites have nobody</span>}
+                          : <span className="font-semibold text-heed">{manned === 1 ? "site has nobody" : `${manned - coveredManned} of ${manned} sites have nobody`}</span>}
                       </span>
                     </button>
                     {expanded && (
