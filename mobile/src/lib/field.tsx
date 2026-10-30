@@ -23,6 +23,7 @@ type Ctx = {
   signOut: (notice?: string) => Promise<void>;
   recheck: () => Promise<void>;
   roster: (siteId: string) => Promise<Guard[]>;
+  photo: (siteId: string, employeeId: string) => Promise<string | null>;
 };
 
 const FieldCtx = createContext<Ctx | null>(null);
@@ -60,9 +61,11 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [endsAt, setEndsAt] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photos = useRef(new Map<string, Promise<string | null>>());
 
   const signOut = useCallback(async (why?: string) => {
     await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+    photos.current.clear();
     setMe(null); setEndsAt(null); setError(null); setNotice(why ?? null); setPhase("signedOut");
   }, []);
 
@@ -128,8 +131,22 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     return (data ?? []) as Guard[];
   }, [signOut]);
 
+  // One photo per call (field_guard_photo, 0609), kept for the session so
+  // scrolling back up does not fetch it again. A failed fetch shows initials.
+  const photo = useCallback((siteId: string, employeeId: string) => {
+    let p = photos.current.get(employeeId);
+    if (!p) {
+      p = Promise.resolve(supabase.rpc("field_guard_photo", { p_site_id: siteId, p_employee_id: employeeId }))
+        .then(({ data, error: e }) => (e ? null : (data as string | null)))
+        .catch(() => null);
+      p.then((v) => { if (!v) photos.current.delete(employeeId); });
+      photos.current.set(employeeId, p);
+    }
+    return p;
+  }, []);
+
   return (
-    <FieldCtx.Provider value={{ phase, me, error, notice, endsAt, signIn, signOut, recheck, roster }}>
+    <FieldCtx.Provider value={{ phase, me, error, notice, endsAt, signIn, signOut, recheck, roster, photo }}>
       {children}
     </FieldCtx.Provider>
   );

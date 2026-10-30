@@ -1,6 +1,6 @@
 import { LucideIcon, Search, X } from "lucide-react-native";
 import React from "react";
-import { ActivityIndicator, Pressable, StyleProp, TextInput, TextInputProps, View, ViewStyle } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleProp, TextInput, TextInputProps, View, ViewStyle } from "react-native";
 import { useTheme } from "../theme/ThemeProvider";
 import { fonts, radius, Tone } from "../theme/tokens";
 import { T } from "./Text";
@@ -111,10 +111,11 @@ export function Empty({ title, sub, icon: Icon }: { title: string; sub?: string;
   );
 }
 
-export function Avatar({ name }: { name: string }) {
+export function Avatar({ name, uri }: { name: string; uri?: string | null }) {
   const t = useTheme();
   const tn = t.tone("brand");
   const letters = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+  if (uri) return <Image source={{ uri }} accessibilityLabel={name} style={{ width: 40, height: 40, borderRadius: 13, borderWidth: 1, borderColor: tn.line }} />;
   return (
     <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: tn.tint, borderWidth: 1, borderColor: tn.line, alignItems: "center", justifyContent: "center" }}>
       <T v="smallStrong" color={tn.text} style={{ fontSize: 14 }}>{letters}</T>

@@ -37,4 +37,6 @@ npm run typecheck
 npm run lint
 ```
 
-Photos (`has_photo`) are not shown yet — they need a field photo function.
+Photos: a guard with `has_photo` gets their photo from `field_guard_photo(site, guard)`
+(0609), one call per guard, kept for the session; tap it to see it full size.
+Without the function, or without a photo, the row shows initials.

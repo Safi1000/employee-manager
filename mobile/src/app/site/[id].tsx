@@ -1,9 +1,9 @@
-// One site's guards: name, code, shift, phone, expiry flags. Nothing else —
+// One site's guards: photo, name, code, shift, phone, expiry flags. Nothing else —
 // field_site_roster returns no CNIC number and no pay, by design (0607).
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Phone, Users } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Pressable, RefreshControl, View } from "react-native";
+import { FlatList, Image, Linking, Modal, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../../components/Text";
 import { Avatar, Badge, Banner, Card, Empty, SearchBar } from "../../components/ui";
@@ -20,6 +20,7 @@ export default function SiteRoster() {
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [big, setBig] = useState<{ uri: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     try { const got = await roster(id); setErr(null); setRows(got); }
@@ -56,7 +57,7 @@ export default function SiteRoster() {
         renderItem={({ item: g }) => (
           <Card style={{ gap: 8 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Avatar name={g.full_name} />
+              <GuardAvatar siteId={id} guard={g} onOpen={setBig} />
               <View style={{ flex: 1 }}>
                 <T v="bodyStrong">{g.full_name}</T>
                 <T v="mono" muted>{g.employee_code ?? "—"}{g.shift ? ` · ${g.shift}` : ""}</T>
@@ -76,6 +77,31 @@ export default function SiteRoster() {
           </Card>
         )}
       />
+      <Modal visible={!!big} transparent animationType="fade" onRequestClose={() => setBig(null)}>
+        <Pressable onPress={() => setBig(null)} accessibilityLabel="Close photo"
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center", padding: 24, gap: 14 }}>
+          {big ? <Image source={{ uri: big.uri }} resizeMode="contain" style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }} /> : null}
+          {big ? <T v="bodyStrong" color="#fff">{big.name}</T> : null}
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+/** Initials, or the guard's photo once fetched; tap a photo to see it full size. */
+function GuardAvatar({ siteId, guard, onOpen }: { siteId: string; guard: Guard; onOpen: (p: { uri: string; name: string }) => void }) {
+  const { photo } = useField();
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    if (!guard.has_photo) return;
+    let live = true;
+    void photo(siteId, guard.employee_id).then((v) => { if (live) setUri(v); });
+    return () => { live = false; };
+  }, [siteId, guard.employee_id, guard.has_photo, photo]);
+  if (!uri) return <Avatar name={guard.full_name} />;
+  return (
+    <Pressable onPress={() => onOpen({ uri, name: guard.full_name })} hitSlop={6} accessibilityLabel={`Photo of ${guard.full_name}`}>
+      <Avatar name={guard.full_name} uri={uri} />
+    </Pressable>
   );
 }
