@@ -163,7 +163,8 @@ as $$
 declare v_site text;
 begin
   if tg_table_name = 'attendance_confirmations' then
-    if new.source::text = 'app' and (tg_op = 'INSERT' or old.confirmed_at is distinct from new.confirmed_at) then
+    if new.source::text = 'app' and (tg_op = 'INSERT' or old.confirmed_at is distinct from new.confirmed_at
+                                     or (new.review_status = 'pending' and old.review_status is distinct from 'pending')) then
       select name into v_site from public.sites where id = new.site_id;
       perform public.field_log('attendance', 'attendance_confirmations', new.id, new.site_id,
         coalesce(v_site, 'Site') || ' — ' || new.shift_code || ' shift ' || to_char(new.attendance_date, 'DD Mon') || ' confirmed by ' || new.supervisor_name, new.geo);
@@ -340,7 +341,7 @@ declare
   v_co    constant uuid := '7f7899a0-edd2-4491-a40d-f81b54c68d1e';
   v_site  constant uuid := 'e4184474-5e1a-4643-a52e-2b5675c1d500';  -- 68 HS
   v_today date := (now() at time zone 'Asia/Karachi')::date;
-  v_guard uuid; v_shift text; v_ids uuid[]; v_visit uuid; v_line uuid; v_conf uuid; v_cline uuid; v_msg text;
+  v_guard uuid; v_shift text; v_ids uuid[]; v_visit uuid; v_line uuid; v_conf uuid; v_cline uuid; v_msg text; v_n int;
 begin
   begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_boss, 'role', 'authenticated')::text, true);
@@ -375,7 +376,8 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_boss, 'role', 'authenticated')::text, true);
     perform public.admin_set_field_ack_rule('visit', array['field.app']);
     perform set_config('request.jwt.claims', json_build_object('sub', v_hr, 'role', 'authenticated')::text, true);
-    if public.acknowledge_field_activity(array[v_line], 'Seen') <> 1
+    v_n := public.acknowledge_field_activity(array[v_line], 'Seen');
+    if v_n <> 1
        or not exists (select 1 from public.field_activity where id = v_line and ack_by = v_hr and ack_note = 'Seen') then
       raise exception '0621 REFUSED: after the rule change the HR login could not acknowledge.';
     end if;
