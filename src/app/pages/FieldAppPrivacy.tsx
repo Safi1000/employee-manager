@@ -4,12 +4,13 @@
  * does as built (0607–0625), and must change whenever the app collects
  * something new.
  *
- * CONTACT stays empty until Shayan gives the company's legal name and the
- * address people should write to; the page then names them.
+ * The app is published on the stores by TECHXSERVE Enterprise (the developer of
+ * Bastion) for GGS, whose staff use it; contact given by Shayan, 30 Oct 2026.
  */
 
 const COMPANY = "GGS";
-const CONTACT: string | null = null;
+const PUBLISHER = "TECHXSERVE Enterprise";
+const CONTACT: string | null = "info@techxserve.com";
 const UPDATED = "30 October 2026";
 
 function H({ children }: { children: React.ReactNode }) {
@@ -22,7 +23,7 @@ export default function FieldAppPrivacy() {
       <div className="mx-auto max-w-3xl px-4 py-10 text-sm leading-relaxed text-foreground md:px-8">
         <p className="lbl">{COMPANY} · Bastion</p>
         <h1 className="mt-2 text-2xl font-semibold">GGS Field — privacy policy</h1>
-        <p className="mt-1 text-muted-foreground">Last updated {UPDATED}</p>
+        <p className="mt-1 text-muted-foreground">Last updated {UPDATED} · published by {PUBLISHER} for {COMPANY}</p>
 
         <p className="mt-6">
           GGS Field is a work app for {COMPANY}'s own staff — site supervisors and office staff. It is not for the public:
@@ -73,6 +74,12 @@ export default function FieldAppPrivacy() {
           <li>Camera access is needed only for the features that take photos.</li>
           <li>To see, correct or delete what the app holds about you, or to close your login, ask the {COMPANY} office{CONTACT ? <> — <b>{CONTACT}</b></> : ""}.</li>
         </ul>
+
+        <H>Who we are</H>
+        <p className="mt-2">
+          The app is built and published by {PUBLISHER}, the developer of Bastion, for {COMPANY}. {COMPANY} decides what the
+          app is used for; {PUBLISHER} runs it on {COMPANY}'s behalf.{CONTACT ? <> Questions about this policy: <b>{CONTACT}</b>.</> : null}
+        </p>
 
         <H>Changes</H>
         <p className="mt-2">If the app starts collecting anything new, this page is updated first.</p>
