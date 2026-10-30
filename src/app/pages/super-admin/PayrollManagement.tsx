@@ -254,7 +254,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // as Deductions (asked 2026-10-08). The edit goes through the same recompute
   // as a typed deduction; the effect further down saves the recomputed row once
   // it reflects the new figure. Only a disbursed payslip takes an adjustment.
-  const [pendingFineSave, setPendingFineSave] = useState<{ employeeId: string; deductions: number } | null>(null);
+  const [pendingFineSave, setPendingFineSave] = useState<{ employeeId: string; deductions: number; warningId: string | null } | null>(null);
+  // 0617: an approved warning's fine waits here until HR adds it ("Fines from
+  // warnings"). Add pre-fills the fine-by-days form above; once the fine is on
+  // the payslip, mark_warning_fine_applied takes it off the list. Nothing here
+  // moves money that the existing fine path does not already move.
+  type WarningFine = { id: string; employee_id: string; fine_days: number; reason: string; issued_on: string; employees: { full_name: string; employee_code: string } | null };
+  const [warningFines, setWarningFines] = useState<WarningFine[]>([]);
+  const [applyingWarning, setApplyingWarning] = useState<string | null>(null);
+  const markWarningFine = async (id: string | null) => {
+    if (!id) return;
+    const { error } = await supabase.rpc("mark_warning_fine_applied", { p_id: id });
+    if (error) setError(friendlyDbError(error));
+    setWarningFines((prev) => prev.filter((w) => w.id !== id));
+  };
   const raiseAdjustment = async (payslipId: string, perDay: number | null) => {
     setAdjErr(null);
     if (adjForm.kind === "fine" && selectedRow && !selectedRow.disbursed) {
@@ -265,7 +278,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         deductions,
         notes: selectedRow.notes ? `${selectedRow.notes}\n${line}` : line,
       });
-      setPendingFineSave({ employeeId: selectedRow.employee.id, deductions });
+      setPendingFineSave({ employeeId: selectedRow.employee.id, deductions, warningId: applyingWarning });
+      setApplyingWarning(null);
       setAdjOpen(false);
       return;
     }
@@ -277,6 +291,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     });
     if (error) { setAdjErr(friendlyDbError(error)); return; }
     setAdjOpen(false);
+    await markWarningFine(applyingWarning);
+    setApplyingWarning(null);
     await loadPeriodData(selectedPeriod);
   };
   const [periodAdj, setPeriodAdj] = useState<Map<string, { id: string; amount: number; reason: string; settlement: string; status: string }[]>>(new Map());
@@ -396,6 +412,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
   const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
+  useEffect(() => {
+    const start = selectedPeriod.slice(0, 7) + "-01";
+    const d = new Date(`${start}T00:00:00`);
+    const end = `${d.getMonth() === 11 ? d.getFullYear() + 1 : d.getFullYear()}-${String(((d.getMonth() + 1) % 12) + 1).padStart(2, "0")}-01`;
+    void supabase.from("disciplinary_warnings")
+      .select("id, employee_id, fine_days, reason, issued_on, employees(full_name, employee_code)")
+      .eq("status", "approved").eq("rescinded", false).not("fine_days", "is", null).is("fine_applied_at", null)
+      .gte("issued_on", start).lt("issued_on", end).order("issued_on")
+      .then(({ data }) => setWarningFines((data ?? []) as unknown as WarningFine[]));
+  }, [selectedPeriod]);
 
   // Restored from the last visit (asked 2026-10-05): the employee whose
   // breakdown was open is open again when you come back.
@@ -1640,6 +1666,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     (async () => {
       try {
         await savePayslip(row);
+        await markWarningFine(pendingFineSave.warningId);
         await loadPeriodData(selectedPeriod);
       } catch (e: any) {
         setError(friendlyError(e));
@@ -2867,6 +2894,32 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           </div>
         )}
 
+        {warningFines.length > 0 && (canAdjust || hasPermission(profile, "payroll.edit")) && (
+          <div className="mb-4 rounded-2xl border border-border bg-card p-4 text-sm">
+            <p className="font-medium text-foreground">Fines from warnings · {formatPeriod(selectedPeriod)}</p>
+            <p className="mb-2 text-xs text-muted-foreground">Approved on Field Review or the warnings screen; each waits here until you add it to his payslip. Add opens the fine form with the days filled in.</p>
+            <ul className="divide-y divide-border">
+              {warningFines.map((w) => {
+                const row = rows.find((r) => r.employee.id === w.employee_id);
+                return (
+                  <li key={w.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                    <span className="text-foreground">{w.employees?.full_name} <span className="text-xs text-muted-foreground">{w.employees?.employee_code} · {w.fine_days} day{w.fine_days === 1 ? "" : "s"}' salary · {w.reason}</span></span>
+                    {row?.payslip_id ? (
+                      <Button size="sm" variant="secondary" onClick={() => {
+                        setSelectedId(w.employee_id);
+                        setApplyingWarning(w.id);
+                        setAdjErr(null);
+                        setAdjForm({ amount: "", kind: "fine", fineBy: "days", days: String(w.fine_days), reason: `Warning ${w.issued_on}: ${w.reason}`, settlement: "carry_forward" });
+                        setAdjOpen(true);
+                      }}>Add to payslip</Button>
+                    ) : <span className="text-xs text-muted-foreground">{row ? "save his payslip for this month first" : "not in this list — check the filters"}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {!embedded && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
@@ -3880,7 +3933,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </ul>
                       )}
                       {canAdjust && selectedRow.payslip_id && (
-                        <Button variant="secondary" size="sm" onClick={() => { setAdjForm({ amount: "", kind: null, fineBy: "days", days: "", reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
+                        <Button variant="secondary" size="sm" onClick={() => { setApplyingWarning(null); setAdjForm({ amount: "", kind: null, fineBy: "days", days: "", reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
                           Raise adjustment
                         </Button>
                       )}
@@ -4623,7 +4676,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         />
       )}
       {adjOpen && selectedRow?.payslip_id && (
-        <Modal isOpen onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${selectedRow.employee.full_name}`} size="sm">
+        <Modal isOpen onClose={() => { setAdjOpen(false); setApplyingWarning(null); }} title={`Raise adjustment — ${selectedRow.employee.full_name}`} size="sm">
           <div className="space-y-3">
             {adjForm.kind === "fine" && !selectedRow.disbursed ? (
             <p className="text-xs text-muted-foreground">
@@ -4700,7 +4753,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             </div>
             )}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setAdjOpen(false)}>Back</Button>
+              <Button variant="ghost" onClick={() => { setAdjOpen(false); setApplyingWarning(null); }}>Back</Button>
               <Button onClick={() => raiseAdjustment(selectedRow.payslip_id!, selectedRow.per_day_salary)}
                       disabled={!adjForm.kind || !adjAmount(selectedRow.per_day_salary) || !adjForm.reason.trim()}>Raise</Button>
             </div>

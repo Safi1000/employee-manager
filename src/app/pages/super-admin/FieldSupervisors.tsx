@@ -9,6 +9,7 @@ import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useRegion } from "../../lib/region";
+import { SiteLocations, SiteTasksPanel, VisitsPanel } from "../../components/FieldActivity";
 
 /**
  * Operations ▸ Field Supervisors (30 Oct 2026). Replaces the Field accounts card
@@ -23,6 +24,10 @@ import { useRegion } from "../../lib/region";
  * and a third tab, Office staff (0612): office logins that may use the app
  * (super admins, and anyone granted field.app on the permissions screen) and
  * their phones, which are approved here exactly like a supervisor's.
+ * Then what the app sends back (0614–0619, components/FieldActivity): Visits
+ * with their checklists and photos, Site tasks set here for the phone, and
+ * Locations — each site's point and area, which the phone's position is
+ * compared with (recorded, never a refusal).
  *
  * Guard counts come from admin_field_coverage() (0610), which counts
  * field_site_roster(site) — the list the supervisor's phone shows — so this
@@ -200,7 +205,7 @@ function RosterModal({ site, onClose }: { site: Cover; onClose: () => void }) {
 }
 
 export default function FieldSupervisors() {
-  const [view, setView] = useState<"supervisors" | "clients" | "office">("supervisors");
+  const [view, setView] = useState<"supervisors" | "clients" | "office" | "visits" | "tasks" | "locations">("supervisors");
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [cover, setCover] = useState<Cover[] | null>(null);
   const [office, setOffice] = useState<OfficeUser[] | null>(null);
@@ -252,6 +257,8 @@ export default function FieldSupervisors() {
   const coverById = useMemo(() => new Map((cover ?? []).map((c) => [c.site_id, c])), [cover]);
   // The top-bar region, by the branch name admin_field_coverage returns.
   const regionCover = useMemo(() => (cover ?? []).filter((c) => !region || c.region === region.name), [cover, region]);
+  const regionSiteIds = useMemo(() => (region ? new Set(regionCover.map((c) => c.site_id)) : null), [region, regionCover]);
+  const regionClientNames = useMemo(() => (region ? new Set(regionCover.map((c) => c.client_name)) : null), [region, regionCover]);
 
   // Headline figures — each a count over admin_field_coverage's per-site rows.
   const stats = useMemo(() => {
@@ -403,8 +410,11 @@ export default function FieldSupervisors() {
             { value: "supervisors", label: "Supervisors", count: stats.logins },
             { value: "clients", label: "Clients & sites", count: stats.uncovered || undefined },
             { value: "office", label: "Office staff", count: stats.officePending || undefined },
+            { value: "visits", label: "Visits" },
+            { value: "tasks", label: "Site tasks" },
+            { value: "locations", label: "Locations" },
           ]} />
-          {view !== "office" && <div className="flex flex-col gap-3 sm:flex-row sm:items-center md:ml-auto">
+          {(view === "supervisors" || view === "clients") && <div className="flex flex-col gap-3 sm:flex-row sm:items-center md:ml-auto">
             <div className="relative sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={view === "clients" ? "Search client, site, supervisor…" : "Search supervisor, client, site…"}
@@ -420,6 +430,12 @@ export default function FieldSupervisors() {
 
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+        ) : view === "visits" ? (
+          <VisitsPanel siteIds={regionSiteIds} />
+        ) : view === "tasks" ? (
+          <SiteTasksPanel sites={regionCover} />
+        ) : view === "locations" ? (
+          <SiteLocations regionClientNames={regionClientNames} />
         ) : view === "office" ? (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">

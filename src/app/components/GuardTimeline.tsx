@@ -21,7 +21,7 @@ export default function GuardTimeline({ employeeId, joinDate }: { employeeId: st
         supabase.from("deployments").select("start_date, end_date, reason, client:client_id(name), site:site_id(name)").eq("guard_id", employeeId).order("start_date"),
         supabase.from("employee_salary_history").select("effective_date, base_salary, allowance, reason, salary_change_reason").eq("employee_id", employeeId).order("effective_date"),
         supabase.from("advances").select("advance_date, amount, payment_mode").eq("employee_id", employeeId).order("advance_date"),
-        supabase.from("disciplinary_warnings").select("issued_on, warning_number, reason, rescinded").eq("employee_id", employeeId).order("issued_on"),
+        supabase.from("disciplinary_warnings").select("issued_on, warning_number, reason, rescinded, kind, status").eq("employee_id", employeeId).order("issued_on"),
         supabase.from("employee_code_history").select("changed_at, old_code, new_code, reason").eq("employee_id", employeeId).order("changed_at"),
         supabase.from("employee_lifecycle_events").select("changed_at, from_state, to_state, reason").eq("employee_id", employeeId).order("changed_at"),
       ]);
@@ -45,9 +45,9 @@ export default function GuardTimeline({ employeeId, joinDate }: { employeeId: st
       }
       for (const a of (adv.data ?? []) as { advance_date: string; amount: number; payment_mode: string | null }[])
         out.push({ date: a.advance_date, icon: HandCoins, tone: "text-warning-700 dark:text-warning-500", title: `Advance of ${pkr(a.amount)}`, detail: a.payment_mode ?? undefined });
-      for (const w of (warn.data ?? []) as { issued_on: string; warning_number: number | null; reason: string | null; rescinded: boolean | null }[])
+      for (const w of (warn.data ?? []) as { issued_on: string; warning_number: number | null; reason: string | null; rescinded: boolean | null; kind: string; status: string }[])
         out.push({ date: w.issued_on, icon: ShieldAlert, tone: w.rescinded ? "text-muted-foreground" : "text-danger-700 dark:text-danger-500",
-          title: `Warning${w.warning_number ? ` ${w.warning_number}` : ""}${w.rescinded ? " (rescinded)" : ""}`, detail: w.reason ?? undefined });
+          title: `${w.kind === "soft" ? "Soft warning" : `Warning${w.warning_number ? ` ${w.warning_number}` : ""}`}${w.status === "pending" ? " (awaiting approval)" : w.status === "refused" ? " (refused)" : ""}${w.rescinded ? " (rescinded)" : ""}`, detail: w.reason ?? undefined });
       for (const c of (code.data ?? []) as { changed_at: string; old_code: string | null; new_code: string | null; reason: string | null }[])
         out.push({ date: c.changed_at.slice(0, 10), icon: IdCard, tone: "text-muted-foreground", title: `Code ${c.old_code ?? "—"} → ${c.new_code ?? "—"}`, detail: c.reason ?? undefined });
       for (const l of (life.data ?? []) as { changed_at: string; from_state: string | null; to_state: string | null; reason: string | null }[]) {

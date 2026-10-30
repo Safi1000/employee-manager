@@ -226,6 +226,12 @@ const CHECK_TEXT: Record<string, CheckText> = {
 const CATEGORY_TEXT: Record<string, string> = {
   ledger_check_failed: "Accounts check",
   danger_level_disbursement: "Low-cash payment",
+  // 0613–0619: from the field app.
+  attendance: "Attendance",
+  field: "Field app",
+  incident: "Incident",
+  sos: "SOS",
+  warnings: "Warnings",
 };
 
 const TIER_TEXT: Record<string, string> = {

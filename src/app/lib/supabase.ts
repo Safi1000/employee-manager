@@ -408,6 +408,11 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       // by everyone who can edit staff at all.
       { key: "employees.ops_verify", label: "Ops-verify a draft employee record" },
       { key: "employees.finance_approve", label: "Finance-approve an Ops-verified employee record" },
+      // 0617: a supervisor raises a formal warning on the field app; someone
+      // holding this key approves or refuses it and sets any fine (1–6 days'
+      // salary — HR only, DECIDED 30 Oct 2026). Two different people act, so it
+      // is its own key and not employees.edit.
+      { key: "warnings.approve", label: "Approve or refuse formal warnings and set fines (1–6 days' salary)" },
     ],
   },
   {
@@ -433,6 +438,9 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "attendance.hr_verify", label: "HR-verify a half-month of attendance (first stage)" },
       { key: "attendance.ops_verify", label: "OPS-verify a half-month of attendance (after HR) on the Attendance Run" },
       { key: "attendance.run_view", label: "View the Attendance Run (Review / Ops Verify)" },
+      // 0618: the office reviews what a site supervisor confirmed on the field
+      // app — accept, or return with a note. Anyone holding it, never a named person.
+      { key: "attendance.field_review", label: "Review site supervisors' attendance from the field app — accept or return it" },
     ],
   },
   {
@@ -1532,13 +1540,25 @@ export type DisciplinaryWarning = {
   id: string;
   company_id?: string;
   employee_id: string;
-  warning_number: number;
+  /** 0617: which formal warning in the 12 months; null for soft, pending and refused. */
+  warning_number: number | null;
   issued_on: string;
   reason: string;
   issued_by: string | null;
   rescinded: boolean;
   rescinded_reason: string | null;
   created_at?: string;
+  // 0617
+  kind: "soft" | "formal";
+  status: "pending" | "approved" | "refused";
+  source: "web" | "app";
+  site_id: string | null;
+  raised_by_name: string | null;
+  fine_days: number | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  fine_applied_at: string | null;
 };
 
 export type ClearanceCertificate = {
@@ -1877,6 +1897,12 @@ export type Incident = {
   attachment_file_name: string | null;
   created_at?: string;
   updated_at?: string;
+  // 0616: reported from the field app (source app), at a site; is_sos = the SOS button.
+  site_id?: string | null;
+  source?: "web" | "app";
+  reporter_name?: string | null;
+  is_sos?: boolean;
+  geo?: { inside?: boolean | null; distance_m?: number | null; lat?: number; lng?: number } | null;
 };
 
 export type IncidentGuard = {

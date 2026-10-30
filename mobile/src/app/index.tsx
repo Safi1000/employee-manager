@@ -9,28 +9,32 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../components/Text";
 import { Banner, Card, Empty, SearchBar } from "../components/ui";
 import { Site, useField } from "../lib/field";
+import { LangSwitch } from "../components/field";
+import { useLang } from "../lib/i18n";
 import { useTheme } from "../theme/ThemeProvider";
 
 /** "Signed in until 9:40 pm", and a warning in the last half hour. */
-function useSessionLine(endsAt: number | null) {
+function useSessionLine(endsAt: number | null, tr: (en: string, v?: Record<string, string>) => string) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(id); }, []);
   if (!endsAt) return { line: null, warn: false, mins: 0 };
   const mins = Math.max(0, Math.round((endsAt - now) / 60_000));
   const at = new Date(endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return { line: `Signed in until ${at}`, warn: mins <= 30, mins };
+  return { line: tr("Signed in until {time}", { time: at }), warn: mins <= 30, mins };
 }
 
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+type Tr = ReturnType<typeof useLang>["tr"];
+const guardsWord = (tr: Tr, n: number) => tr(n === 1 ? "{n} guard" : "{n} guards", { n });
 
 export default function Home() {
   const t = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { me, endsAt, recheck, signOut } = useField();
+  const { tr } = useLang();
   const [refreshing, setRefreshing] = useState(false);
   const [q, setQ] = useState("");
-  const s = useSessionLine(endsAt);
+  const s = useSessionLine(endsAt, tr);
   const sites = useMemo(() => me?.sites ?? [], [me]);
   const office = me?.kind === "office";
   const grouped = office || sites.length > 8;
@@ -52,33 +56,34 @@ export default function Home() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await recheck(); setRefreshing(false); }} />}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
         <View style={{ flex: 1 }}>
-          <T v="eyebrow" color={t.brand[600]}>{office ? (me?.title || "Office") : "Site supervisor"}</T>
+          <T v="eyebrow" color={t.brand[600]}>{office ? (me?.title || tr("Office")) : tr("Site supervisor")}</T>
           <T v="title" style={{ marginTop: 4 }}>{me?.name}</T>
           <T v="mono" muted>{[me?.employee_code, s.line].filter(Boolean).join(" · ")}</T>
         </View>
-        <Pressable onPress={() => void signOut()} hitSlop={10} style={{ padding: 6 }} accessibilityLabel="Sign out">
+        <LangSwitch />
+        <Pressable onPress={() => void signOut()} hitSlop={10} style={{ padding: 6 }} accessibilityLabel={tr("Sign out")}>
           <LogOut size={20} color={t.mutedFg} />
         </Pressable>
       </View>
-      {s.warn ? <Banner tone="warning" title={`Your session ends in ${s.mins} min`} sub={`Sign in again after it ends — it lasts ${me?.session_hours ?? 8} hours.`} /> : null}
+      {s.warn ? <Banner tone="warning" title={tr("Your session ends in {n} min", { n: s.mins })} sub={tr("Sign in again after it ends — it lasts {n} hours.", { n: me?.session_hours ?? 8 })} /> : null}
 
       <T v="eyebrow" muted style={{ marginTop: 6 }}>
-        {sites.length === 1 ? "Your site" : `${office ? "Sites" : "Your sites"} · ${sites.length} · ${plural(guards, "guard")}`}
+        {sites.length === 1 ? tr("Your site") : `${tr(office ? "Sites" : "Your sites")} · ${sites.length} · ${guardsWord(tr, guards)}`}
       </T>
-      {grouped && sites.length > 0 ? <SearchBar value={q} onChange={setQ} placeholder="Client, site or region" /> : null}
+      {grouped && sites.length > 0 ? <SearchBar value={q} onChange={setQ} placeholder={tr("Client, site or region")} /> : null}
 
       {sites.length === 0 ? (
-        <Empty icon={MapPin} title="No sites yet"
-          sub={office ? "Your login doesn't reach any site yet. Ask a super admin." : "Your office hasn't given you any sites. Ask them to add yours."} />
+        <Empty icon={MapPin} title={tr("No sites yet")}
+          sub={tr(office ? "Your login doesn't reach any site yet. Ask a super admin." : "Your office hasn't given you any sites. Ask them to add yours.")} />
       ) : !grouped ? sites.map((site) => (
         <SiteCard key={site.id} site={site} onPress={() => open(site)} showClient />
       )) : groups.length === 0 ? (
-        <Empty icon={MapPin} title="No match" />
+        <Empty icon={MapPin} title={tr("No match")} />
       ) : groups.map(([client, list]) => (
         <View key={client} style={{ gap: 6, marginTop: 6 }}>
           <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
             <T v="bodyStrong" style={{ flex: 1 }} numberOfLines={1}>{client}</T>
-            <T v="small" muted>{[list[0].region, plural(list.reduce((n, x) => n + (x.guards ?? 0), 0), "guard")].filter(Boolean).join(" · ")}</T>
+            <T v="small" muted>{[list[0].region, guardsWord(tr, list.reduce((n, x) => n + (x.guards ?? 0), 0))].filter(Boolean).join(" · ")}</T>
           </View>
           {list.map((site) => <SiteCard key={site.id} site={site} onPress={() => open(site)} />)}
         </View>
@@ -89,7 +94,8 @@ export default function Home() {
 
 function SiteCard({ site, onPress, showClient }: { site: Site; onPress: () => void; showClient?: boolean }) {
   const t = useTheme();
-  const sub = [showClient && site.client !== site.name ? site.client : null, site.location, plural(site.guards ?? 0, "guard")].filter(Boolean).join(" · ");
+  const { tr } = useLang();
+  const sub = [showClient && site.client !== site.name ? site.client : null, site.location, guardsWord(tr, site.guards ?? 0)].filter(Boolean).join(" · ");
   return (
     <Card onPress={onPress} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
       <View style={{ flex: 1 }}>

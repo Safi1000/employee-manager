@@ -1,5 +1,6 @@
 import React from "react";
 import { Text, TextProps, TextStyle } from "react-native";
+import { useLang } from "../lib/i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { fonts } from "../theme/tokens";
 
@@ -24,11 +25,17 @@ export type TProps = TextProps & { v?: Variant; color?: string; muted?: boolean;
 
 export function T({ v = "body", color, muted, soft, center, right, style, ...rest }: TProps) {
   const t = useTheme();
+  const { lang } = useLang();
   const c = color ?? (muted ? t.mutedFg : soft ? t.fgSoft : t.fg);
+  // Urdu reads right to left; letter-spacing and upper-casing break its joined script,
+  // and its letters stand taller than the Latin line height allows.
+  const ur: TextStyle | null = lang === "ur"
+    ? { writingDirection: "rtl", letterSpacing: 0, textTransform: "none", lineHeight: Math.round((base[v].lineHeight ?? 18) * 1.4) }
+    : null;
   return (
     <Text
       {...rest}
-      style={[base[v], { color: c }, center && { textAlign: "center" }, right && { textAlign: "right" }, style]}
+      style={[base[v], { color: c }, ur, center && { textAlign: "center" }, right && { textAlign: "right" }, style]}
     />
   );
 }

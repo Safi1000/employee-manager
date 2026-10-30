@@ -14,6 +14,7 @@
 // sees a half-working screen.
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
+import type { Geo } from "./media";
 import { deviceId, deviceLabel, fieldEmail, fieldPassword, supabase } from "./supabase";
 
 export type Site = { id: string; name: string; client: string | null; location: string | null; region: string | null; guards: number };
@@ -37,10 +38,23 @@ export type SheetReliever = { record_id: string; employee_id: string; full_name:
 export type Sheet = {
   date: string; shift: Shift; site: { id: string; name: string; client: string | null };
   shifts: { shift: Shift; guards: number }[]; guards: SheetGuard[]; relievers: SheetReliever[];
-  confirmation: { supervisor_name: string; source: string; confirmed_at: string; by_office: boolean } | null;
+  confirmation: {
+    supervisor_name: string; source: string; confirmed_at: string; by_office: boolean;
+    review_status: "pending" | "accepted" | "returned" | null; review_note: string | null; reviewed_by_name: string | null;
+  } | null;
   can_confirm: boolean; why_not: string | null;
 };
 export type ConfirmResult = Record<"present" | "absent" | "leave" | "double_duty" | "relievers_arrived" | "relievers_missing", number> & { confirmed_by: string };
+
+/** 0615–0619: what the site screens read back. No pay and no CNIC numbers anywhere. */
+export type VisitRow = { id: string; at: string; visitor_name: string; visitor_kind: "supervisor" | "office"; guards_checked: number; issues: number; findings: string | null; inside: boolean | null };
+export type IncidentRow = { id: string; code: string | null; at: string; category: string; severity: string; status: string; description: string | null; is_sos: boolean; reporter_name: string | null };
+export type TaskRow = { id: string; title: string; details: string | null; due_date: string | null; status: "open" | "done" | "couldnt";
+  created_by_name: string | null; created_at: string; done_by_name: string | null; done_at: string | null; done_note: string | null };
+export type Daily = { date: string; can_send: boolean; report: { all_ok: boolean; note: string | null; urgent: boolean; sent_by_name: string; sent_at: string } | null };
+export type WarningRow = { id: string; kind: "soft" | "formal"; issued_on: string; reason: string; status: "pending" | "approved" | "refused";
+  warning_number: number | null; rescinded: boolean; raised_by_name: string | null };
+export type Warnings = { formal_in_12_months: number; warnings: WarningRow[] };
 
 type Phase = "loading" | "signedOut" | "mfa" | "pending" | "revoked" | "ready" | "error";
 type Ctx = {
@@ -54,7 +68,11 @@ type Ctx = {
   photo: (siteId: string, employeeId: string) => Promise<string | null>;
   sheet: (siteId: string, shift: Shift) => Promise<Sheet>;
   confirmShift: (siteId: string, shift: Shift, marks: { employee_id: string; status: Mark; other_shift?: Shift }[],
-    relievers: { record_id: string; arrived: boolean }[]) => Promise<ConfirmResult>;
+    relievers: { record_id: string; arrived: boolean }[], geo?: Geo | null) => Promise<ConfirmResult>;
+  /** Any other field_* function (0614–0619); refusals come back as an Error with the server's sentence. */
+  call: <R>(fn: string, args: Record<string, unknown>) => Promise<R>;
+  /** Forget a guard's cached photo (after the phone sets one). */
+  forgetPhoto: (employeeId: string) => void;
 };
 
 const FieldCtx = createContext<Ctx | null>(null);
@@ -212,8 +230,9 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   const sheet = useCallback((siteId: string, shift: Shift) =>
     call<Sheet>("field_shift_sheet", { p_site_id: siteId, p_shift: shift }), [call]);
   const confirmShift = useCallback((siteId: string, shift: Shift, marks: { employee_id: string; status: Mark; other_shift?: Shift }[],
-    relievers: { record_id: string; arrived: boolean }[]) =>
-    call<ConfirmResult>("field_confirm_shift", { p_site_id: siteId, p_shift: shift, p_marks: marks, p_relievers: relievers }), [call]);
+    relievers: { record_id: string; arrived: boolean }[], geo?: Geo | null) =>
+    call<ConfirmResult>("field_confirm_shift", { p_site_id: siteId, p_shift: shift, p_marks: marks, p_relievers: relievers, p_geo: geo ?? null }), [call]);
+  const forgetPhoto = useCallback((employeeId: string) => { photos.current.delete(employeeId); }, []);
 
   // One photo per call (field_guard_photo, 0609), kept for the session so
   // scrolling back up does not fetch it again. A failed fetch shows initials.
@@ -230,7 +249,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <FieldCtx.Provider value={{ phase, me, error, notice, endsAt, signIn, signInOffice, verifyCode, signOut, recheck, roster, photo, sheet, confirmShift }}>
+    <FieldCtx.Provider value={{ phase, me, error, notice, endsAt, signIn, signInOffice, verifyCode, signOut, recheck, roster, photo, sheet, confirmShift, call, forgetPhoto }}>
       {children}
     </FieldCtx.Provider>
   );

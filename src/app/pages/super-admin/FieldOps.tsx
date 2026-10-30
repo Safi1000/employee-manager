@@ -43,6 +43,10 @@ import { usePageState } from "../../lib/pageState";
 // carry no region; they are shown read-only under "All regions (before the
 // split)" and are not guessed into one (DECIDED).
 //
+// 0619: each site supervisor's own end-of-day word from the field app
+// (site_daily_reports) is shown UNDER the client's box — "From the site". It is
+// never written into the office's Details: the office's note stays the office's.
+//
 // The Attendance Report tab reads the PREVIOUS day, deliberately: the day being
 // reported on has not been confirmed yet when the report goes out, so the
 // attendance that CAN be vouched for is yesterday's. Clients nobody confirmed
@@ -56,6 +60,9 @@ import { usePageState } from "../../lib/pageState";
  * subtracts a day: "back" jumped two days at once and "next" appeared dead
  * because +1 day −1 timezone day landed back on the date you started from.
  */
+/** 0619: a site supervisor's end-of-day word from the field app. */
+type SiteReport = { client_id: string; all_ok: boolean; note: string | null; urgent: boolean; sent_by_name: string; sent_at: string; sites: { name: string } | null };
+
 const isoOf = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -197,6 +204,8 @@ export default function FieldOps() {
   const [noReport, setNoReport] = useState<Set<string>>(new Set());
   /** 0568: client_id -> ticked urgent, for the selected day. */
   const [urgent, setUrgent] = useState<Set<string>>(new Set());
+  /** 0619: client_id -> the field app's daily site reports for the selected day. */
+  const [siteReports, setSiteReports] = useState<Map<string, SiteReport[]>>(new Map());
   /** 0568: the PREVIOUS day's tasks — ticked done here, and listed in the PDF when not. */
   const [prevTasks, setPrevTasks] = useState<TaskRow[]>([]);
   /** The day's Next Day Tasks, in the order they were added. */
@@ -221,7 +230,7 @@ export default function FieldOps() {
     if (!companyId) return;
     setLoading(true);
     setErr(null);
-    const [cli, rep, taskRes, staffRes, dayRes, prevRes] = await Promise.all([
+    const [cli, rep, taskRes, staffRes, dayRes, prevRes, siteRep] = await Promise.all([
       // Active = has at least one active contract. The inner join is what does
       // the filtering; !inner makes PostgREST drop clients with no match.
       supabase
@@ -264,7 +273,17 @@ export default function FieldOps() {
         .order("report_date")
         .order("sort_order")
         .order("created_at"),
+      supabase
+        .from("site_daily_reports")
+        .select("client_id, all_ok, note, urgent, sent_by_name, sent_at, sites(name)")
+        .eq("company_id", companyId)
+        .eq("report_date", date),
     ]);
+    {
+      const m = new Map<string, SiteReport[]>();
+      for (const r of (siteRep.data ?? []) as unknown as SiteReport[]) m.set(r.client_id, [...(m.get(r.client_id) ?? []), r]);
+      setSiteReports(m);
+    }
     if (cli.error) { setErr(cli.error.message); setLoading(false); return; }
     if (rep.error) { setErr(rep.error.message); setLoading(false); return; }
 
@@ -928,6 +947,7 @@ export default function FieldOps() {
                       value={details.get(c.id) ?? ""}
                       noReport={noReport.has(c.id)}
                       urgent={urgent.has(c.id)}
+                      siteReports={siteReports.get(c.id)}
                       onToggleUrgent={(f) => void toggleUrgent(c.id, f)}
                       locked={locked}
                       saving={saving.has(c.id)}
@@ -1142,12 +1162,13 @@ function NextDayTasks({
  * writes on blur.
  */
 function DetailsRow({
-  client, value, noReport, urgent, onToggleUrgent, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
+  client, value, noReport, urgent, siteReports, onToggleUrgent, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
 }: {
   client: ClientRow;
   value: string;
   noReport: boolean;
   urgent: boolean;
+  siteReports?: SiteReport[];
   onToggleUrgent: (flag: boolean) => void;
   locked: boolean;
   saving: boolean;
@@ -1166,6 +1187,13 @@ function DetailsRow({
         {urgent && <span className="ml-2 inline-flex rounded-full border border-down/40 bg-down/15 px-1.5 py-0.5 text-[10px] font-semibold text-down align-middle">Urgent</span>}
       </div>
       <div className="px-3 pb-2 pt-1 md:py-2">
+        {siteReports?.map((r) => (
+          <p key={`${r.sites?.name}-${r.sent_at}`} className={`mb-1 text-xs ${r.all_ok ? "text-muted-foreground" : r.urgent ? "text-down" : "text-heed"}`}>
+            <span className="font-medium">From the site{r.sites?.name && r.sites.name !== client.name ? ` (${r.sites.name})` : ""}:</span>{" "}
+            {r.all_ok ? "All OK" : r.urgent ? "Not OK · urgent" : "Not OK"}{r.note ? ` — ${r.note}` : ""}
+            <span className="text-muted-foreground"> · {r.sent_by_name}, {new Date(r.sent_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
+          </p>
+        ))}
         {locked ? (
           <p className="text-sm text-muted-foreground whitespace-pre-wrap">
             {noReport ? "No report" : value.trim() || "—"}

@@ -34,9 +34,12 @@ import {
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
+import { FieldPhotos } from "../../components/FieldActivity";
 
 type IncidentRow = Incident & {
   client_name: string | null;
+  /** 0616: the site an incident from the field app was reported at. */
+  site_name: string | null;
   guard_names: string[];
 };
 
@@ -103,12 +106,13 @@ export default function Incidents() {
   const [editingRow, setEditingRow] = useState<IncidentRow | null>(null);
   const [form, setForm] = useState<IncidentForm>(emptyForm);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [photosFor, setPhotosFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [incRes, cliRes, postRes, empRes, guardRes] = await Promise.all([
+    const [incRes, cliRes, postRes, empRes, guardRes, siteRes] = await Promise.all([
       withRegion(
         supabase.from("incidents").select("*").order("occurred_at", { ascending: false }),
         regionId,
@@ -117,7 +121,9 @@ export default function Incidents() {
       supabase.from("posts").select("*").order("name"),
       supabase.from("employees").select("id, full_name, employee_code, guard_code, display_number, status, client_id").order("full_name"),
       supabase.from("incident_guards").select("*"),
+      supabase.from("sites").select("id, name"),
     ]);
+    const siteName = new Map(((siteRes.data ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name]));
     if (incRes.error) setError(incRes.error.message);
     const cs = (cliRes.data ?? []) as Client[];
     const cliById = new Map(cs.map((c) => [c.id, c]));
@@ -135,6 +141,7 @@ export default function Incidents() {
       ((incRes.data ?? []) as Incident[]).map<IncidentRow>((i) => ({
         ...i,
         client_name: i.client_id ? cliById.get(i.client_id)?.name ?? null : null,
+        site_name: i.site_id ? siteName.get(i.site_id) ?? null : null,
         guard_names: guardsByIncident.get(i.id) ?? [],
       })),
     );
@@ -732,8 +739,8 @@ export default function Incidents() {
             rowKey={(row) => row.id}
             title={(row) => row.client_name ?? "—"}
             subtitle={(row) => {
-              const postName = row.post_id ? posts.find((p) => p.id === row.post_id)?.name : null;
-              return postName ? `${row.incident_code} · ${postName}` : row.incident_code;
+              const postName = row.post_id ? posts.find((p) => p.id === row.post_id)?.name : row.site_name;
+              return [row.is_sos ? "SOS" : null, row.incident_code, postName, row.source === "app" ? `from ${row.reporter_name ?? "the field app"}` : null].filter(Boolean).join(" · ");
             }}
             badge={(row) => (
               <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${SEVERITY_COLOUR[row.severity]}`}>
@@ -825,7 +832,7 @@ export default function Incidents() {
                   </tr>
                 )}
                 {!loading && filteredRows.map((row) => {
-                  const postName = row.post_id ? posts.find((p) => p.id === row.post_id)?.name : null;
+                  const postName = row.post_id ? posts.find((p) => p.id === row.post_id)?.name : row.site_name;
                   return (
                     <tr key={row.id} className="hover:bg-muted/50 transition-colors">
                       <td className="px-4 py-3 text-xs font-mono text-foreground">{row.incident_code}</td>
@@ -835,6 +842,14 @@ export default function Incidents() {
                       <td className="px-4 py-3 text-sm">
                         <div className="text-foreground">{row.client_name ?? "—"}</div>
                         {postName && <div className="text-xs text-muted-foreground">{postName}</div>}
+                        {row.source === "app" && (
+                          <div className="text-xs text-muted-foreground">
+                            {row.is_sos && <span className="mr-1 rounded bg-down/15 px-1.5 font-semibold text-down">SOS</span>}
+                            from {row.reporter_name ?? "the field app"}
+                            {row.geo?.inside === false && <span className="text-heed"> · outside the site's area</span>}
+                            {" · "}<button type="button" className="underline hover:text-foreground" onClick={() => setPhotosFor(row.id)}>photos</button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${SEVERITY_COLOUR[row.severity]}`}>
@@ -918,6 +933,13 @@ export default function Incidents() {
       >
         {renderForm(handleEdit, "Save Changes")}
       </Modal>
+
+      {photosFor && (
+        <Modal isOpen onClose={() => setPhotosFor(null)} title="Photos from the field app" size="lg">
+          <FieldPhotos refTable="incidents" refId={photosFor} />
+          <p className="mt-2 text-xs text-muted-foreground">Nothing shows if the phone sent none.</p>
+        </Modal>
+      )}
     </>
   );
 }

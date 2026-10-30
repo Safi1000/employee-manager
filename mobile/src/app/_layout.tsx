@@ -13,6 +13,7 @@ import React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { FieldProvider, useField } from "../lib/field";
+import { LangProvider } from "../lib/i18n";
 import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
 
 export default function RootLayout() {
@@ -23,7 +24,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <FieldProvider>{loaded ? <Root /> : <Splash />}</FieldProvider>
+        <LangProvider>
+          <FieldProvider>{loaded ? <Root /> : <Splash />}</FieldProvider>
+        </LangProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );
@@ -53,6 +56,10 @@ function Root() {
           <Stack.Screen name="index" />
           <Stack.Screen name="site/[id]" />
           <Stack.Screen name="attendance/[id]" />
+          <Stack.Screen name="visit/[id]" />
+          <Stack.Screen name="incident/[id]" />
+          <Stack.Screen name="daily/[id]" />
+          <Stack.Screen name="tasks/[id]" />
         </Stack.Protected>
       </Stack>
     </>

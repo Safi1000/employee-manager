@@ -20,6 +20,7 @@ const SECTION_OF: Record<string, string> = {
   assignments: "Workforce",
   attendance: "Workforce",
   "attendance-run": "Workforce",
+  "field-review": "Workforce",
   payroll: "Workforce",
   "payroll-run": "Workforce",
   performance: "Workforce",
