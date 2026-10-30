@@ -60,6 +60,13 @@ function Root() {
           <Stack.Screen name="incident/[id]" />
           <Stack.Screen name="daily/[id]" />
           <Stack.Screen name="tasks/[id]" />
+          <Stack.Screen name="money/index" />
+          <Stack.Screen name="money/new" />
+          <Stack.Screen name="trip" />
+          <Stack.Screen name="employees/index" />
+          <Stack.Screen name="employees/[id]" />
+          <Stack.Screen name="report" />
+          <Stack.Screen name="snapshot" />
         </Stack.Protected>
       </Stack>
     </>

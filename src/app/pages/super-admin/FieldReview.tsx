@@ -5,6 +5,7 @@ import Button from "../../components/Button";
 import Tabs from "../../components/Tabs";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { supabase, friendlyDbError } from "../../lib/supabase";
+import { EmployeeUpdatesPanel, MoneyRequestsPanel, TripsPanel } from "../../components/FieldReviewPanels";
 
 /**
  * Workforce ▸ Field Review (30 Oct 2026). What the field app sends that the
@@ -22,6 +23,10 @@ import { supabase, friendlyDbError } from "../../lib/supabase";
  *                     app arrives pending. Approve (with any fine of 1–6 days'
  *                     salary — HR only) or refuse. An approved fine then waits on
  *                     Payroll until HR adds it to the payslip.
+ *
+ *   Expense requests  field.money_approve (0622) — the app's own money panel.
+ *   Trips             field.money_approve / expenses.edit (0623) — km for the fuel sheet.
+ *   Employee updates  employees.edit (0624) — details to apply, documents to check.
  *
  * The marks shown under a shift are read for display only: the guards whose
  * deployment puts them at that site on that day, and their rows for that shift.
@@ -48,7 +53,12 @@ export default function FieldReview() {
   const { profile } = useAuth();
   const canAttendance = hasPermission(profile, "attendance.field_review");
   const canWarnings = hasPermission(profile, "warnings.approve");
-  const [view, setView] = useState<"attendance" | "warnings">(canAttendance ? "attendance" : "warnings");
+  const canMoney = hasPermission(profile, "field.money_approve");
+  const canTrips = canMoney || hasPermission(profile, "expenses.edit");
+  const canEmployees = hasPermission(profile, "employees.edit");
+  type View = "attendance" | "warnings" | "money" | "trips" | "employees";
+  const [view, setView] = useState<View>(canAttendance ? "attendance" : canWarnings ? "warnings" : canMoney ? "money" : canTrips ? "trips" : "employees");
+  const [moneyCount, setMoneyCount] = useState<number | undefined>(undefined);
   const [confs, setConfs] = useState<Conf[]>([]);
   const [warnings, setWarnings] = useState<PendingWarning[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,15 +88,24 @@ export default function FieldReview() {
   const items = useMemo(() => [
     ...(canAttendance ? [{ value: "attendance" as const, label: "Site attendance", count: confs.filter((c) => c.review_status === "pending").length || undefined }] : []),
     ...(canWarnings ? [{ value: "warnings" as const, label: "Warnings", count: warnings.length || undefined }] : []),
-  ], [canAttendance, canWarnings, confs, warnings]);
+    ...(canMoney ? [{ value: "money" as const, label: "Expense requests", count: moneyCount || undefined }] : []),
+    ...(canTrips ? [{ value: "trips" as const, label: "Trips" }] : []),
+    ...(canEmployees ? [{ value: "employees" as const, label: "Employee updates" }] : []),
+  ], [canAttendance, canWarnings, canMoney, canTrips, canEmployees, confs, warnings, moneyCount]);
 
   return (
     <div className="space-y-4">
-      <Header title="Field Review" subtitle="Attendance the sites confirmed on the field app, and formal warnings waiting for a decision" />
+      <Header title="Field Review" subtitle="What the field app sent that needs a decision — attendance, warnings, expense requests, trips, employee updates" />
       {err && <div className="rounded-lg border border-down/40 bg-down/10 p-3 text-sm text-down">{err}</div>}
       {items.length > 1 && <Tabs value={view} onChange={setView} items={items} />}
       {loading ? (
         <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+      ) : view === "money" && canMoney ? (
+        <MoneyRequestsPanel onError={setErr} onCount={setMoneyCount} />
+      ) : view === "trips" && canTrips ? (
+        <TripsPanel onError={setErr} />
+      ) : view === "employees" && canEmployees ? (
+        <EmployeeUpdatesPanel onError={setErr} />
       ) : view === "attendance" && canAttendance ? (
         confs.length === 0 ? <Empty text="Nothing waiting. Every shift a site confirmed has been reviewed." /> : (
           <div className="space-y-3">{confs.map((c) => <ShiftCard key={c.id} conf={c} onDone={load} onError={setErr} />)}</div>
@@ -95,7 +114,7 @@ export default function FieldReview() {
         warnings.length === 0 ? <Empty text="No formal warnings waiting." /> : (
           <div className="space-y-3">{warnings.map((w) => <WarningCard key={w.id} w={w} onDone={load} onError={setErr} />)}</div>
         )
-      ) : <Empty text="You need Review site attendance or Approve warnings to use this page." />}
+      ) : <Empty text="You need one of the review permissions to use this page." />}
     </div>
   );
 }

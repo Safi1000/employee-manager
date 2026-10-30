@@ -21,6 +21,7 @@ const SECTION_OF: Record<string, string> = {
   attendance: "Workforce",
   "attendance-run": "Workforce",
   "field-review": "Workforce",
+  "field-activity": "Workforce",
   payroll: "Workforce",
   "payroll-run": "Workforce",
   performance: "Workforce",

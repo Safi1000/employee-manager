@@ -566,6 +566,13 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "field.daily_report", label: "Field: send a site's daily report" },
       { key: "field.tasks", label: "Field: mark site tasks done" },
       { key: "field.warnings", label: "Field: raise soft or formal warnings" },
+      // 0621–0625: office staff's own requests and records from the app — each
+      // lands in its own panel and is acknowledged or decided on the web.
+      { key: "field.expenses", label: "Field: request own expenses and advances (sees only their own)" },
+      { key: "field.trips", label: "Field: record own trips (odometer at start and end)" },
+      { key: "field.employees", label: "Field: see employee files, propose missing details, scan documents (HR approves)" },
+      { key: "field.snapshot", label: "Field: the operations snapshot (CEO) — viewing only" },
+      { key: "field.money_approve", label: "Field: approve or return expense and advance requests from the app" },
     ],
   },
   {

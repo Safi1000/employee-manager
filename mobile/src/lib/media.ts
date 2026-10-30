@@ -14,11 +14,12 @@ import * as Location from "expo-location";
 
 export type Geo = { lat: number; lng: number; accuracy: number | null };
 
-/** Take one photo with the camera; null if cancelled. Throws a sentence the screen can show. */
-export async function takePhoto(width = 1024): Promise<string | null> {
+/** Take one photo with the camera; null if cancelled. `crop` lets the person trim it to a
+ *  document's edges. Throws a sentence the screen can show. */
+export async function takePhoto(width = 1024, crop = false): Promise<string | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) throw new Error("Allow the camera for GGS Field in your phone's settings to take photos.");
-  const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false, exif: false });
+  const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: crop, exif: false });
   if (shot.canceled || !shot.assets?.[0]?.uri) return null;
   const img = await ImageManipulator.manipulate(shot.assets[0].uri).resize({ width }).renderAsync();
   const out = await img.saveAsync({ compress: 0.6, format: SaveFormat.JPEG, base64: true });

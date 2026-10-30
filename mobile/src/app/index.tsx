@@ -1,14 +1,18 @@
 // Home: the sites this login sees. A supervisor's own few, as a list; office
 // staff's every site (0612), grouped by client with a search, since that is
 // 68 sites under 50 clients and nobody scrolls that.
+//
+// Office staff also get quick actions (0622–0625), each shown only with its key:
+// the CEO's snapshot, own expenses and advances, trips, employee files, and the
+// Daily Report. The app is for small things on the spot; the work stays on the web.
 import { useRouter } from "expo-router";
-import { ChevronRight, LogOut, MapPin } from "lucide-react-native";
+import { BarChart3, Car, ChevronRight, FileText, LogOut, MapPin, Users, Wallet } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../components/Text";
 import { Banner, Card, Empty, SearchBar } from "../components/ui";
-import { Site, useField } from "../lib/field";
+import { Ability, Site, useField } from "../lib/field";
 import { LangSwitch } from "../components/field";
 import { useLang } from "../lib/i18n";
 import { useTheme } from "../theme/ThemeProvider";
@@ -49,6 +53,14 @@ export default function Home() {
   const guards = sites.reduce((n, x) => n + (x.guards ?? 0), 0);
 
   const open = (site: Site) => router.push({ pathname: "/site/[id]", params: { id: site.id, name: site.name } });
+  const can = (a: Ability) => (me?.can ?? []).includes(a);
+  const quick: { label: string; icon: typeof Wallet; to: "/snapshot" | "/money" | "/trip" | "/employees" | "/report" }[] = [
+    ...(can("snapshot") ? [{ label: tr("Snapshot"), icon: BarChart3, to: "/snapshot" as const }] : []),
+    ...(can("expenses") ? [{ label: tr("My expenses"), icon: Wallet, to: "/money" as const }] : []),
+    ...(can("trips") ? [{ label: tr("Trips"), icon: Car, to: "/trip" as const }] : []),
+    ...(can("employees") ? [{ label: tr("Employees"), icon: Users, to: "/employees" as const }] : []),
+    ...(can("office_report") ? [{ label: tr("Daily Report"), icon: FileText, to: "/report" as const }] : []),
+  ];
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: t.bg }} keyboardShouldPersistTaps="handled"
@@ -66,6 +78,17 @@ export default function Home() {
         </Pressable>
       </View>
       {s.warn ? <Banner tone="warning" title={tr("Your session ends in {n} min", { n: s.mins })} sub={tr("Sign in again after it ends — it lasts {n} hours.", { n: me?.session_hours ?? 8 })} /> : null}
+
+      {quick.length ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
+          {quick.map((a) => (
+            <Card key={a.to} onPress={() => router.push(a.to)} style={{ width: "48.5%", flexDirection: "row", alignItems: "center", gap: 10, padding: 14 }}>
+              <a.icon size={20} color={t.brand[600]} />
+              <T v="bodyStrong" style={{ flex: 1 }} numberOfLines={2}>{a.label}</T>
+            </Card>
+          ))}
+        </View>
+      ) : null}
 
       <T v="eyebrow" muted style={{ marginTop: 6 }}>
         {sites.length === 1 ? tr("Your site") : `${tr(office ? "Sites" : "Your sites")} · ${sites.length} · ${guardsWord(tr, guards)}`}

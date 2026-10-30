@@ -44,6 +44,12 @@
           "photosPermission": false,
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0e100b"
+        }
       ]
     ],
     "scheme": "ggsfield"

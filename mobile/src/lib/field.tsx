@@ -15,6 +15,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { Geo } from "./media";
+import { registerPush } from "./push";
 import { deviceId, deviceLabel, fieldEmail, fieldPassword, supabase } from "./supabase";
 
 export type Site = { id: string; name: string; client: string | null; location: string | null; region: string | null; guards: number };
@@ -25,7 +26,9 @@ export type Me = {
    *  attendance_view, guard_photo, plus visit / incidents / daily_report / tasks / warnings per key. */
   can?: Ability[];
 };
-export type Ability = "roster" | "attendance" | "attendance_view" | "guard_photo" | "visit" | "incidents" | "daily_report" | "tasks" | "warnings";
+export type Ability = "roster" | "attendance" | "attendance_view" | "guard_photo" | "visit" | "incidents" | "daily_report" | "tasks" | "warnings"
+  // 0625: own expense/advance requests, trips, employee files, the office Daily Report, the CEO snapshot
+  | "expenses" | "trips" | "employees" | "office_report" | "snapshot";
 export type Guard = {
   employee_id: string; full_name: string; employee_code: string | null; shift: string | null;
   phone: string | null; has_photo: boolean; flags: string[] | null;
@@ -159,6 +162,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     setEndsAt(ends);
     setMe(got);
     setPhase("ready");
+    void registerPush();
   }, [signOut]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns

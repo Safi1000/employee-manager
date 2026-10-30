@@ -152,7 +152,9 @@ export default function SuperAdminLayout() {
   // Consolidation restructure — merged / renamed / moved homes.
   const RELIEVERS: LinkDef = { to: "/app/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
   // 0617/0618: site attendance to review and formal warnings to approve, from the field app.
-  const FIELD_REVIEW: LinkDef = { to: "/app/field-review", label: "Field Review", icon: ClipboardCheck, perms: ["attendance.field_review", "warnings.approve"] };
+  // 0621: everything done in the field app, acknowledged by the office.
+  const FIELD_ACTIVITY: LinkDef = { to: "/app/field-activity", label: "Field Activity", icon: Smartphone, perms: ["attendance.field_review", "incidents.edit", "warnings.approve", "roster.edit", "employees.edit", "field.money_approve"] };
+  const FIELD_REVIEW: LinkDef = { to: "/app/field-review", label: "Field Review", icon: ClipboardCheck, perms: ["attendance.field_review", "warnings.approve", "field.money_approve", "employees.edit"] };
   const FIELD_SUPERVISORS: LinkDef = { to: "/app/field-supervisors", label: "Field Supervisors", icon: Smartphone, roles: ["super_admin"] };
   const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/app/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
@@ -253,6 +255,7 @@ export default function SuperAdminLayout() {
     ATTENDANCE,
     ATTENDANCE_RUN,
     FIELD_REVIEW,
+    FIELD_ACTIVITY,
     PAYROLL,
     PAYROLL_RUN,
     RELIEVERS,

@@ -75,6 +75,7 @@ const MyProfile = lazyPage(() => import("./pages/super-admin/MyProfile"));
 const DailyReports = lazyPage(() => import("./pages/super-admin/DailyReports"));
 const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const FieldReview = lazyPage(() => import("./pages/super-admin/FieldReview"));
+const FieldActivityPage = lazyPage(() => import("./pages/super-admin/FieldActivity"));
 const IncidentsHub = lazyPage(() => import("./pages/super-admin/IncidentsHub"));
 
 const Billing = lazyPage(() => import("./pages/super-admin/Billing"));
@@ -190,7 +191,9 @@ export const router = createBrowserRouter([
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceBoard />) },
       { path: "attendance-run", element: guard(["attendance.run_view", "attendance.ops_verify"], <AttendanceRun />) },
       // 0617/0618: what the field app sends for the office to decide.
-      { path: "field-review", element: guard(["attendance.field_review", "warnings.approve"], <FieldReview />) },
+      // 0621: everything done in the field app, for the office to acknowledge.
+      { path: "field-activity", element: guard(["attendance.field_review", "incidents.edit", "warnings.approve", "roster.edit", "employees.edit", "field.money_approve"], <FieldActivityPage />) },
+      { path: "field-review", element: guard(["attendance.field_review", "warnings.approve", "field.money_approve", "expenses.edit", "employees.edit"], <FieldReview />) },
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
