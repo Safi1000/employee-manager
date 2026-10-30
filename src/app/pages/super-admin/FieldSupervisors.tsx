@@ -20,6 +20,9 @@ import { useRegion } from "../../lib/region";
  *                    with the guards under it;
  *   Clients & sites  every client → its sites, the guards there, and who covers
  *                    each one, with the sites nobody covers called out.
+ * and a third tab, Office staff (0612): office logins that may use the app
+ * (super admins, and anyone granted field.app on the permissions screen) and
+ * their phones, which are approved here exactly like a supervisor's.
  *
  * Guard counts come from admin_field_coverage() (0610), which counts
  * field_site_roster(site) — the list the supervisor's phone shows — so this
@@ -48,6 +51,10 @@ type Cover = {
   supervisors: { user_id: string; name: string; disabled: boolean }[];
 };
 type ClientGroup = { client_id: string; client_name: string; region: string | null; sites: Cover[]; guards: number; flagged: number; covered: number };
+type OfficeUser = {
+  user_id: string; name: string; title: string | null; region: string | null;
+  via: "super admin" | "permission" | "no access"; devices: Device[]; disabled_at: string | null; last_login: string | null;
+};
 type RosterRow = { employee_id: string; full_name: string; employee_code: string | null; shift: string | null; phone: string | null; has_photo: boolean; flags: string[] };
 type Emp = { id: string; full_name: string; employee_code: string; designation: string | null };
 
@@ -193,9 +200,10 @@ function RosterModal({ site, onClose }: { site: Cover; onClose: () => void }) {
 }
 
 export default function FieldSupervisors() {
-  const [view, setView] = useState<"supervisors" | "clients">("supervisors");
+  const [view, setView] = useState<"supervisors" | "clients" | "office">("supervisors");
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [cover, setCover] = useState<Cover[] | null>(null);
+  const [office, setOffice] = useState<OfficeUser[] | null>(null);
   const [emps, setEmps] = useState<Emp[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -218,10 +226,13 @@ export default function FieldSupervisors() {
   const [modalErr, setModalErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [a, c] = await Promise.all([supabase.rpc("admin_field_accounts"), supabase.rpc("admin_field_coverage")]);
-    if (a.error || c.error) { setErr(friendlyDbError((a.error ?? c.error)!)); return; }
+    const [a, c, o] = await Promise.all([
+      supabase.rpc("admin_field_accounts"), supabase.rpc("admin_field_coverage"), supabase.rpc("admin_field_office_users"),
+    ]);
+    if (a.error || c.error || o.error) { setErr(friendlyDbError((a.error ?? c.error ?? o.error)!)); return; }
     setAccounts((a.data ?? []) as Account[]);
     setCover((c.data ?? []) as Cover[]);
+    setOffice((o.data ?? []) as OfficeUser[]);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -248,14 +259,15 @@ export default function FieldSupervisors() {
     const manned = rows.filter((c) => c.guards > 0);
     return {
       logins: (accounts ?? []).filter((a) => !a.disabled_at).length,
-      pending: (accounts ?? []).reduce((n, a) => n + a.devices.filter((d) => d.status === "pending").length, 0),
+      pending: [...(accounts ?? []), ...(office ?? [])].reduce((n, a) => n + a.devices.filter((d) => d.status === "pending").length, 0),
+      officePending: (office ?? []).reduce((n, a) => n + a.devices.filter((d) => d.status === "pending").length, 0),
       sitesCovered: manned.filter(isCovered).length,
       sitesManned: manned.length,
       guardsCovered: manned.filter(isCovered).reduce((n, c) => n + c.guards, 0),
       guardsTotal: manned.reduce((n, c) => n + c.guards, 0),
       uncovered: manned.filter((c) => !isCovered(c)).length,
     };
-  }, [accounts, regionCover]);
+  }, [accounts, office, regionCover]);
 
   const clientGroups = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -344,7 +356,7 @@ export default function FieldSupervisors() {
   };
 
   const openCreate = () => { setCreating(true); setModalErr(null); setPin(""); setEmpId(""); setEmpQ(""); setSiteIds([]); void loadEmps(); };
-  const loading = accounts === null || cover === null;
+  const loading = accounts === null || cover === null || office === null;
 
   const tiles = [
     { label: "Supervisor logins", value: `${stats.logins}`, icon: Users, tint: "text-muted-foreground" },
@@ -390,8 +402,9 @@ export default function FieldSupervisors() {
           <Tabs value={view} onChange={setView} items={[
             { value: "supervisors", label: "Supervisors", count: stats.logins },
             { value: "clients", label: "Clients & sites", count: stats.uncovered || undefined },
+            { value: "office", label: "Office staff", count: stats.officePending || undefined },
           ]} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center md:ml-auto">
+          {view !== "office" && <div className="flex flex-col gap-3 sm:flex-row sm:items-center md:ml-auto">
             <div className="relative sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={view === "clients" ? "Search client, site, supervisor…" : "Search supervisor, client, site…"}
@@ -402,11 +415,52 @@ export default function FieldSupervisors() {
                   <input type="checkbox" checked={onlyUncovered} onChange={(e) => setOnlyUncovered(e.target.checked)} /> Only sites with nobody
                 </label>
             )}
-          </div>
+          </div>}
         </div>
 
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+        ) : view === "office" ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Office staff sign in to the field app with their own Bastion email, password and authenticator code, and see every site's guards — their region's only if their login is pinned to one. No pay, no CNIC numbers. Give someone access by ticking <span className="font-medium text-foreground">Field app</span> on their permissions in Access &amp; Governance; super admins have it already. Each phone waits for approval here.
+            </p>
+            {office!.length === 0 ? (
+              <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">Nobody in the office has field app access yet.</div>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+                {office!.map((u) => (
+                  <div key={u.user_id} className={`flex flex-col gap-2 px-4 py-3 ${u.disabled_at ? "opacity-60" : ""}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{u.name} {u.title && <span className="text-xs font-normal text-muted-foreground">{u.title}</span>}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {u.via === "super admin" ? "Super admin" : u.via === "permission" ? "Field app permission" : <span className="text-heed">No access any more — cut off its phone</span>}
+                          {" · "}{u.region ? `${u.region} sites only` : "every site"}
+                          {" · "}last sign-in {when(u.last_login)}
+                        </p>
+                      </div>
+                    </div>
+                    {u.devices.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No phone yet.</p>
+                    ) : u.devices.map((d) => (
+                      <div key={d.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-1.5 text-xs ${d.status === "pending" ? "bg-heed/10" : "bg-muted/40"}`}>
+                        <span className="text-foreground"><Smartphone className="mr-1 inline h-3.5 w-3.5" />{d.label ?? "Phone"} ·{" "}
+                          {d.status === "pending" ? <span className="font-semibold text-heed">waiting for approval</span> : <span className="text-up">approved</span>}
+                          <span className="text-muted-foreground"> · first seen {when(d.first_seen)}</span></span>
+                        <span className="flex gap-1">
+                          {d.status === "pending" && (
+                            <Button size="sm" variant="secondary" disabled={busy === d.id} onClick={() => void decide(d, "active", u.name)}><Check className="mr-1 h-3.5 w-3.5" />Approve</Button>
+                          )}
+                          <Button size="sm" variant="ghost" disabled={busy === d.id} onClick={() => void decide(d, "revoked", u.name)}><X className="mr-1 h-3.5 w-3.5" />{d.status === "pending" ? "Refuse" : "Cut off"}</Button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : view === "supervisors" ? (
           supRows.length === 0 ? (
             <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">

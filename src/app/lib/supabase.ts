@@ -543,6 +543,16 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     ],
   },
   {
+    // 0612: office staff on the field app. Sign in there with their own email,
+    // password and authenticator code; see every site's guards (their region's
+    // only, if the login is pinned to one) on a phone a super admin approved.
+    // No pay, no CNIC numbers — the app reaches field_* functions only.
+    label: "Field app",
+    items: [
+      { key: "field.app", label: "Use the field app — every site's guards on an approved phone (own region if pinned); no pay, no CNIC numbers" },
+    ],
+  },
+  {
     label: "Reports & Finance",
     items: [
       { key: "reports.view", label: "View financial reports & partnership" },
