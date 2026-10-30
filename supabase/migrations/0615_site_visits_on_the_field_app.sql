@@ -188,7 +188,7 @@ begin
     v_msg := null; begin perform public.field_record_visit(v_site, jsonb_build_array(jsonb_build_object('employee_id', v_stranger, 'checks', v_ok)), '{}', null, null, '{}', null);
       exception when others then get stacked diagnostics v_msg = message_text; end;
     if v_msg is distinct from 'That guard is not posted at this site.' then raise exception '0615 REFUSED: a guard of another site got "%".', v_msg; end if;
-    v_msg := null; begin perform public.field_record_visit(v_site, jsonb_build_array(jsonb_build_object('employee_id', v_guard, 'checks', '{"asleep": true}')), '{}', null, null, '{}', null);
+    v_msg := null; begin perform public.field_record_visit(v_site, jsonb_build_array(jsonb_build_object('employee_id', v_guard, 'checks', '{"asleep": true}'::jsonb)), '{}', null, null, '{}', null);
       exception when others then get stacked diagnostics v_msg = message_text; end;
     if v_msg is distinct from 'Unknown checklist point "asleep".' then raise exception '0615 REFUSED: an unknown point got "%".', v_msg; end if;
     v_msg := null; begin perform public.field_record_visit(v_other_site, jsonb_build_array(jsonb_build_object('employee_id', v_stranger, 'checks', v_ok)), '{}', null, null, '{}', null);
