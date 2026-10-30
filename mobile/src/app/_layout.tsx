@@ -52,6 +52,7 @@ function Root() {
         <Stack.Protected guard={phase === "ready"}>
           <Stack.Screen name="index" />
           <Stack.Screen name="site/[id]" />
+          <Stack.Screen name="attendance/[id]" />
         </Stack.Protected>
       </Stack>
     </>

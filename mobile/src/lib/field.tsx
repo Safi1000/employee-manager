@@ -26,6 +26,22 @@ export type Guard = {
   phone: string | null; has_photo: boolean; flags: string[] | null;
 };
 
+/** One site-shift today (field_shift_sheet, 0613). */
+export type Shift = "day" | "evening" | "night";
+export type Mark = "present" | "absent" | "leave" | "double_duty";
+export type SheetGuard = {
+  employee_id: string; full_name: string; employee_code: string | null; has_photo: boolean; flags: string[] | null;
+  status: string | null; other_shift: Shift | null;
+};
+export type SheetReliever = { record_id: string; employee_id: string; full_name: string; employee_code: string | null; covering_for: string | null; arrived: boolean | null };
+export type Sheet = {
+  date: string; shift: Shift; site: { id: string; name: string; client: string | null };
+  shifts: { shift: Shift; guards: number }[]; guards: SheetGuard[]; relievers: SheetReliever[];
+  confirmation: { supervisor_name: string; source: string; confirmed_at: string; by_office: boolean } | null;
+  can_confirm: boolean; why_not: string | null;
+};
+export type ConfirmResult = Record<"present" | "absent" | "leave" | "double_duty" | "relievers_arrived" | "relievers_missing", number> & { confirmed_by: string };
+
 type Phase = "loading" | "signedOut" | "mfa" | "pending" | "revoked" | "ready" | "error";
 type Ctx = {
   phase: Phase; me: Me | null; error: string | null; notice: string | null; endsAt: number | null;
@@ -36,6 +52,9 @@ type Ctx = {
   recheck: () => Promise<void>;
   roster: (siteId: string) => Promise<Guard[]>;
   photo: (siteId: string, employeeId: string) => Promise<string | null>;
+  sheet: (siteId: string, shift: Shift) => Promise<Sheet>;
+  confirmShift: (siteId: string, shift: Shift, marks: { employee_id: string; status: Mark; other_shift?: Shift }[],
+    relievers: { record_id: string; arrived: boolean }[]) => Promise<ConfirmResult>;
 };
 
 const FieldCtx = createContext<Ctx | null>(null);
@@ -178,6 +197,24 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     return (data ?? []) as Guard[];
   }, [signOut]);
 
+  /** Any field_* call: the gate's refusals sign out or change the phase, the rest come back as an Error. */
+  const call = useCallback(async <R,>(fn: string, args: Record<string, unknown>): Promise<R> => {
+    const { data, error: e } = await supabase.rpc(fn, args);
+    if (e) {
+      const r = readError(e.message);
+      if (r.signOut) { await signOut(r.signOut); throw new Error(r.signOut); }
+      if (r.phase) { setPhase(r.phase); throw new Error(r.text); }
+      throw new Error(r.text);
+    }
+    return data as R;
+  }, [signOut]);
+
+  const sheet = useCallback((siteId: string, shift: Shift) =>
+    call<Sheet>("field_shift_sheet", { p_site_id: siteId, p_shift: shift }), [call]);
+  const confirmShift = useCallback((siteId: string, shift: Shift, marks: { employee_id: string; status: Mark; other_shift?: Shift }[],
+    relievers: { record_id: string; arrived: boolean }[]) =>
+    call<ConfirmResult>("field_confirm_shift", { p_site_id: siteId, p_shift: shift, p_marks: marks, p_relievers: relievers }), [call]);
+
   // One photo per call (field_guard_photo, 0609), kept for the session so
   // scrolling back up does not fetch it again. A failed fetch shows initials.
   const photo = useCallback((siteId: string, employeeId: string) => {
@@ -193,7 +230,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <FieldCtx.Provider value={{ phase, me, error, notice, endsAt, signIn, signInOffice, verifyCode, signOut, recheck, roster, photo }}>
+    <FieldCtx.Provider value={{ phase, me, error, notice, endsAt, signIn, signInOffice, verifyCode, signOut, recheck, roster, photo, sheet, confirmShift }}>
       {children}
     </FieldCtx.Provider>
   );

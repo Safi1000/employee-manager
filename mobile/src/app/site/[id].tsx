@@ -1,12 +1,12 @@
 // One site's guards: photo, name, code, shift, phone, expiry flags. Nothing else —
 // field_site_roster returns no CNIC number and no pay, by design (0607).
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Phone, Users } from "lucide-react-native";
+import { ArrowLeft, ClipboardCheck, Phone, Users } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Image, Linking, Modal, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../../components/Text";
-import { Avatar, Badge, Banner, Card, Empty, SearchBar } from "../../components/ui";
+import { Avatar, Badge, Banner, Button, Card, Empty, SearchBar } from "../../components/ui";
 import { Guard, useField } from "../../lib/field";
 import { useTheme } from "../../theme/ThemeProvider";
 
@@ -45,6 +45,8 @@ export default function SiteRoster() {
             {rows ? <T v="small" muted>{rows.length} guard{rows.length === 1 ? "" : "s"}{flagged ? ` · ${flagged} with a document to renew` : ""}</T> : null}
           </View>
         </View>
+        <Button label="Today's attendance" icon={ClipboardCheck} variant="secondary"
+          onPress={() => router.push({ pathname: "/attendance/[id]", params: { id, name: name ?? "" } })} />
         <SearchBar value={q} onChange={setQ} placeholder="Name or code" />
         {err ? <Banner tone="danger" title={err} /> : null}
       </View>

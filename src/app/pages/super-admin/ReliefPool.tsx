@@ -28,13 +28,18 @@ import { guardDisplayCode } from "../../lib/guardCode";
  * site exactly as the Reliever Attendance page does (site named; the database
  * derives the client), so his cost follows the client. Pay is in the Payroll
  * Run, under "Relievers".
+ *
+ * 0613: where the site has a supervisor on the field app, he confirms each
+ * reliever sent there — arrived, or didn't arrive (reliever_arrivals). That
+ * shows beside the reliever here. "Didn't arrive" never removes the mark: the
+ * office decides (DECIDED 30 Oct 2026, office wins) — use Back to free.
  */
 
 type Reliever = {
   id: string; full_name: string; employee_code: string; guard_code: string | null; display_number: number | null;
   shift: string | null; pay_basis: string | null; daily_rate: number | null; base_salary: number | null; lifecycle_state: string | null;
 };
-type DayRow = { employee_id: string; status: string; site_id: string | null; worked_for_client_id: string | null; covering_for_guard_id: string | null; worked_shift: string | null };
+type DayRow = { id: string; employee_id: string; status: string; site_id: string | null; worked_for_client_id: string | null; covering_for_guard_id: string | null; worked_shift: string | null };
 type Gap = { guard_id: string; name: string; status: string; site_id: string | null; client_id: string | null; shift: string | null; covered_by: string | null };
 
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
@@ -55,6 +60,8 @@ export default function ReliefPool() {
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
   const [clientName, setClientName] = useState<Map<string, string>>(new Map());
+  // The site supervisor's word on today's reliever rows (0613), by attendance row id.
+  const [arrivals, setArrivals] = useState<Map<string, { arrived: boolean; supervisor_name: string }>>(new Map());
 
   const [send, setSend] = useState<{ relieverId: string; siteId: string; shift: string; covering: string } | null>(null);
 
@@ -77,7 +84,7 @@ export default function ReliefPool() {
 
     const [dayRes, monthRes, absRes] = await Promise.all([
       ids.length ? supabase.from("attendance_records")
-        .select("employee_id, status, site_id, worked_for_client_id, covering_for_guard_id, worked_shift")
+        .select("id, employee_id, status, site_id, worked_for_client_id, covering_for_guard_id, worked_shift")
         .in("employee_id", ids).eq("attendance_date", date) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from("attendance_records")
         .select("employee_id, worked_for_client_id")
@@ -91,6 +98,12 @@ export default function ReliefPool() {
     const dm = new Map<string, DayRow>();
     for (const r of (dayRes.data ?? []) as DayRow[]) dm.set(r.employee_id, r);
     setDay(dm);
+    const rowIds = [...dm.values()].map((r) => r.id);
+    const arr = rowIds.length
+      ? await supabase.from("reliever_arrivals").select("attendance_record_id, arrived, supervisor_name").in("attendance_record_id", rowIds)
+      : { data: [] };
+    setArrivals(new Map(((arr.data ?? []) as { attendance_record_id: string; arrived: boolean; supervisor_name: string }[])
+      .map((a) => [a.attendance_record_id, { arrived: a.arrived, supervisor_name: a.supervisor_name }])));
     const mm = new Map<string, Map<string, number>>();
     for (const r of (monthRes.data ?? []) as { employee_id: string; worked_for_client_id: string | null }[]) {
       const k = r.worked_for_client_id ?? "—";
@@ -235,6 +248,13 @@ export default function ReliefPool() {
                           </span>
                           <span className={`ml-auto text-xs font-medium ${st.kind === "out" ? "text-success-700 dark:text-success-500" : st.kind === "free" ? "text-heed" : "text-muted-foreground"}`}>{st.text}</span>
                         </div>
+                        {st.kind === "out" && (() => {
+                          const a = arrivals.get(day.get(r.id)?.id ?? "");
+                          if (!a) return null;
+                          return a.arrived
+                            ? <span className="text-[11px] text-up">Site confirmed he arrived · {a.supervisor_name}</span>
+                            : <span className="text-[11px] font-semibold text-heed">Site says he didn't arrive · {a.supervisor_name} — still marked present; use Back to free if so</span>;
+                        })()}
                         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                           {md.length === 0 ? <span className="text-muted-foreground">No days this month yet</span> : md.map(([cid, n]) => (
                             <span key={cid} className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
