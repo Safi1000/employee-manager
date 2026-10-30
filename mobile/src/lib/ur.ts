@@ -216,6 +216,8 @@ export const UR: Record<string, string> = {
   "Urgent — the office must act today": "فوری — دفتر کو آج ہی کچھ کرنا ہے",
   "Send report": "رپورٹ بھیجیں",
   "Only the site supervisor sends the daily site report.": "روزانہ سائٹ رپورٹ صرف سائٹ سپروائزر بھیجتا ہے۔",
+  "Your login doesn't have the daily report permission.": "آپ کے لاگ اِن کو روزانہ رپورٹ بھیجنے کی اجازت نہیں۔",
+  "This is done by the office, not in the site supervisor's app.": "یہ کام دفتر کرتا ہے، سائٹ سپروائزر کی ایپ میں نہیں۔",
 
   // ── tasks
   "No tasks for this site": "اس سائٹ کے لیے کوئی کام نہیں",
@@ -279,4 +281,5 @@ export const UR_PATTERNS: [RegExp, string][] = [
   [/^Already confirmed by the office \((.*)\)\. Ask the office to change it\.$/, "دفتر ($1) پہلے ہی تصدیق کر چکا ہے۔ تبدیلی کے لیے دفتر سے کہیں۔"],
   [/^Accepted by the office \((.*)\)\. Ask the office to change it\.$/, "دفتر ($1) منظور کر چکا ہے۔ تبدیلی کے لیے دفتر سے کہیں۔"],
   [/^Unknown checklist point "(.*)"\.$/, "چیک لسٹ میں \"$1\" نام کی کوئی چیز نہیں۔"],
+  [/^Your login needs the "(.*)" permission for this\. Ask a super admin\.$/, "اس کام کے لیے آپ کے لاگ اِن کو \"$1\" کی اجازت درکار ہے۔ سپر ایڈمن سے بات کریں۔"],
 ];

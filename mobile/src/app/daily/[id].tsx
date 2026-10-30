@@ -1,7 +1,8 @@
-// The site's end-of-day word (0619): all OK, or what was not — urgent if the
+// A site's end-of-day word (0619): all OK, or what was not — urgent if the
 // office must act tonight. One per site per day; sending again replaces it. The
-// office reads it beside the client on Daily Reports. Office logins see it here
-// read-only: the daily report speaks for the site, and only its supervisor does.
+// office reads it beside the client on Daily Reports. 0620: sent by office
+// staff holding the daily-report key (any of them; the last one sent stands),
+// never by the site supervisor.
 import { useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
 import React, { useCallback, useEffect, useState } from "react";
@@ -80,7 +81,7 @@ export default function DailyReport() {
           {ok ? <PhotoStrip photos={photos} onChange={setPhotos} /> : null}
           <Button label={tr("Send report")} icon={Send} onPress={() => void send()} loading={busy} disabled={!ok || (ok === "no" && !note.trim())} />
         </>
-      ) : d ? <T v="small" muted>{tr("Only the site supervisor sends the daily site report.")}</T> : null}
+      ) : d ? <T v="small" muted>{tr("Your login doesn't have the daily report permission.")}</T> : null}
     </ScrollView>
   );
 }

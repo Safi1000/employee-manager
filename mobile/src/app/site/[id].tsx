@@ -1,9 +1,14 @@
-// One site: what the supervisor does there (attendance, visit, incident, daily
-// report, tasks, SOS) and its guards — photo, name, code, shift, phone, expiry
-// flags. Nothing else: field_site_roster returns no CNIC number and no pay, by
-// design (0607). Tapping a guard opens his card: a photo can be taken if he has
-// none (0614 — replacing one is the office's), and his warnings with "raise a
-// soft / formal warning" (0617 — the phone never sees or sets a fine).
+// One site: what this login may do there and its guards — photo, name, code,
+// shift, phone, expiry flags. Nothing else: field_site_roster returns no CNIC
+// number and no pay, by design (0607).
+//
+// 0620 (DECIDED 30 Oct 2026): a site supervisor — "a guard with more
+// responsibility" — gets attendance and the guard list only. Visits, incidents
+// and SOS, the daily report, tasks and warnings are office staff's, each by its
+// own key; field_me's `can` says which, and the server refuses the rest anyway.
+// Tapping a guard opens his card: a photo can be taken if he has none (0614 —
+// replacing one is the office's), and, for office staff with the warnings key,
+// his warnings (0617 — the phone never sees or sets a fine).
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertTriangle, Camera, ClipboardCheck, ClipboardList, FileText, ListChecks, Phone, Siren, Users, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -12,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, NotesBox, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Avatar, Badge, Banner, Button, Card, Empty, SearchBar } from "../../components/ui";
-import { Guard, useField, Warnings } from "../../lib/field";
+import { Ability, Guard, useField, Warnings } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position, takePhoto } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -57,12 +62,13 @@ export default function SiteHub() {
     ]);
   };
 
+  const can = (a: Ability) => (me?.can ?? []).includes(a);
   const actions: { label: string; icon: typeof ClipboardCheck; to: Parameters<typeof go>[0] }[] = [
-    { label: tr("Today's attendance"), icon: ClipboardCheck, to: "/attendance/[id]" },
-    { label: tr("Site visit"), icon: ListChecks, to: "/visit/[id]" },
-    { label: tr("Report incident"), icon: AlertTriangle, to: "/incident/[id]" },
-    { label: tr("Daily report"), icon: FileText, to: "/daily/[id]" },
-    { label: tr("Tasks"), icon: ClipboardList, to: "/tasks/[id]" },
+    ...(can("attendance") || can("attendance_view") ? [{ label: tr("Today's attendance"), icon: ClipboardCheck, to: "/attendance/[id]" as const }] : []),
+    ...(can("visit") ? [{ label: tr("Site visit"), icon: ListChecks, to: "/visit/[id]" as const }] : []),
+    ...(can("incidents") ? [{ label: tr("Report incident"), icon: AlertTriangle, to: "/incident/[id]" as const }] : []),
+    ...(can("daily_report") ? [{ label: tr("Daily report"), icon: FileText, to: "/daily/[id]" as const }] : []),
+    ...(can("tasks") ? [{ label: tr("Tasks"), icon: ClipboardList, to: "/tasks/[id]" as const }] : []),
   ];
 
   return (
@@ -85,12 +91,12 @@ export default function SiteHub() {
                   <T v="bodyStrong" style={{ flex: 1 }} numberOfLines={2}>{a.label}</T>
                 </Card>
               ))}
-              <Pressable onPress={sendSos} disabled={sos === "sending"} accessibilityLabel={tr("Send SOS")}
+              {can("incidents") ? <Pressable onPress={sendSos} disabled={sos === "sending"} accessibilityLabel={tr("Send SOS")}
                 style={({ pressed }) => ({ width: "48.5%", flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 16,
                   backgroundColor: t.tone("danger").solid, opacity: pressed || sos === "sending" ? 0.8 : 1 })}>
                 <Siren size={20} color="#fff" />
                 <T v="bodyStrong" color="#fff">{sos === "sending" ? tr("Sending…") : "SOS"}</T>
-              </Pressable>
+              </Pressable> : null}
             </View>
             <T v="eyebrow" muted style={{ marginTop: 6 }}>{tr("Guards")}</T>
             <SearchBar value={q} onChange={setQ} placeholder={tr("Name or code")} />
@@ -120,7 +126,7 @@ export default function SiteHub() {
           </Card>
         )}
       />
-      {open ? <GuardCard siteId={id} guard={open} canWarn={!!me} onClose={() => setOpen(null)} onPhotoSet={() => { setOpen(null); void load(); }} /> : null}
+      {open ? <GuardCard siteId={id} guard={open} canWarn={can("warnings")} canPhoto={can("guard_photo")} onClose={() => setOpen(null)} onPhotoSet={() => { setOpen(null); void load(); }} /> : null}
     </View>
   );
 }
@@ -139,8 +145,8 @@ function GuardAvatar({ siteId, guard }: { siteId: string; guard: Guard }) {
 }
 
 /** One guard: big photo (or take one), his warnings, raise a warning. */
-function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn }: {
-  siteId: string; guard: Guard; onClose: () => void; onPhotoSet: () => void; canWarn: boolean;
+function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn, canPhoto }: {
+  siteId: string; guard: Guard; onClose: () => void; onPhotoSet: () => void; canWarn: boolean; canPhoto: boolean;
 }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -162,9 +168,9 @@ function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn }: {
     let live = true;
     if (guard.has_photo) void photo(siteId, guard.employee_id).then((v) => { if (live) setUri(v); });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on open; state is set only after the request returns
-    void loadWarnings();
+    if (canWarn) void loadWarnings();
     return () => { live = false; };
-  }, [siteId, guard.employee_id, guard.has_photo, photo, loadWarnings]);
+  }, [siteId, guard.employee_id, guard.has_photo, photo, loadWarnings, canWarn]);
 
   const snap = async () => {
     setErr(null);
@@ -206,7 +212,7 @@ function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn }: {
         {err ? <Banner tone="danger" title={tr(err)} /> : null}
         {uri ? (
           <Image source={{ uri }} resizeMode="cover" style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }} />
-        ) : guard.has_photo ? null : (
+        ) : guard.has_photo || !canPhoto ? null : (
           <Card style={{ alignItems: "center", gap: 10 }}>
             <T v="small" muted center>{tr("No photo in Bastion yet. Take one facing the guard, in good light.")}</T>
             <Button label={tr("Take his photo")} icon={Camera} variant="secondary" onPress={() => void snap()} loading={busy} />
@@ -216,7 +222,7 @@ function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn }: {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>{(guard.flags ?? []).map((f) => <Badge key={f} label={tr(f)} tone="danger" />)}</View>
         ) : null}
 
-        <T v="eyebrow" muted style={{ marginTop: 6 }}>{tr("Warnings")}</T>
+        {canWarn ? <T v="eyebrow" muted style={{ marginTop: 6 }}>{tr("Warnings")}</T> : null}
         {w ? (
           <T v="small" soft>{tr("{n} of 3 formal warnings in the last 12 months", { n: w.formal_in_12_months })}</T>
         ) : null}

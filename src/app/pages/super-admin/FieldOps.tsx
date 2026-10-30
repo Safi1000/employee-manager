@@ -43,9 +43,9 @@ import { usePageState } from "../../lib/pageState";
 // carry no region; they are shown read-only under "All regions (before the
 // split)" and are not guessed into one (DECIDED).
 //
-// 0619: each site supervisor's own end-of-day word from the field app
-// (site_daily_reports) is shown UNDER the client's box — "From the site". It is
-// never written into the office's Details: the office's note stays the office's.
+// 0619/0620: the daily site report sent from the field app (site_daily_reports;
+// office staff with field.daily_report since 0620) is shown UNDER the client's
+// box — "From the field". It is never written into the office's Details.
 //
 // The Attendance Report tab reads the PREVIOUS day, deliberately: the day being
 // reported on has not been confirmed yet when the report goes out, so the
@@ -1189,7 +1189,7 @@ function DetailsRow({
       <div className="px-3 pb-2 pt-1 md:py-2">
         {siteReports?.map((r) => (
           <p key={`${r.sites?.name}-${r.sent_at}`} className={`mb-1 text-xs ${r.all_ok ? "text-muted-foreground" : r.urgent ? "text-down" : "text-heed"}`}>
-            <span className="font-medium">From the site{r.sites?.name && r.sites.name !== client.name ? ` (${r.sites.name})` : ""}:</span>{" "}
+            <span className="font-medium">From the field{r.sites?.name && r.sites.name !== client.name ? ` (${r.sites.name})` : ""}:</span>{" "}
             {r.all_ok ? "All OK" : r.urgent ? "Not OK · urgent" : "Not OK"}{r.note ? ` — ${r.note}` : ""}
             <span className="text-muted-foreground"> · {r.sent_by_name}, {new Date(r.sent_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
           </p>

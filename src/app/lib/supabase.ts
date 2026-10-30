@@ -558,6 +558,14 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     label: "Field app",
     items: [
       { key: "field.app", label: "Use the field app — every site's guards on an approved phone (own region if pinned); no pay, no CNIC numbers" },
+      // 0620 (DECIDED 30 Oct 2026): what office staff may DO in the field app,
+      // each its own key. field.app alone is viewing. A site supervisor (code +
+      // PIN) never gets these — his app is attendance and the guard list.
+      { key: "field.visit", label: "Field: site visits with the checklist" },
+      { key: "field.incidents", label: "Field: report incidents and SOS" },
+      { key: "field.daily_report", label: "Field: send a site's daily report" },
+      { key: "field.tasks", label: "Field: mark site tasks done" },
+      { key: "field.warnings", label: "Field: raise soft or formal warnings" },
     ],
   },
   {

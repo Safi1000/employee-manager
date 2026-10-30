@@ -21,7 +21,11 @@ export type Site = { id: string; name: string; client: string | null; location: 
 export type Me = {
   name: string; employee_code: string | null; kind: "supervisor" | "office"; title: string | null;
   session_hours: number; sites: Site[];
+  /** 0620: what this login may do. Supervisor: roster, attendance, guard_photo. Office: roster,
+   *  attendance_view, guard_photo, plus visit / incidents / daily_report / tasks / warnings per key. */
+  can?: Ability[];
 };
+export type Ability = "roster" | "attendance" | "attendance_view" | "guard_photo" | "visit" | "incidents" | "daily_report" | "tasks" | "warnings";
 export type Guard = {
   employee_id: string; full_name: string; employee_code: string | null; shift: string | null;
   phone: string | null; has_photo: boolean; flags: string[] | null;
