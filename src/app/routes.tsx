@@ -73,6 +73,7 @@ const AccountingCore = lazyPage(() => import("./pages/super-admin/AccountingCore
 const AccessGovernance = lazyPage(() => import("./pages/super-admin/AccessGovernance"));
 const MyProfile = lazyPage(() => import("./pages/super-admin/MyProfile"));
 const DailyReports = lazyPage(() => import("./pages/super-admin/DailyReports"));
+const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const IncidentsHub = lazyPage(() => import("./pages/super-admin/IncidentsHub"));
 
 const Billing = lazyPage(() => import("./pages/super-admin/Billing"));
@@ -253,6 +254,8 @@ export const router = createBrowserRouter([
       // Field Operations repurposed → Daily Reports (date-wise client report → PDF + record).
       { path: "daily-reports", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <DailyReports />) },
       { path: "field-ops", element: <Navigate to="/app/daily-reports" replace /> },
+      // Field app logins and site coverage. Role, not permission: admin_field_* refuse anyone but a super admin.
+      { path: "field-supervisors", element: <RequireAuth roles={["super_admin"]}><FieldSupervisors /></RequireAuth> },
       { path: "compliance-cases", element: guard(["compliance.view", "compliance.edit"], <ComplianceCases />) },
       // Assets & Issuance — tabs: Store | Issuance | Clearance | Register.
       // Inventory.tsx was deleted with this rebuild: it read inventory_items

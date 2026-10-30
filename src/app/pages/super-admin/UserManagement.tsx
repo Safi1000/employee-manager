@@ -1,6 +1,7 @@
 import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound, ShieldCheck } from "lucide-react";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
@@ -21,7 +22,6 @@ import UserSecurityModal, { deviceLabel, type UserSecurity } from "../../compone
 import DrivePrivacyCard from "../../components/DrivePrivacyCard";
 import BackupCard from "../../components/BackupCard";
 import SecurityDigestCard from "../../components/SecurityDigestCard";
-import FieldAccountsCard from "../../components/FieldAccountsCard";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -517,7 +517,12 @@ export default function UserManagement() {
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         {(profile?.role === "super_admin" || profile?.role === "super_super_admin") && (<><SecurityDigestCard companyId={company?.id ?? profile?.company_id ?? null} /><BackupCard /><DrivePrivacyCard /></>)}
-        {profile?.role === "super_admin" && <FieldAccountsCard />}
+        {profile?.role === "super_admin" && (
+          <Link to="/app/field-supervisors" className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card p-4 text-sm hover:bg-muted/30 md:p-5">
+            <span><span className="font-semibold text-foreground">Field accounts</span> <span className="text-muted-foreground">— supervisor logins, phones and their sites now live on Operations ▸ Field Supervisors.</span></span>
+            <span className="whitespace-nowrap text-brand-700 dark:text-brand-500">Open →</span>
+          </Link>
+        )}
 
         <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center gap-3">

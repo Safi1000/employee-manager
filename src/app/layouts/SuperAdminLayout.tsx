@@ -48,6 +48,7 @@ import {
   MapPin,
   ClipboardList,
   ClipboardCheck,
+  Smartphone,
 } from "lucide-react";
 import { ScrollMemory } from "../lib/pageState";
 import DriveLinkGuard from "../components/DriveLinkGuard";
@@ -150,6 +151,7 @@ export default function SuperAdminLayout() {
 
   // Consolidation restructure — merged / renamed / moved homes.
   const RELIEVERS: LinkDef = { to: "/app/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
+  const FIELD_SUPERVISORS: LinkDef = { to: "/app/field-supervisors", label: "Field Supervisors", icon: Smartphone, roles: ["super_admin"] };
   const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/app/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
   const ACCOUNTING_CORE: LinkDef = { to: "/app/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
@@ -259,6 +261,8 @@ export default function SuperAdminLayout() {
   // Inventory + Assets merged → Assets & Issuance.
   const operations = buildGroup("Operations", "/app/operations", [
     DAILY_REPORTS,
+    // Field app logins: who supervises which sites (super admins, 30 Oct 2026).
+    FIELD_SUPERVISORS,
     INCIDENTS,
     ASSETS_ISSUANCE,
   ]);

@@ -26,6 +26,7 @@ const SECTION_OF: Record<string, string> = {
   relievers: "Workforce",
 
   "daily-reports": "Operations",
+  "field-supervisors": "Operations",
   incidents: "Operations",
   "assets-issuance": "Operations",
 
