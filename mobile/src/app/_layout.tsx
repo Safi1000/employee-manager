@@ -58,7 +58,6 @@ function Root() {
           <Stack.Screen name="attendance/[id]" />
           <Stack.Screen name="visit/[id]" />
           <Stack.Screen name="incident/[id]" />
-          <Stack.Screen name="daily/[id]" />
           <Stack.Screen name="tasks/[id]" />
           <Stack.Screen name="money/index" />
           <Stack.Screen name="money/new" />

@@ -563,7 +563,9 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       // PIN) never gets these — his app is attendance and the guard list.
       { key: "field.visit", label: "Field: site visits with the checklist" },
       { key: "field.incidents", label: "Field: report incidents and SOS" },
-      { key: "field.daily_report", label: "Field: send a site's daily report" },
+      // DECIDED 30 Oct 2026: the per-site daily report is not offered in the app any
+      // more — the office's Daily Report (roster.edit) is the one daily report.
+      { key: "field.daily_report", label: "Field: per-site daily report (not used — the app offers the Daily Report instead)" },
       { key: "field.tasks", label: "Field: mark site tasks done" },
       { key: "field.warnings", label: "Field: raise soft or formal warnings" },
       // 0621–0625: office staff's own requests and records from the app — each

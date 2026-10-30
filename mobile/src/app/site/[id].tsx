@@ -6,11 +6,13 @@
 // responsibility" — gets attendance and the guard list only. Visits, incidents
 // and SOS, the daily report, tasks and warnings are office staff's, each by its
 // own key; field_me's `can` says which, and the server refuses the rest anyway.
+// The per-site daily report (0619) is not offered: DECIDED 30 Oct 2026, the
+// office's Daily Report (home › Daily Report, 0625) is the one daily report.
 // Tapping a guard opens his card: a photo can be taken if he has none (0614 —
 // replacing one is the office's), and, for office staff with the warnings key,
 // his warnings (0617 — the phone never sees or sets a fine).
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AlertTriangle, Camera, ClipboardCheck, ClipboardList, FileText, ListChecks, Phone, Siren, Users, X } from "lucide-react-native";
+import { AlertTriangle, Camera, ClipboardCheck, ClipboardList, ListChecks, Phone, Siren, Users, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,7 +50,7 @@ export default function SiteHub() {
     return (rows ?? []).filter((g) => !s || `${g.full_name} ${g.employee_code ?? ""}`.toLowerCase().includes(s));
   }, [rows, q]);
   const flagged = (rows ?? []).filter((g) => (g.flags ?? []).length > 0).length;
-  const go = (pathname: "/attendance/[id]" | "/visit/[id]" | "/incident/[id]" | "/daily/[id]" | "/tasks/[id]") =>
+  const go = (pathname: "/attendance/[id]" | "/visit/[id]" | "/incident/[id]" | "/tasks/[id]") =>
     router.push({ pathname, params: { id, name: name ?? "" } });
 
   const sendSos = () => {
@@ -67,7 +69,6 @@ export default function SiteHub() {
     ...(can("attendance") || can("attendance_view") ? [{ label: tr("Today's attendance"), icon: ClipboardCheck, to: "/attendance/[id]" as const }] : []),
     ...(can("visit") ? [{ label: tr("Site visit"), icon: ListChecks, to: "/visit/[id]" as const }] : []),
     ...(can("incidents") ? [{ label: tr("Report incident"), icon: AlertTriangle, to: "/incident/[id]" as const }] : []),
-    ...(can("daily_report") ? [{ label: tr("Daily report"), icon: FileText, to: "/daily/[id]" as const }] : []),
     ...(can("tasks") ? [{ label: tr("Tasks"), icon: ClipboardList, to: "/tasks/[id]" as const }] : []),
   ];
 
