@@ -1,8 +1,8 @@
 // The field login's state: signed out → this phone checked → sites.
 //
-// After sign-in the app registers this phone (field_register_device). The
-// login's first phone is approved at once; any later phone waits until a super
-// admin approves it in Access & Governance › Field accounts. Sessions end 14
+// After sign-in the app registers this phone (field_register_device). Every
+// new phone — the login's first one too (0611) — waits until a super admin
+// approves it in Operations › Field Supervisors. Sessions end 14
 // hours after sign-in (0608) — the server refuses after that, and the app signs
 // out on its own a moment before, so a guard never sees a half-working screen.
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";

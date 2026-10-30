@@ -30,7 +30,7 @@ export default function Login() {
   if (phase === "pending") {
     body = (
       <>
-        <Empty icon={Clock} title="Waiting for the office" sub="This phone is new for your login. Ask your office to approve it in Bastion, then tap Check again." />
+        <Empty icon={Clock} title="Waiting for the office" sub="Your office has to approve this phone before you can use it. Ask them to approve it in Bastion, then tap Check again." />
         <Button label="Check again" onPress={() => void again()} loading={busy} />
         <Button label="Sign out" variant="ghost" onPress={() => void signOut()} style={{ marginTop: 8 }} />
       </>
