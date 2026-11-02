@@ -246,66 +246,75 @@ export default function SuperAdminLayout() {
   // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
   // Deployment; billing → Invoices); Client Relationships dissolved (complaints
   // → Incidents, renewals → Compliance, reviews → client record).
+  // 2 Nov 2026: Invoices moved to Finance, with the rest of the money.
   const contractsClients = buildGroup("Clients & Contracts", "/app/billing", [
     CLIENTS,
     CONTRACTS,
-    INVOICES,
   ]);
   if (contractsClients) links.push(contractsClients);
 
   // WORKFORCE — Payroll now hosts Runs as a tab; Relievers is one thin panel
   // (per-day cost nets against the client, separate from salaried Payroll).
   // Recruitment removed; Performance hidden (route kept, just not in the nav).
+  // 2 Nov 2026 (Shayan): people and attendance only — Payroll and Payroll Run
+  // moved to Finance, the field-app screens to their own Field App group.
   const workforce = buildGroup("Workforce", "/app/workforce", [
     EMPLOYEES,
     ASSIGNMENTS,
     ATTENDANCE,
     ATTENDANCE_RUN,
-    FIELD_REVIEW,
-    FIELD_ACTIVITY,
-    PAYROLL,
-    PAYROLL_RUN,
     RELIEVERS,
   ]);
   if (workforce) links.push(workforce);
 
+  // FIELD APP (2 Nov 2026): everything that comes from or governs the mobile
+  // app in one place — approvals, acknowledgements, and who supervises what.
+  const fieldApp = buildGroup("Field App", "/app/field", [
+    FIELD_REVIEW,
+    FIELD_ACTIVITY,
+    FIELD_SUPERVISORS,
+  ]);
+  if (fieldApp) links.push(fieldApp);
+
   // OPERATIONS — Roster killed (supervisor handles it); Deployment merged into
   // Workforce ▸ Assignments & Pay; Field Ops repurposed → Daily Reports;
   // Inventory + Assets merged → Assets & Issuance.
+  // 2 Nov 2026: Payment Follow-up moved to Finance, Field Supervisors to Field App.
   const operations = buildGroup("Operations", "/app/operations", [
     DAILY_REPORTS,
-    PAYMENT_FOLLOW_UP,
-    // Field app logins: who supervises which sites (super admins, 30 Oct 2026).
-    FIELD_SUPERVISORS,
     INCIDENTS,
     ASSETS_ISSUANCE,
   ]);
   if (operations) links.push(operations);
 
-  // FINANCE — Opening Balances + Chart of Accounts merged → Accounting Core.
-  // Receivables folded into Bank & Ledgers. Treasury moved out to Profit-Share.
+  // FINANCE (2 Nov 2026, Shayan: "payroll and all finance related in one
+  // side"): the day-to-day money — billed, chased, spent, paid, banked. A login
+  // holding only receivables.follow_up sees this group with Payment Follow-up
+  // alone, and no figures.
   const finance = buildGroup("Finance", "/app/finance", [
-    BANKS,
-    // Unhidden. It was hidden when it was a merge of two screens nobody used;
-    // it is now the only way in to the Chart of Accounts, the Trial Balance,
-    // the Journal and Opening Balances, which are its four tabs. Hiding the
-    // entrance to the ledger while asking people to enter financials against it
-    // is the wrong way round.
-    ACCOUNTING_CORE,
+    INVOICES,
+    PAYMENT_FOLLOW_UP,
     EXPENSES,
-    FINANCE_REPORT,
-    // Cash Flow is now merged into Financial Reports as a top-level tab, so its
-    // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
-    REPORTS,
-    ACCOUNTANT,
-    // One door for the partnership (2026-10-26): months, partners, statements.
-    PARTNERSHIP,
-    // REGIONAL_SCORECARD ("Regional Operating Expenses") is hidden from the nav
-    // by request. The route still exists (routes.tsx) so a saved link resolves;
-    // it just isn't listed. Re-add it here to bring it back.
-    PERIOD_CLOSE,
+    PAYROLL,
+    PAYROLL_RUN,
+    BANKS,
   ]);
   if (finance) links.push(finance);
+
+  // ACCOUNTS & REPORTS (2 Nov 2026): the books and what is read from them,
+  // directly beneath Finance. Accounting Core is the only way in to the Chart
+  // of Accounts, Trial Balance, Journal and Opening Balances. Cash Flow is a tab
+  // of Financial Reports; Regional Operating Expenses stays hidden (route kept).
+  const accounts = buildGroup("Accounts & Reports", "/app/accounts", [
+    FINANCE_REPORT,
+    REPORTS,
+    ACCOUNTANT,
+    ACCOUNTING_CORE,
+    // One door for the partnership (2026-10-26): months, partners, statements.
+    PARTNERSHIP,
+    PERIOD_CLOSE,
+  ]);
+  if (accounts) links.push(accounts);
 
   // PROFIT-SHARE — hidden in its entirety. Treasury & Reserves lives here now,
   // so it is hidden with the group. Regional Scorecard used to be listed here
