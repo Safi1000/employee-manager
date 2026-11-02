@@ -24,9 +24,10 @@ import {
 import Header from "../../components/Header";
 import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import { useOpenParam } from "../../lib/openParam";
-// Client receivables, moved here from Banks & Ledgers (2026-10-21): that page's
-// own receivables tab, embedded, so statements, receipts and WHT stay one implementation.
-const ClientReceivables = lazy(() => import("./Accounting"));
+// Client receivables (0626): balance today, the client ledger by date, and
+// payments with the tax deducted entered in one form. Replaces the embedded
+// Banks & Ledgers month table.
+const ClientReceivables = lazy(() => import("../../components/ClientReceivables"));
 import Tabs from "../../components/Tabs";
 import StatCard from "../../components/StatCard";
 import Button from "../../components/Button";
@@ -56,7 +57,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
-import WhtRegister from "../../components/WhtRegister";
+import WhtCertificates from "../../components/WhtCertificates";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
@@ -1053,12 +1054,12 @@ export default function Invoices() {
 
 
         {tab === "wht" && canViewReceivables && (
-          <WhtRegister companyId={treasuryCompanyId} canEdit={canEditInvoices} onChanged={loadAll} />
+          <WhtCertificates companyId={treasuryCompanyId} onChanged={loadAll} />
         )}
 
         {tab === "receivables" && canViewReceivables && (
           <Suspense fallback={<div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading receivables…</div>}>
-            <ClientReceivables embed="receivables" />
+            <ClientReceivables />
           </Suspense>
         )}
 
@@ -1586,7 +1587,7 @@ export default function Invoices() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-foreground mb-1">Amount (PKR) *</label>
+              <label className="block text-sm text-foreground mb-1">Amount received (PKR) *</label>
               <input
                 required
                 type="number"
@@ -1689,7 +1690,7 @@ export default function Invoices() {
 
           <div>
             <label className="block text-sm text-foreground mb-1">
-              Withholding Tax Deducted (PKR)
+              Tax the client deducted (PKR)
             </label>
             <input
               type="number"
@@ -1702,10 +1703,16 @@ export default function Invoices() {
               className="w-full px-4 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-transparent"
             />
             <p className="text-[11px] text-muted-foreground mt-1">
-              Prefilled from this client&rsquo;s agreed rate. The receivable is cleared by the
-              cash received <em>and</em> the tax withheld together. WHT is recorded as a{" "}
-              <strong>claim</strong> until you verify it under Withholding tax.
+              Prefilled from this client&rsquo;s agreed rate — change it to what they actually deducted, or 0.
+              It waits for the client&rsquo;s certificate under Withholding tax.
             </p>
+            {Number(paymentForm.amount) > 0 && (
+              <p className="mt-1.5 rounded-md bg-muted/60 px-2 py-1.5 text-xs text-foreground">
+                {Number(paymentForm.amount).toLocaleString()} received
+                {Number(paymentForm.withholding || 0) > 0 ? ` + ${Number(paymentForm.withholding).toLocaleString()} tax deducted` : ""} clears{" "}
+                <strong>{(Number(paymentForm.amount) + Number(paymentForm.withholding || 0)).toLocaleString()}</strong> of what the client owes.
+              </p>
+            )}
             {paymentInvoice && Number(paymentForm.amount) > 0 && (() => {
               const rest = Math.round((Number(paymentInvoice.invoice_amount ?? 0) - Number(paymentInvoice.amount_received ?? 0) - Number(paymentForm.amount)) * 100) / 100;
               return rest > 0 && Number(paymentForm.withholding || 0) !== rest ? (
