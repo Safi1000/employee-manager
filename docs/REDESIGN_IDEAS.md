@@ -494,3 +494,267 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
   exports, which cannot read CSS variables; and the separate `mobile/` app.
 - **Idea** — now that every screen reads tokens, the accent themes in Settings
   (amber, green, steel) can recolour every screen; worth a check of each.
+
+---
+
+## Full audit — 3 Nov 2026 (every page, live data, read-only)
+
+Walked every page and panel on the live site at laptop size (1366×860), with
+phone-size spot checks, looking at what each screen shows, whether its figures
+agree with the others, what it makes hard, and what a guarding company needs
+that is not there. Nothing was changed while auditing. Everything below is an
+**Idea** unless marked otherwise.
+
+### A. Fix first — these are wrong or risky today
+
+1. **Two-factor becomes compulsory on 5 Nov.** Shujaat Mehmood (CEO), Nauman
+   Ahmed and Shafqat Ali have not set it up, so they will be locked out in two
+   days unless they enrol (Access & Governance shows "Two-factor not set up").
+2. **Backups have never run.** Access & Governance: "Backups — No backup yet".
+   The weekly encrypted Drive backup is configured but nothing has been saved.
+3. **Guard vetting is almost empty.** Compliance Calendar: police verification
+   1 of 402 guards, NADRA Verisys 2 of 402, CNIC expiry recorded for 61%. For a
+   licensed security company this is the largest exposure in the system.
+4. **"Owed to us" has three different totals.** Dashboard 23.67M (with "0%
+   older than 90 days"), Clients and the Invoices tile 21.08M (invoices only),
+   Receivables 31.63M (with opening balances). Client cards go negative
+   (AlRabi −597,386, Berger −744,414, Popular Brands −314,683) because they
+   ignore opening balances. Every "owed" figure should read the one
+   receivables function.
+5. **October looks like a record month because payroll isn't posted.**
+   Financial Reports: October net profit 10.83M (78.5%), "+1318% on
+   September", with guard payroll 6,907 against 11.9M in September. The
+   dashboard region tile shows a 93% margin for ISB/RWP for the same reason. An
+   incomplete month must say so (or the page should default to the last
+   complete month).
+6. **The nightly controls can't be read in the app.** Accountant: "Controls red
+   … running the nightly controls…" and "Running the checks…" never finish.
+   A read-only run of `ledger_checks` today returned 13 red, including
+   `ar_control_equals_open_invoices` (the ledger's receivables account against
+   the open invoices, apart by about 36.5M), `payroll_accrual_matches_attendance`
+   (19), `every_billed_client_carries_cost` (18) and
+   `no_payroll_booked_as_expense` (15). That run had no signed-in user, so its
+   figures need confirming, but they should be visible on the page. The
+   Checks tab still labels several of these "Proposed (0516)" although they
+   are live and red.
+7. **Contracts show dates in US format** (10/01/2026, 09/22/2026, 06/30/2027)
+   while the rest of the app is day-first. "10/01/2026" reads as 10 January.
+   Bank & Ledgers mixes 20/10/2026 and 2026-10-21 in one row. One format
+   everywhere; "3 Nov 2026" cannot be misread.
+8. **49 guards have no base salary and 81 no joining date** (Assignments &
+   Pay). That is exactly what produced Waqas Ahmed's zero October pay. Payroll
+   Run shows "no base salary" chips but still lets the group move on.
+9. **Lahore is settled but still live everywhere.** Seven Lahore contracts are
+   Active with 0 guards (Berger 0/15, Madison 0/12 …). They produce 39 of the
+   44 "understaffed", six of the 13 "missing invoices", six never-finished
+   attendance registers, seven daily-report rows and a Lahore block every day.
+   Mr Raza Firdous Market still has 5 active guards with no attendance.
+   Ending or suspending these contracts clears most of the noise in one go.
+10. **Innovative: 2 guards enrolled under a terminated contract** (PKR 64,000
+    a month on the roster, nothing billed).
+11. **A draft opening-balance batch has sat unposted since 3 September**
+    (Accounting Core › Opening Balances). The dashboard's "3.19M between the
+    ledger and the recorded balances" paragraph points at this.
+12. **No month is locked.** Period Close: 0 of 4. August (cutover) and
+    September (reconciled and agreed) can still be edited.
+
+### B. Patterns that repeat across pages
+
+- **Pages open on today, which is always empty in the morning.** Attendance,
+  Relievers and Expenses (current month, three days old) open on a day or
+  month with nothing in it. Open on the latest day or month that has work
+  (usually yesterday).
+- **Loading shows zeros.** Assignments & Pay shows "2 groups · 0 employees"
+  for about 10 seconds; Payroll shows 0% for a run that is under way. Show a
+  skeleton or the pipeline, never a zero that isn't true.
+- **Tabs render above the page band on hub pages** (Incidents, Assets &
+  Issuance, Relievers, Accounting Core, Payroll, Partnership, Access &
+  Governance, Compliance), but inside it everywhere else.
+- **Modules built but not used yet:** Incidents (0 ever), Store (0 items),
+  Field supervisors (0 active of 54 sites), Task Board (5 tasks ever),
+  follow-up contacts (0), client pay days (none set). Each needs an owner
+  and a first step, not more features.
+- **Paisa on headline tiles** (PKR 14,062,953.42; 2,411,518.5 in the P&L)
+  beside rounded rows. Whole rupees on screen; paisa in drill-downs.
+- **Internal references shown to users:** "(§4.4)", "Proposed (0516)",
+  `daily_client_reports`, record UUIDs in the Audit Log.
+- **Alert texts describe old menu paths** ("Operations › Field Supervisors",
+  "Access & Governance › Field accounts"). Alerts should link, not describe
+  where to click.
+- **Delete sits beside View/Edit on every client card**, including HMC (109
+  guards, 10M owed). Move it into the record, behind a confirmation that
+  says what depends on it, or archive instead.
+
+### C. Page by page
+
+**Dashboard**
+- Twelve panels; what needs action is mixed in with deep finance. Lead with
+  the action items (expired documents, missing invoices, unpaid salaries,
+  attendance not confirmed) and fold the rest.
+- "343 / 349 on strength" (dashboard) against "376 deployed, 304 present"
+  (Attendance report) for the same day, with no explanation of the difference.
+- The Admin badge says 99+ expired documents; the dashboard says 11 guards.
+  The badge counts every expired document row, including people who have left.
+- Lower panels render blank while scrolling until they load.
+- "What is coming due" is one item across a 30-day chart; "What is happening"
+  is mostly payments from 21 Oct. Low value for the space.
+
+**CEO Dashboard**
+- Daily tab "Previous tasks" reads only tasks set exactly yesterday; the PDF
+  also carries earlier open ones (four on 2 Nov, "Nil" on screen). **Built
+  3 Nov** — fixed to match the PDF.
+
+**Tasks**
+- Two task systems that never meet: the Task Board (logins) and the Daily
+  Report's "Tasks for tomorrow" (office staff). Neither shows the other.
+  One list, or daily-report tasks shown on the board.
+- Done cards still say "overdue" in red.
+
+**Clients**
+- The client record (HMC) has email, phone, NTN, STRN, filer status, WHT,
+  signatory and billing address all blank. Invoices and WHT need NTN/STRN.
+- Missing from the record: contact people (who in accounts to call), sites,
+  the receivable ledger and follow-up history. The record is a small modal; a
+  full page with tabs (Overview, Sites & strength, Contracts, Ledger &
+  follow-up, Attendance, Complaints, Documents) would fit the business.
+- "♥ 93" health score with no explanation; "Share of deployed guards" bar is
+  low value. More useful on a card: overdue amount, last payment, contract
+  end, contracted vs deployed.
+
+**Contracts**
+- The signed contract is not on file for most (Document column says
+  "Upload" for Emaar, Bank of AJK, Berger …). A "no signed copy" counter.
+- No annual rate revision / escalation date — security contracts usually
+  revise yearly or with the minimum wage.
+- Contracted value 20.15M here against 19.94M on the dashboard.
+
+**Invoices**
+- Numbers follow the month the generator ran, not the month billed:
+  GGS-26-INK-11 bills October, GGS-26-JSONS-11 bills November. Number by
+  service month (or a plain sequence) — clients quote these on cheques and
+  WHT certificates.
+- The Outstanding tile (21.08M, invoices only) sits one tab away from
+  Receivables (31.63M). Rename it or show the receivables figure.
+- No region column and no due date / payment terms per invoice.
+- Receivables: "Over 90 days 0" while 10.9M of opening balances are certainly
+  older — fixed once opening balances are dated (waiting on the months).
+  Lahore shows a net credit (804,379 CR); each credit needs a decision.
+  Former clients (Al Fajar, Spaces by Kaizen, SGC - Guards) are mixed with
+  live ones.
+- Withholding tax: add the total awaiting (~438K) and the effective rate per
+  payment (Emaar 0.47%, CBR 4.2%, MIU 8.3%, Bank of AJK 7.9%) — an odd rate
+  is how a wrong entry gets caught.
+
+**Payment Follow-up**
+- No client has a usual pay day, though the sheets suggest one for many:
+  "accept all suggestions".
+- Small former-client balances (4,620 / 5,000 / 12,500 / 44,500) sit among HMC
+  and Nova in "Late (23)": group them or send to write-off review.
+- Four export buttons on one row: one "Export ▾" menu.
+- On a phone the 12-column table needs cards.
+
+**Expenses**
+- Category Management sits on the working page; move it behind a button.
+- Categories to tidy: "Maintainance", "Stationary" (spelling), "GIFT";
+  "Payroll/Salary Expense" invites salaries entered twice beside the payroll
+  module (the red `no_payroll_booked_as_expense` check agrees);
+  "Lahore partner share" is a distribution, not an expense.
+
+**Payroll / Payroll Run**
+- One flow split across two sidebar entries; better as one page with the
+  disburse step last.
+- Every group in Payroll Run says the same "both halves need HR and Ops
+  verification", while Attendance Run knows exactly which half is waiting and
+  on whom. Show that per group, hide 0-person groups, and show the salary
+  due date.
+- The Finance Report surfaced "Sept 2026 salaries still to pay: 1,038,494 to
+  52 people": confirm, and mark as paid if paid outside Bastion.
+
+**Bank & Ledgers**
+- NET POSITION adds "Owed to us 0" and "We owe 0", both wrong on their face.
+  Drop them or feed the real figures.
+- The −274,317 custodian opening residual is printed on the headline cash
+  tile; move it into the custody detail.
+- Cheque numbers like "121", "1212", "sa 789989799": no format check.
+- Three levels of tabs on one page.
+
+**Financial Reports / Partnership / Accountant**
+- The same month carries three profits (Financial Reports 10.83M, Partnership
+  draft 1.83M, dashboard region tile 11.36M), each on a different basis that
+  the tile does not name.
+- Accountant: 15 columns, three cash holders empty all month; negative
+  personal cash (Nauman −17,100 closing, Shayan −11,262 brought forward); an
+  "Everything else" row of −2.11M with no breakdown.
+- Partnership: October must be posted by 10 Nov; Shujaat has drawn 4.95M
+  against a 1.41M share — a "drawn more than earned" flag.
+
+**Accounting Core**
+- Opens on Opening Balances (a one-time tool) rather than Trial Balance or
+  Journal.
+
+**Employees**
+- 363 of 702 records have no CNIC or joining date; profiles 36% complete;
+  Bank of AJK and MIU 0%. Only Emaar has an owner and target date.
+- "Inactive 300" mixes on-leave with left; split them.
+- The profile-completion table fills the first screen; collapse it so the
+  roster is visible.
+
+**Attendance / Attendance Run / Relievers**
+- Registers for 0-roster clients that can never be completed; the same 30
+  clients listed twice (tile grid and list); Bank of AJK needs 29 site
+  confirmations a day — "confirm all sites with no exception".
+- Attendance Run: collapse finished halves; show the payroll cut-off.
+- Relievers: Anjum Sharafat has pay PKR 0.
+
+**Field App**
+- Field Review / Field Activity tabs carry no counts; one "Site — all shift
+  31 Oct confirmed" item is missing its site name; two screens for one inbox.
+- Field Supervisors: 0 active logins, 54 sites with nobody; the only two
+  logins are disabled tests. The next step is creating the real supervisors
+  and assigning sites.
+
+**Daily Reports**
+- 32 rows every day; lead with clients that have something and "mark the
+  rest nothing to report". Ops types "Invoice submitted" by hand although the
+  delivery tick now records it.
+
+**Incidents**
+- 0 incidents ever, while the 2 Nov report flags Regent 1 (urgent): "client
+  raised concerns regarding the deployed guards". An urgent note should offer
+  "log as complaint" in one click.
+
+**Assets & Issuance**
+- Empty. Start the register with weapons (licence, bore, site/guard, rounds,
+  licence expiry) — GGS bills weapons rental to three clients.
+
+**Access & Governance / Settings / Audit Log**
+- Role counts call the CEO and both RMDs "HR". Shafqat (Lahore, settled)
+  holds 30 features, more than the CEO.
+- Settings › Company profile edits personal display only; the company's own
+  record (legal name, NTN, STRN, address, security licence number, bank for
+  invoices) has no screen. Dashboard panels apply to everyone, not per user.
+- Audit Log shows UUIDs and table names.
+
+### D. What the business needs that isn't there
+
+- **Vetting drive** — police verification, NADRA, training, licences, with an
+  owner and weekly target on the dashboard.
+- **Weapons register** with licence expiries and who holds what.
+- **Client master data** — NTN/STRN, accounts contact, billing address.
+- **Live gross margin per client** — monthly roster pay against monthly
+  contract value (HMC 4.29M pay vs 5.09M contract), without waiting for the
+  ledger.
+- **Contract escalation dates** and minimum-wage revision.
+- **Supervisor roll-out** — the field app is approved but nobody is on it.
+- **Complaints captured from the daily report**, so each client builds a
+  history.
+
+### E. Suggested order
+
+1. This week: two-factor for the three logins; first backup; end the Lahore
+   contracts; set the 49 missing salaries; post or delete the September
+   opening batch; date the opening balances (needs Shayan's months).
+2. Then the figures: one "owed" everywhere; incomplete-month warning on
+   Financial Reports; make the controls load on Accountant; one date format.
+3. Then the drives: vetting, supervisors on the app, client master data.
+4. Then the polish in B and C.

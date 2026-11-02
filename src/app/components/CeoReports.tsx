@@ -64,6 +64,8 @@ const Nil = ({ text = "Nil." }: { text?: string }) => <p className="italic text-
 // ───────────────────────── Daily Operations ─────────────────────────
 type Task = { id: string; title: string; assignee_employee_id: string | null; branch_id: string | null; status: string | null; status_note: string | null; report_date: string; done_at: string | null };
 const STATUS: Record<string, string> = { pending: "Pending", in_progress: "In progress", completed: "Completed" };
+/** As FieldOps (28 Oct 2026): tasks carry forward from this date, the first that could be given a status. */
+const CARRY_FROM = "2026-10-27";
 
 export function DailyOpsView() {
   const { company } = useAuth();
@@ -87,7 +89,10 @@ export function DailyOpsView() {
       supabase.from("daily_client_reports").select("client_id, details, no_report, urgent").eq("company_id", company.id).eq("report_date", day),
       supabase.from("daily_report_day_notes").select("branch_id, other_updates").eq("company_id", company.id).eq("report_date", day),
       supabase.from("daily_report_tasks").select(cols).eq("company_id", company.id).eq("report_date", day).order("sort_order"),
-      supabase.from("daily_report_tasks").select(cols).eq("company_id", company.id).eq("report_date", shift(day, -1)).order("sort_order"),
+      // The previous day's tasks plus earlier ones still open — the same set the PDF prints.
+      supabase.from("daily_report_tasks").select(cols).eq("company_id", company.id)
+        .gte("report_date", shift(day, -1) < CARRY_FROM ? shift(day, -1) : CARRY_FROM).lt("report_date", day)
+        .order("report_date").order("sort_order"),
       supabase.from("employees").select("id, full_name").eq("company_id", company.id).eq("category", "office_staff"),
     ]);
     const seen = new Map<string, { id: string; name: string; branch_id: string | null }>();
@@ -96,7 +101,9 @@ export function DailyOpsView() {
     setNotes(new Map(((r.data ?? []) as any[]).map((x) => [x.client_id, { details: x.details ?? "", no_report: !!x.no_report, urgent: !!x.urgent }])));
     setUpdates((u.data ?? []) as any[]);
     setTasks((t.data ?? []) as Task[]);
-    setPrev((p.data ?? []) as Task[]);
+    const yday = shift(day, -1);
+    setPrev(((p.data ?? []) as Task[]).filter((t) =>
+      t.report_date === yday || t.status !== "completed" || (t.done_at != null && iso(new Date(t.done_at)) >= day)));
     setStaff(new Map(((s.data ?? []) as any[]).map((x) => [x.id, x.full_name])));
     setLoading(false);
   }, [company?.id, day]);
@@ -135,11 +142,11 @@ export function DailyOpsView() {
               </div>
             )) : <Nil />}
           </Block>
-          <Block n={2} title={`Previous tasks (set ${new Date(`${shift(day, -1)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })})`}>
+          <Block n={2} title={`Previous tasks (set ${new Date(`${shift(day, -1)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}, and earlier ones still open)`}>
             {prev.filter((t) => inRegion(t.branch_id)).length ? (
               <table className="w-full text-sm"><thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1">Task</th><th>Responsible</th><th>Status</th></tr></thead>
                 <tbody>{prev.filter((t) => inRegion(t.branch_id)).map((t) => (
-                  <tr key={t.id} className="border-t border-border align-top"><td className="py-1.5 pr-3">{t.title}{t.status_note ? <div className="text-xs text-muted-foreground">{t.status_note}</div> : null}</td><td className="pr-3 whitespace-nowrap">{who(t.assignee_employee_id)}</td>
+                  <tr key={t.id} className="border-t border-border align-top"><td className="py-1.5 pr-3">{t.title}{t.report_date !== shift(day, -1) ? <span className="ml-1 text-xs text-muted-foreground">(set {new Date(`${t.report_date}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })})</span> : null}{t.status_note ? <div className="text-xs text-muted-foreground">{t.status_note}</div> : null}</td><td className="pr-3 whitespace-nowrap">{who(t.assignee_employee_id)}</td>
                     <td className={`whitespace-nowrap ${t.status === "completed" ? "text-success-700 dark:text-success-500" : "text-warning-700 dark:text-warning-500"}`}>{STATUS[t.status ?? "pending"] ?? t.status}</td></tr>
                 ))}</tbody></table>
             ) : <Nil />}
