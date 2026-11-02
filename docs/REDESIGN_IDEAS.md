@@ -533,8 +533,10 @@ that is not there. Nothing was changed while auditing. Everything below is an
    `ar_control_equals_open_invoices` (the ledger's receivables account against
    the open invoices, apart by about 36.5M), `payroll_accrual_matches_attendance`
    (19), `every_billed_client_carries_cost` (18) and
-   `no_payroll_booked_as_expense` (15). That run had no signed-in user, so its
-   figures need confirming, but they should be visible on the page. The
+   `no_payroll_booked_as_expense` (15). The receivables one is confirmed
+   straight from the ledger: account 1100 Accounts Receivable stands at
+   −4,898,581 (a credit) over 264 lines, while clients owe 31.6M — see F5 for
+   why. They should all be visible on the page. The
    Checks tab still labels several of these "Proposed (0516)" although they
    are live and red.
 7. **Contracts show dates in US format** (10/01/2026, 09/22/2026, 06/30/2027)
@@ -593,8 +595,11 @@ that is not there. Nothing was changed while auditing. Everything below is an
   attendance not confirmed) and fold the rest.
 - "343 / 349 on strength" (dashboard) against "376 deployed, 304 present"
   (Attendance report) for the same day, with no explanation of the difference.
-- The Admin badge says 99+ expired documents; the dashboard says 11 guards.
-  The badge counts every expired document row, including people who have left.
+- The Admin badge says "99+ guard documents expired"; the dashboard says 11
+  guards. The badge actually counts 305 overdue compliance rows: **294
+  uncleared separations** (people who left whose clearance — kit, dues, final
+  settlement — was never completed) and 11 expired CNICs. The label is wrong,
+  and the 294 is a real backlog worth its own queue. (Corrected 3 Nov.)
 - Lower panels render blank while scrolling until they load.
 - "What is coming due" is one item across a 30-day chart; "What is happening"
   is mostly payments from 21 Oct. Low value for the space.
@@ -624,8 +629,10 @@ that is not there. Nothing was changed while auditing. Everything below is an
 **Contracts**
 - The signed contract is not on file for most (Document column says
   "Upload" for Emaar, Bank of AJK, Berger …). A "no signed copy" counter.
-- No annual rate revision / escalation date — security contracts usually
-  revise yearly or with the minimum wage.
+- An annual escalation % exists on the contract form but is set on 1 of 32
+  live contracts; there is no escalation date or reminder, and nothing
+  reacts when the minimum wage changes. (Corrected 3 Nov — the first pass
+  said the field didn't exist.)
 - Contracted value 20.15M here against 19.94M on the dashboard.
 
 **Invoices**
@@ -744,7 +751,8 @@ that is not there. Nothing was changed while auditing. Everything below is an
 - **Live gross margin per client** — monthly roster pay against monthly
   contract value (HMC 4.29M pay vs 5.09M contract), without waiting for the
   ledger.
-- **Contract escalation dates** and minimum-wage revision.
+- **Contract escalation** — the % field exists (1 of 32 filled); add the
+  date, a reminder, and a minimum-wage impact view.
 - **Supervisor roll-out** — the field app is approved but nobody is on it.
 - **Complaints captured from the daily report**, so each client builds a
   history.
@@ -758,3 +766,233 @@ that is not there. Nothing was changed while auditing. Everything below is an
    Financial Reports; make the controls load on Accountant; one date format.
 3. Then the drives: vetting, supervisors on the app, client master data.
 4. Then the polish in B and C.
+
+### F. How each process is handled today — measured, 3 Nov 2026
+
+Each process followed end to end, with figures read from the database
+(read-only). For each: how it runs now, where it breaks, what would make it
+better. **Q** marks a question only Shayan can answer — nothing here assumes
+a policy.
+
+**F1. Attendance: supervisor → HR → Ops → payroll**
+- *Now:* every one of the 11,306 attendance marks in the last 30 days was
+  typed by HR: 55% copied from WhatsApp messages, 43% entered by hand, 2% via
+  the field app. "WhatsApp" is only a label HR picks; there is no import.
+  Marks land on average 36 hours after the day ends; 834 were entered more
+  than three days late. Then HR verifies each half-month, Ops verifies again
+  (Attendance Run), then payroll can start.
+- *Breaks:* one person retypes ~380 marks a day; the record is a copy of a
+  message, not first-hand; a late register holds up the whole payroll; the
+  daily report's attendance section is a day behind.
+- *Better:* supervisors mark in the field app (built, 0 of 54 sites covered —
+  the blocker is creating the supervisor logins and assigning sites); HR's job
+  becomes confirming exceptions, not typing. Only 3 of 71 sites have GPS set,
+  so geofenced check-in needs the site locations captured first (a supervisor
+  can do it on the first visit).
+- *Also:* 1,001 leave marks in 30 days (9% of all marks) and 316 double
+  duties. Leave against each client's allowed leaves, and whether double duty
+  is billed to the client and paid to the guard, deserve their own monthly
+  view. **Q:** is double duty billed to clients?
+
+**F2. Payroll: verified attendance → payslips → disbursement**
+- *Now:* Draft → Review → Finance Verify → Disburse across two pages.
+  September: 341 payslips, 289 paid, **52 still unpaid (1,038,494)**; 86 paid
+  in cash, 255 by bank. October: nothing verified yet.
+- *Breaks:*
+  - **Kashmir salaries bypass payroll.** Bank of AJK's 53 guards are paid as one
+    expense line a month (2,080,000 on 2 Sep, 2,120,000 on 1 Oct, category
+    "Payroll/Salary Expense"), plus Apex World and Breakout. So there are no
+    payslips for them: no per-guard record of what was paid, no EOBI per
+    guard, no link from attendance to pay, and Kashmir's client profit can't be
+    computed. This is the red `no_payroll_booked_as_expense` check (15).
+    (Lahore's salary lines are the agreed 0573 settlement and are separate.)
+  - 49 guards without a base salary, 81 without a joining date.
+  - Each bank transfer is keyed into the bank portal by hand — there is no
+    bulk-transfer file export, though IBANs are validated against the ABL
+    format already.
+  - Guards never receive a payslip. A per-guard payslip PDF exists but is
+    reachable only from My Profile, which only office staff with a login have.
+- *Better:* run Kashmir through payroll like ISB/RWP; block Review while any
+  guard lacks a salary; export a bank bulk-transfer file per bank (Askari is
+  the main payer); send each guard their payslip on WhatsApp from the
+  disbursement screen.
+- **Q — minimum wage:** 108 active guards have a base salary under 37,000 and
+  118 under 40,000 (median 40,000). Some may be part-time or per-day; the rest
+  should be checked against the currently notified minimum wage for each
+  region.
+- **Q — EOBI:** EOBI is deducted from 180 guards, but no guard has an EOBI
+  registration number recorded, and the employer share is 0 on every payslip
+  (August and September). If the employer share is paid through Statutory
+  Payments, fine — but contributions can't be traced to a person without the
+  numbers. (Ties to the parked "statutory challan by employee" item.)
+- **Q — ages:** 2 active guards have a date of birth under 18 and 10 over 60
+  — likely entry errors, but an armed guard under 18 is not allowed.
+
+**F3. Recruitment → vetting → posting → exit**
+- *Now:* people are added straight into Employees; a "Waiting list" tab
+  exists. The database has a `recruitment_candidates` table and an
+  `employee_training_records` table, but **no screen uses either** (both
+  empty). Vetting fields exist and are almost empty: police verification
+  1/402, NADRA 2/402, guard service licence 0, weapons certified 0,
+  orientation 0, photo 0, social security registration 0, group insurance 0.
+  168 guards are ex-servicemen — a strength worth recording (army number,
+  unit) since clients ask for it.
+- *Breaks:* nothing stops a guard being posted before verification; no record
+  of training; expiring documents surface only as a count.
+- *Better:* one hiring checklist per guard (CNIC + photo → police
+  verification → NADRA → orientation/training → appointment letter → ID card
+  → kit → posting), shown as progress on the guard's record and as a queue
+  for HR; posting warns when the checklist isn't done. The tables are already
+  there.
+- *Exit:* clearance and the discharge sheet exist and the clearance
+  certificate is wired; there is no gratuity / final-settlement calculation
+  and no exit reason analysis (exit_reason field exists).
+
+**F4. Billing → delivery → collection → WHT**
+- *Now:* October had 19 invoices, 10 generated and 9 made by hand. Invoices go
+  out on average 21 days after the service month starts. Payments arrive on
+  average 20 days after the invoice. Since September 62 payments: 35 in cash
+  (56%), 16 by cheque, 11 by bank transfer; 32 were "on account" (not against
+  an invoice). Two cheques have bounced. Delivery is now ticked; follow-up is
+  new (0 contacts logged).
+- *Breaks:* manual invoices for the biggest clients (HMC, Emaar, MIU) mean the
+  generator doesn't know their real billing; cash collection is high-risk
+  without a receipt to the client; on-account receipts make per-invoice status
+  approximate; numbering follows the run month, not the billed month.
+- *Better:* teach the generator the variable invoices (HMC/Emaar) so all are
+  "Auto"; give every receipt an official receipt PDF/WhatsApp to the client
+  (none exists); month-end client statement sent automatically; usual pay
+  days set so lateness is real.
+- **Q — sales tax on services:** no invoice in Bastion carries sales tax (0 of
+  60 since September), and only 2 clients have a sales-tax authority set.
+  Security services are generally a taxable service under the provincial
+  sales-tax laws; if GGS is registered and charges it, the invoices are
+  understated; if it isn't, that's a decision to record. Either way it should
+  be written down (DECIDED/DEFERRED).
+
+**F5. The ledger — why the books and the screens disagree**
+- Accounts Receivable (1100) in the ledger: invoices add a net 35.1M,
+  receipts take away a net 40.0M, leaving −4.9M. The receipts include money
+  against balances that existed before the cutover, but those opening
+  balances (about **36.5M**) were never posted — the draft opening batch from
+  3 September. That single unposted batch explains: the negative receivables
+  account, the red `ar_control_equals_open_invoices`, the dashboard's "3.19M
+  between the ledger and the recorded balances", and why the ledger's balance
+  sheet can't be trusted yet.
+- Kashmir salaries posted as expenses (F2) explain why "Guard payroll" in the
+  P&L is near zero in October while "Other cost of services" carries 2.4M.
+- *Better:* post the opening balances (one reviewed batch, approved by name),
+  move Kashmir onto payroll, then close August and September. After that the
+  dashboard, P&L, client profit and partnership all read the same truth.
+
+**F6. Expenses, advances and cash**
+- *Now:* 156 expenses entered in the last 30 days; 30 still not approved; **88
+  (56%) have no receipt attached**. Since September the largest categories are
+  "Payroll/Salary Expense" 6.88M (see F2), "Lahore partner share" 605K,
+  "Miscellaneous" 551K across 30 entries (20 with no client), Uniform 410K,
+  Fuel 194K across 43 entries. Advances: 622K to 26 guards in 60 days.
+- *Better:* require a receipt photo above a threshold (the field app already
+  captures photos); retire "Miscellaneous" into real categories; uniform
+  purchases should land in the Store so issue-to-guard and recovery on exit
+  work (Store is empty); a per-custodian cash limit and a weekly cash count.
+
+**F7. Daily operations reporting**
+- *Now:* 21 daily reports exported in the last 30 days; 144 client notes. The
+  report is typed, not assembled: ops types "Invoice submitted" per client,
+  while the delivery tick already knows it; complaints written in the report
+  never reach Complaints (1 complaint in the system, ever).
+- *Better:* the report assembles what Bastion already knows (attendance gaps,
+  deliveries, payments received, open follow-up steps, field-app site reports)
+  and ops adds only judgement. An urgent note becomes a complaint/incident in
+  one click.
+
+**F8. Clients and contracts as master data**
+- Of 32 live clients: NTN on 6, phone on 7, escalation % on 1 contract, signed
+  contract file on a handful. `clients.credit_ceiling` exists with no screen.
+  Client service reviews (2 rows) and the **Client Service Report PDF exist but
+  are unreachable** — their only page (Client Relationships) now redirects to
+  Clients. Per the house rule ("a function nothing calls is the same gap"),
+  that's an instance to wire or remove.
+
+**F9. Security and administration**
+- Backups never ran; two-factor missing on three logins five days before it's
+  compulsory; Drive files from before 29 Oct still public-by-link. The CEO
+  and both RMDs are counted as "HR" role. Shafqat (Lahore, settled) holds 30
+  features.
+
+### G. Missing features, module by module
+
+Checked against the code and database first; "exists" means it's already in
+Bastion somewhere.
+
+**Sales & new business**
+- Leads and quotations: none (Gulberg Heights is being contracted from the
+  daily report with nothing in Bastion until the contract is signed).
+- **Contract costing calculator**: wage + EOBI + PESSI/IESSI + uniform and
+  kit amortised + relief cover + supervision + overhead + margin → rate per
+  guard per month. The single most useful pricing tool for a guarding company;
+  it also answers "which contracts lose money if the minimum wage rises".
+- Tender / e-procurement tracking (EPADS registration is in the daily report).
+
+**Clients & contracts**
+- Client contacts (name, role, phone — accounts, admin, site in-charge).
+- Escalation reminder and minimum-wage impact per contract.
+- Post orders / SOP per site, site risk notes, site photos.
+- Client satisfaction reviews and the monthly Client Service Report — exist,
+  need wiring back.
+
+**Workforce**
+- Hiring checklist and recruitment pipeline (tables exist, no screens).
+- Training records (table exists, no screen).
+- Probation tracking (field exists; nobody on probation is recorded).
+- Gratuity / final settlement calculation; exit reasons report.
+- Guard ID card exists; appointment letter in "Generate documents".
+
+**Field operations**
+- Supervisor roll-out (built; nobody on it).
+- Patrol checkpoints (QR at posts, scanned by the supervisor or guard) — none.
+- Visit schedule per supervisor with coverage (visits table exists; 0 rows).
+- SOS and incidents from the app — exist.
+
+**Payroll**
+- Bank bulk-transfer file; payslips to guards on WhatsApp; EOBI numbers and a
+  per-employee challan; minimum-wage check on Review; overtime/double-duty
+  pay rule.
+
+**Finance**
+- Official receipt to the client for every payment (especially cash).
+- Monthly client statement, sent automatically.
+- Sales tax on invoices (pending the Q above); sales-tax returns screen exists
+  (0 returns recorded).
+- Credit notes (supplementary invoices exist; no credit note).
+- Expense receipt rule and custodian cash limits.
+
+**Compliance**
+- Company-level licences and renewals (security company licence, company arms
+  licences, APSAA membership, insurance policies). The Licences tab today holds
+  only guard CNICs (247), uncleared separations (294), two contract ends and
+  two "important dates" — no company licence is recorded.
+- Tax calendar (sales-tax return dates, WHT statements, annual return) as
+  recurring dates.
+- Weapons and ammunition register with licence expiries.
+
+**Communication**
+- WhatsApp is how the business runs (attendance, delivery, follow-up), but
+  Bastion sends nothing on WhatsApp. Even a "share" button that opens WhatsApp
+  with the payslip, invoice, receipt or reminder ready would remove most
+  retyping.
+
+### H. Order, if it were mine to choose
+
+1. **Books right:** post the opening balances; move Kashmir salaries onto
+   payroll; close August and September. (Fixes F5, half of A, every profit
+   figure.)
+2. **Safety:** two-factor before 5 Nov, first backup, Drive files private,
+   review Lahore access.
+3. **Noise out:** end the Lahore contracts; set the 49 salaries; Innovative's
+   two guards.
+4. **Stop the retyping:** supervisors on the field app (attendance), the daily
+   report assembling itself, delivery/receipts shared on WhatsApp.
+5. **Vetting drive** using the hiring checklist (tables exist).
+6. **Pricing:** contract costing calculator + escalation reminders.
+7. Then the page-level polish in B and C.
