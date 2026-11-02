@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { downloadReceiptPdf, receiptWhatsAppText, type ReceiptLine } from "../lib/receiptPdf";
 import { ArrowLeft, Ban, Download, FileText, Loader2, MessageSquare, Plus, Search } from "lucide-react";
 import Tabs from "./Tabs";
 import PaymentFollowUp, { ContactModal, channelLabel } from "./PaymentFollowUp";
@@ -368,6 +369,8 @@ export default function ClientReceivables() {
 function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
   row: Row; companyId: string | null; companyName: string; canEdit: boolean; onBack: () => void;
 }) {
+  const { company, profile } = useAuth();
+  const toReceipt = (l: Line): ReceiptLine => ({ date: l.line_date!, reference: l.reference, mode: l.mode, chequeNo: l.cheque_no, depositedTo: l.deposited_to, received: l.received, wht: l.wht });
   const [range, setRange] = usePageState<Range>("ClientReceivables.range", "all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -509,6 +512,14 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
                 <td className="px-3 py-2 text-right font-ledger">{fmt(l.invoiced)}</td>
                 <td className="px-3 py-2 text-right font-ledger">
                   {l.line_kind === "write_off" ? <>{fmt(l.written_off)}<div className="text-[11px] font-sans text-danger-700 dark:text-danger-500">written off</div></> : fmt(l.received)}
+                  {/* 3 Nov 2026: an official receipt for the client, from this line. */}
+                  {l.line_kind === "receipt" && l.line_date && (
+                    <div className="flex justify-end gap-2 font-sans text-[11px]">
+                      <button className="text-brand-600 hover:underline" onClick={() => void downloadReceiptPdf({ company, client: row.client_name, line: toReceipt(l), receivedBy: profile?.full_name ?? "" })}>Receipt</button>
+                      <a className="text-brand-600 hover:underline" target="_blank" rel="noreferrer"
+                        href={`https://wa.me/?text=${encodeURIComponent(receiptWhatsAppText(row.client_name, toReceipt(l), company?.name ?? companyName))}`}>WhatsApp</a>
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="font-ledger">{fmt(l.wht)}</div>

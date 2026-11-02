@@ -1,4 +1,5 @@
 import ReversalDialog from "../../components/ReversalDialog";
+import PayoutTools from "../../components/PayoutTools";
 import CommentsButton from "../../components/CommentsButton";
 import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 import ThemedSelect from "../../components/ThemedSelect";
@@ -2561,6 +2562,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Export payroll sheets
               </Button>
+              <PayoutTools period={selectedPeriod} />
             </>
           }
         >
