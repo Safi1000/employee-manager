@@ -4,6 +4,7 @@ import { keepReport } from "./reportArchive";
 import type { Company } from "./supabase";
 import { brandingFromCompany } from "./pdfBranding";
 import { INK, LH, M, Page, RED, RULE, SOFT, W, footer, heading, letterhead, longDay, refOf, signOff } from "./dailyBriefPdf";
+import { drawFollowUpdates, type InvoiceGaps, type UpdatesPart } from "./followUpPdf";
 
 /**
  * FINANCE REPORT (0632) — the accounting side's snapshot, in the same letter
@@ -73,7 +74,9 @@ function para(p: Page, text: string, color = INK) {
   p.y += 2;
 }
 
-export async function downloadFinanceReportPdf(opts: { company: Company | null | undefined; data: FinanceReportData; region: string | null; preparedBy: string }) {
+export async function downloadFinanceReportPdf(opts: { company: Company | null | undefined; data: FinanceReportData; region: string | null; preparedBy: string;
+  /** 0634: the same follow-up updates the Payment Follow-up report prints. */
+  followUp?: { updates: UpdatesPart; gaps: InvoiceGaps; invoiceMonth: string } | null }) {
   const { data: d } = opts;
   const b = brandingFromCompany(opts.company);
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -148,17 +151,23 @@ export async function downloadFinanceReportPdf(opts: { company: Company | null |
   if (late.length) ruledTable(p,
     [{ label: "Client", w: 52 }, { label: "Owes", w: 26, right: true }, { label: "Overdue", w: 26, right: true }, { label: "  Last paid", w: 22 }, { label: "Last contact", w: 22 }, { label: "Promise", w: 22 }],
     late.map((r: any) => [r.client, amt(r.owed), amt(r.overdue), `  ${short(r.last_paid_on)}`, short(r.last_contact_on), r.promised_by ? `by ${short(r.promised_by)}` : ""]));
-  p.font("bold", 10.5); p.color(INK); p.need(LH); doc.text("Follow-ups logged in this period", M + 4, p.y); p.y += LH + 1;
-  if (!follow.length) nil(p, "Nil.");
-  else follow.forEach((f: any, i: number) => {
-    p.font("normal", 10.5); p.color(INK);
-    p.wrap(`${f.client} (${short(f.on)}, ${label(f.channel)}): ${f.note}${f.promised_by ? ` Promised by ${short(f.promised_by)}.` : ""}${f.next_step ? ` Next: ${f.next_step}.` : ""}`, W - 14)
-      .forEach((ln, j) => { p.need(LH); if (j === 0) doc.text(`${i + 1}.`, M + 4, p.y); doc.text(ln, M + 14, p.y); p.y += LH; });
-  });
   p.y += 3;
 
-  // 6. Waiting on someone
-  heading(p, "6.  Waiting on someone");
+  // 6. Follow-up updates — drawn by the Payment Follow-up report's own section (0634).
+  if (opts.followUp) drawFollowUpdates(p, 6, opts.followUp.updates, opts.followUp.gaps, opts.followUp.invoiceMonth, true);
+  else {
+    heading(p, "6.  Follow-ups logged");
+    if (!follow.length) nil(p, "Nil.");
+    else follow.forEach((f: any, i: number) => {
+      p.font("normal", 10.5); p.color(INK);
+      p.wrap(`${f.client} (${short(f.on)}, ${label(f.channel)}): ${f.note}${f.promised_by ? ` Promised by ${short(f.promised_by)}.` : ""}`, W - 14)
+        .forEach((ln, j) => { p.need(LH); if (j === 0) doc.text(`${i + 1}.`, M + 4, p.y); doc.text(ln, M + 14, p.y); p.y += LH; });
+    });
+    p.y += 3;
+  }
+
+  // 7. Waiting on someone
+  heading(p, "7.  Waiting on someone");
   const wt = d.waiting ?? {};
   const items = [
     und.length ? `${und.length} invoice${und.length === 1 ? "" : "s"} not yet marked delivered` : "",

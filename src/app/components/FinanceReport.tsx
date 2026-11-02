@@ -5,6 +5,8 @@ import { supabase, friendlyDbError } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { useRegion } from "../lib/region";
 import { downloadFinanceReportPdf, label } from "../lib/financeReportPdf";
+import { invoiceGaps, loadFollowInvoices, loadFollowUpdates, monthShort, type FollowInvoice, type FollowUpdates } from "../lib/followUpData";
+import FollowUpSummary from "./FollowUpSummary";
 
 /**
  * FINANCE REPORT (0632, DECIDED 2 Nov 2026). Nobody fills it in: it reads
@@ -41,6 +43,8 @@ export default function FinanceReport({ readOnly = false }: { readOnly?: boolean
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [followUp, setFollowUp] = useState<FollowUpdates | null>(null);
+  const [followInv, setFollowInv] = useState<Map<string, FollowInvoice[]>>(new Map());
 
   const load = useCallback(async (start?: string) => {
     setLoading(true); setErr(null);
@@ -54,6 +58,9 @@ export default function FinanceReport({ readOnly = false }: { readOnly?: boolean
     setLoading(false);
     if (error) { setErr(friendlyDbError(error)); return; }
     setData(r);
+    // 0634: the follow-up picture for the same period, read the way Payment Follow-up reads it.
+    const [fu, fi] = await Promise.all([loadFollowUpdates(f, (r as any).to), loadFollowInvoices()]);
+    setFollowUp(fu); setFollowInv(fi);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -71,7 +78,8 @@ export default function FinanceReport({ readOnly = false }: { readOnly?: boolean
     if (!d) return;
     setBusy(true);
     try {
-      await downloadFinanceReportPdf({ company, data: d, region: regionName, preparedBy: profile?.full_name ?? "" });
+      await downloadFinanceReportPdf({ company, data: d, region: regionName, preparedBy: profile?.full_name ?? "",
+        followUp: followUp ? { updates: { data: followUp, label: "In this period", regionId }, gaps: invoiceGaps(followInv, regionId), invoiceMonth: monthShort([...followInv.values()][0]?.[0]?.for_month) || "Last month's" } : null });
       // Only a company-wide export moves the start: report_runs is per company,
       // so one region's export would drop the others' entries from their next report.
       if (!regionId && !readOnly) {
@@ -175,11 +183,11 @@ export default function FinanceReport({ readOnly = false }: { readOnly?: boolean
             </Section>
           </div>
 
-          <Section title="Follow-ups logged">
-            {d.followups.length ? <ul className="space-y-1">{d.followups.map((f: any, i: number) => (
-              <li key={i}><span className="font-medium">{f.client}</span> <span className="text-muted-foreground">({short(f.on)}, {label(f.channel)})</span>: {f.note}{f.promised_by ? ` Promised by ${short(f.promised_by)}.` : ""}{f.next_step ? ` Next: ${f.next_step}.` : ""}</li>
-            ))}</ul> : <Nil />}
-          </Section>
+          {/* 0634: the same follow-up summary as the Payment Follow-up screen, for this report's period. */}
+          <div className="space-y-2">
+            <h3 className="font-semibold text-foreground">Follow-up</h3>
+            <FollowUpSummary updates={followUp} invoices={followInv} regionId={regionId} canSeeAmounts />
+          </div>
         </>
       )}
     </div>

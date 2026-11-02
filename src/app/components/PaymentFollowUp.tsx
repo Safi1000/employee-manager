@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, FileText, Loader2, Search } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, FileSpreadsheet, FileText, Loader2, Search } from "lucide-react";
 import Button from "./Button";
 import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
@@ -8,6 +8,9 @@ import { useAuth, hasPermission, hasAnyPermission } from "../lib/auth";
 import { useRegion } from "../lib/region";
 import { usePageState } from "../lib/pageState";
 import { downloadFollowUpPdf, type FollowUpPdfRow } from "../lib/followUpPdf";
+import { exportTable } from "../lib/excel";
+import { SPANS, invoiceGaps, invoiceStatus, loadFollowInvoices, loadFollowUpdates, monthShort, spanRange, type FollowInvoice, type FollowUpdates, type Span } from "../lib/followUpData";
+import FollowUpSummary from "./FollowUpSummary";
 
 /**
  * PAYMENT FOLLOW-UP (0628, DECIDED 2 Nov 2026).
@@ -103,9 +106,15 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
   const [logFor, setLogFor] = useState<FollowRow | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [history, setHistory] = useState<History[]>([]);
+  /** 0634: the updates summary for the chosen period, and last month's invoice per client. */
+  const [span, setSpan] = usePageState<Span>("PaymentFollowUp.span", "7d");
+  const [updates, setUpdates] = useState<FollowUpdates | null>(null);
+  const [invoices, setInvoices] = useState<Map<string, FollowInvoice[]>>(new Map());
+  useEffect(() => { const r = spanRange(span); void loadFollowUpdates(r.from, r.to).then(setUpdates); }, [span]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    void loadFollowInvoices().then(setInvoices);
     const [l, p, fs, pt] = await Promise.all([
       supabase.rpc("client_followup_list"),
       supabase.rpc("followup_assignees"),
@@ -136,6 +145,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
 
   const t = today();
   const me = profile?.id;
+  const invMonth = monthShort([...invoices.values()][0]?.[0]?.for_month) || "Last month's";
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows
@@ -187,6 +197,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
       nextBy: r.next_step && !r.next_step_done ? r.next_follow_up : null,
       owes: withFigures ? r.balance : null,
       overdue: withFigures ? r.overdue : null,
+      invoice: invoiceStatus(invoices.get(r.client_id)).text,
     }));
     void downloadFollowUpPdf({
       company, rows: rowsOut, withFigures,
@@ -194,6 +205,32 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
       scopeNote: show === "late" ? "Late clients" : show === "mine" ? "My next steps" : "Everyone who owes",
       todayIso: t,
       preparedBy: profile?.full_name ?? "",
+      updates: updates ? { data: updates, label: SPANS.find(([k]) => k === span)?.[1] ?? "", regionId } : null,
+      invoiceMonth: invMonth,
+      gaps: invoiceGaps(invoices, regionId),
+    });
+  };
+
+  // 0634: the same table as an Excel sheet, with or without figures.
+  const exportExcel = (withFigures: boolean) => {
+    const headers = ["Client", "Region", "Status", "Pays on", "Last paid", "Last paid mode", ...(withFigures ? ["Last paid amount", "Owes", "Late amount"] : []),
+      `${invMonth} invoice`, "Last contact", "What they said", "Promise", ...(withFigures ? ["Promised amount"] : []), "Next step", "Who", "By"];
+    void exportTable({
+      fileName: `Payment follow-up ${t}${withFigures ? " (with figures)" : ""}.xlsx`,
+      sheetName: "Follow-up",
+      title: `Payment follow-up — ${show === "late" ? "late clients" : show === "mine" ? "my next steps" : "everyone who owes"} — ${fmtDate(t)}`,
+      headers,
+      rows: visible.map((r) => [
+        r.client_name, r.region_name ?? "", lateText(r), r.usual_pay_day ? ordinal(r.usual_pay_day) : "",
+        r.last_paid_on ? fmtDate(r.last_paid_on) : "Never", r.last_paid_mode ?? "",
+        ...(withFigures ? [r.last_paid_amount, r.balance, r.overdue] : []),
+        invoiceStatus(invoices.get(r.client_id)).text,
+        r.last_contact_on ? `${fmtDate(r.last_contact_on)} · ${channelLabel(r.last_contact_channel)}` : "", r.last_contact_note ?? "",
+        r.promised_by ? fmtDate(r.promised_by) : "", ...(withFigures ? [r.promised_amount] : []),
+        r.next_step && !r.next_step_done ? r.next_step : "", r.next_step && !r.next_step_done ? r.next_step_assignee_name ?? "" : "",
+        r.next_step && !r.next_step_done && r.next_follow_up ? fmtDate(r.next_follow_up) : "",
+      ]),
+      columnWidths: headers.map((h) => (["What they said", "Next step"].includes(h) ? 40 : h === "Client" ? 28 : 16)),
     });
   };
 
@@ -216,6 +253,23 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
           <button className="px-3 py-1.5 border-l border-border hover:bg-accent" onClick={() => exportPdf(false)}>Without figures</button>
           {canSeeAmounts && <button className="px-3 py-1.5 border-l border-border hover:bg-accent" onClick={() => exportPdf(true)}>With figures</button>}
         </div>
+        <div className="inline-flex items-center rounded-lg border border-border overflow-hidden text-sm">
+          <span className="px-2.5 text-xs text-muted-foreground"><FileSpreadsheet className="w-3.5 h-3.5 inline" /> Excel</span>
+          <button className="px-3 py-1.5 border-l border-border hover:bg-accent" onClick={() => exportExcel(false)}>Without figures</button>
+          {canSeeAmounts && <button className="px-3 py-1.5 border-l border-border hover:bg-accent" onClick={() => exportExcel(true)}>With figures</button>}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-foreground">Updates</h3>
+          {SPANS.map(([k, label]) => (
+            <button key={k} onClick={() => setSpan(k)}
+              className={`px-2.5 py-1 rounded-lg text-xs border ${span === k ? "bg-foreground text-background border-foreground" : "bg-card border-border hover:bg-muted"}`}>{label}</button>
+          ))}
+          <span className="text-[11px] text-muted-foreground">Payments, contacts and deliveries entered in the period; promises missed, steps due and invoices open as of now.</span>
+        </div>
+        <FollowUpSummary updates={updates} invoices={invoices} regionId={regionId} canSeeAmounts={canSeeAmounts} />
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -233,6 +287,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
               <th className="px-3 py-2">Late</th>
               <th className="px-3 py-2">Pays on</th>
               <th className="px-3 py-2">Last paid</th>
+              <th className="px-3 py-2">{invMonth} invoice</th>
               {canSeeAmounts && <th className="px-3 py-2 text-right">Owes</th>}
               {canSeeAmounts && <th className="px-3 py-2 text-right">Late amount</th>}
               <th className="px-3 py-2">Last contact</th>
@@ -243,9 +298,9 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
+              <tr><td colSpan={12} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={11} className="px-3 py-10 text-center text-muted-foreground">{show === "late" ? "No client is late." : show === "mine" ? "No open steps for you." : "No client owes anything."}</td></tr>
+              <tr><td colSpan={12} className="px-3 py-10 text-center text-muted-foreground">{show === "late" ? "No client is late." : show === "mine" ? "No open steps for you." : "No client owes anything."}</td></tr>
             ) : visible.flatMap((r) => {
               const stepDue = !!r.next_step && !r.next_step_done && !!r.next_follow_up && r.next_follow_up <= t;
               const promiseMissed = !!r.promised_by && r.promised_by < t && r.is_late;
@@ -281,6 +336,12 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
                   <td className="px-3 py-2 text-xs whitespace-nowrap">
                     {r.last_paid_on ? <>{fmtShort(r.last_paid_on)}<div className="text-muted-foreground">{r.last_paid_mode}{canSeeAmounts && r.last_paid_amount != null ? ` · ${fmt(r.last_paid_amount)}` : ""}</div></> : <span className="text-muted-foreground">Never</span>}
                   </td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">
+                    {(() => {
+                      const st = invoiceStatus(invoices.get(r.client_id));
+                      return st.text ? <span className={st.tone === "warn" ? "text-warning-700 dark:text-warning-500 font-medium" : "text-success-700 dark:text-success-500"}>{st.text}</span> : <span className="text-muted-foreground">—</span>;
+                    })()}
+                  </td>
                   {canSeeAmounts && <td className="px-3 py-2 text-right font-ledger">{fmt(r.balance)}</td>}
                   {canSeeAmounts && <td className="px-3 py-2 text-right font-ledger">{fmt(r.overdue)}</td>}
                   <td className="px-3 py-2 text-xs max-w-[260px]">
@@ -306,7 +367,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
               return [main, (
                 <tr key={`${r.client_id}-h`} className="bg-muted/30">
                   <td></td>
-                  <td colSpan={10} className="px-3 py-2">
+                  <td colSpan={11} className="px-3 py-2">
                     {history.length === 0 ? <div className="text-xs text-muted-foreground">No contact logged yet.</div> : (
                       <ul className="space-y-1 text-xs">
                         {history.map((h) => (
