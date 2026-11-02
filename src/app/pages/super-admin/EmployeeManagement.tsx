@@ -4128,6 +4128,8 @@ const SHIFT_REASON_LABEL: Record<string, string> = {
   return_to_pool: "Returned to pool",
   separation: "Separation",
   shift_change: "Shift change",
+  // 0629: a move between clients (Transfer), which keeps the joining date.
+  transfer: "Transferred",
 };
 
 /**
