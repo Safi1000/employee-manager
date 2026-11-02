@@ -482,8 +482,11 @@ export default function UserManagement() {
         {users.length > 0 && (() => {
           // Band (2026-10-20): who can get in, and how far. Super admins hold
           // every permission implicitly; everyone else holds what is ticked.
+          // 3 Nov 2026: grouped by what people are (their title), not the access role —
+          // "HR 5" counted the CEO and both RMDs as HR.
           const byRole = new Map<string, number>();
-          for (const u of users) byRole.set(u.role, (byRole.get(u.role) ?? 0) + 1);
+          for (const u of users) byRole.set(displayLabel(u), (byRole.get(displayLabel(u)) ?? 0) + 1);
+          const noTwoFactor = users.filter((u) => { const sec = security.get(u.id); return sec && !sec.disabled_at && !sec.two_factor; });
           const scoped = users.filter((u) => u.branch_id).length;
           const temp = users.filter((u) => u.must_change_password).length;
           const isSuper = (u: Profile) => u.role === "super_admin" || u.role === "super_super_admin";
@@ -492,17 +495,19 @@ export default function UserManagement() {
           return (
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
               <div className="col-span-2 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
-                <span className="lbl">{users.length} users by role</span>
+                <span className="lbl">{users.length} users</span>
                 <div className="flex flex-wrap gap-1.5">
                   {[...byRole.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => (
-                    <span key={r} className="text-xs px-2.5 py-1 rounded-lg border border-border">{ROLE_LABEL[r as UserRole] ?? r} <span className="font-ledger font-semibold">{n}</span></span>
+                    <span key={r} className="text-xs px-2.5 py-1 rounded-lg border border-border">{r} <span className="font-ledger font-semibold">{n}</span></span>
                   ))}
                 </div>
               </div>
               {[
                 { label: "Scoped to a region", v: scoped, sub: `${users.length - scoped} see every region`, tone: "text-foreground" },
                 { label: "Accountant page", v: accountant, sub: "can open it (incl. super admins)", tone: "text-foreground" },
-                { label: "Need attention", v: temp + noAccess, sub: `${temp} on a temporary password · ${noAccess} with no permissions`, tone: temp + noAccess ? "text-heed" : "text-up" },
+                { label: "Need attention", v: temp + noAccess + noTwoFactor.length,
+                  sub: [noTwoFactor.length ? `no two-factor: ${noTwoFactor.map((u) => u.full_name?.split(" ")[0] ?? "").join(", ")} (compulsory from 5 Nov)` : "", `${temp} on a temporary password · ${noAccess} with no permissions`].filter(Boolean).join(" · "),
+                  tone: temp + noAccess + noTwoFactor.length ? "text-heed" : "text-up" },
               ].map((t) => (
                 <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
                   <span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span>

@@ -197,6 +197,29 @@ const TABLE_LABEL: Record<string, string> = {
   posts: "Posts",
   incidents: "Incidents",
   roster_assignments: "Roster",
+  // 3 Nov 2026: the tables the daily work writes most, in words.
+  daily_client_reports: "Daily report notes",
+  daily_report_tasks: "Daily report tasks",
+  daily_report_day_notes: "Daily report updates",
+  deployments: "Postings",
+  attendance_confirmations: "Attendance confirmations",
+  attendance_gap_notes: "Attendance explanations",
+  client_followups: "Payment follow-ups",
+  invoice_deliveries: "Invoice deliveries",
+  client_write_offs: "Write-offs",
+  payroll_adjustments: "Payroll adjustments",
+  journal_entries: "Journal",
+};
+
+/** 3 Nov 2026: the record's name, not its id — per table, the column that names it. */
+const NAME_OF: Record<string, { table: string; col: string }> = {
+  employees: { table: "employees", col: "full_name" },
+  clients: { table: "clients", col: "name" },
+  contracts: { table: "contracts", col: "contract_code" },
+  invoices: { table: "invoices", col: "invoice_number" },
+  profiles: { table: "profiles", col: "full_name" },
+  bank_accounts: { table: "bank_accounts", col: "bank_name" },
+  cheques: { table: "cheques", col: "cheque_number" },
 };
 
 type ProfileLite = { id: string; full_name: string | null; email: string | null };
@@ -214,6 +237,17 @@ export default function AuditLog() {
   const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
 
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    const byTable = new Map<string, Set<string>>();
+    for (const e of entries) if (e.record_id && NAME_OF[e.table_name]) byTable.set(e.table_name, (byTable.get(e.table_name) ?? new Set()).add(e.record_id));
+    if (!byTable.size) return;
+    void Promise.all([...byTable.entries()].map(async ([t, ids]) => {
+      const { table, col } = NAME_OF[t];
+      const { data } = await supabase.from(table).select(`id, ${col}`).in("id", [...ids]);
+      return ((data ?? []) as unknown as Record<string, string>[]).map((r) => [r.id, r[col]] as [string, string]);
+    })).then((lists) => setNames(new Map(lists.flat().filter(([, v]) => v))));
+  }, [entries]);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -550,8 +584,8 @@ export default function AuditLog() {
                         <td className="px-4 py-3 text-sm text-foreground">
                           {TABLE_LABEL[e.table_name] ?? e.table_name}
                         </td>
-                        <td className="px-4 py-3 text-xs font-mono text-muted-foreground max-w-[180px] truncate">
-                          {e.record_id ?? "—"}
+                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-[180px] truncate" title={e.record_id ?? undefined}>
+                          {e.record_id && names.get(e.record_id) ? <span className="text-foreground">{names.get(e.record_id)}</span> : <span className="font-mono">{e.record_id ?? "—"}</span>}
                         </td>
                         <td className="px-4 py-3 text-xs text-foreground">
                           <span className="flex items-center justify-between gap-3">
