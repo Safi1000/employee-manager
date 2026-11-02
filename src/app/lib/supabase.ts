@@ -469,6 +469,8 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       // the tabs, as permissions.
       { key: "banks.view", label: "View bank accounts & cash custody" },
       { key: "receivables.view", label: "View client receivables" },
+      // 0627. The second half of a write-off: approving one someone else asked for.
+      { key: "receivables.write_off_approve", label: "Approve bad-debt write-offs (not your own request)" },
       { key: "payables.view", label: "View accounts payable" },
       { key: "accounting.edit", label: "Edit banks, transfers, reconciliation" },
     ],

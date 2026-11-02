@@ -142,7 +142,6 @@ export default function SuperAdminLayout() {
   const COMPLIANCE_CASES: LinkDef = { to: "/app/compliance-cases", label: "Compliance Cases", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const ALERTS: LinkDef = { to: "/app/alerts", label: "Alerts", icon: Bell };
   const GOVERNANCE: LinkDef = { to: "/app/governance", label: "Governance", icon: Users2, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
-  const RECEIVABLES: LinkDef = { to: "/app/receivables", label: "Receivables", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view"] };
   const OPENING_BAL: LinkDef = { to: "/app/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
   // "Regional Operating Expenses" (route /app/regional-scorecard) is
   // hidden from the nav by request — its LinkDef is intentionally not defined

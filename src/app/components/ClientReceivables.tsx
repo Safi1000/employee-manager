@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Download, FileText, Loader2, Plus, Search } from "lucide-react";
+import { ArrowLeft, Ban, Download, FileText, Loader2, MessageSquare, Plus, Search } from "lucide-react";
+import Tabs from "./Tabs";
 import Button from "./Button";
 import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
@@ -28,6 +29,12 @@ import { downloadClientLedgerPdf } from "../lib/clientLedgerPdf";
  * footer — the sum of the rows displayed above it (the stated exception in
  * CLAUDE.md) — and the receipt form's "this clears" preview of what the user is
  * typing, which is not a balance.
+ *
+ * 0627 (DECIDED 2 Nov 2026) folded the old Receivables page in here: a
+ * Follow-up view (clients with money over 30 days old, each contact logged with
+ * any promise and the next follow-up date), a Write-offs view (requested by one
+ * person, approved by another holding receivables.write_off_approve), and the
+ * totals by region.
  */
 
 type Row = {
@@ -39,24 +46,38 @@ type Row = {
   settled: number;
   cash_received: number;
   wht_deducted: number;
+  written_off: number;
   balance: number;
   owed_before_bastion: number;
   age_0_30: number;
   age_31_60: number;
   age_61_90: number;
   age_over_90: number;
+  overdue: number;
   open_invoices: number;
   oldest_open_date: string | null;
   wht_awaiting_certificate: number;
+  write_off_pending: number;
   last_paid_on: string | null;
   last_paid_mode: string | null;
   last_paid_amount: number | null;
+  last_contact_on: string | null;
+  last_contact_channel: string | null;
+  last_contact_note: string | null;
+  promised_amount: number | null;
+  promised_by: string | null;
+  next_follow_up: string | null;
 };
+
+type RegionTotal = { branch_id: string | null; region_name: string; clients: number; balance: number; overdue: number; age_over_90: number };
+
+const CHANNELS: [string, string][] = [["call", "Call"], ["whatsapp", "WhatsApp"], ["letter", "Letter"], ["visit", "Visit"], ["email", "Email"]];
+const channelLabel = (c: string | null) => CHANNELS.find(([k]) => k === c)?.[1] ?? c ?? "";
 
 type Line = {
   line_no: number;
   line_date: string | null;
-  line_kind: "opening" | "invoice" | "receipt" | "untracked";
+  line_kind: "opening" | "invoice" | "receipt" | "untracked" | "write_off";
   reference: string;
   for_month: string | null;
   details: string;
@@ -68,6 +89,7 @@ type Line = {
   invoiced: number;
   received: number;
   wht: number;
+  written_off: number;
   wht_status: string | null;
   wht_certificate: string | null;
   balance: number;
@@ -136,10 +158,17 @@ export default function ClientReceivables() {
   const [search, setSearch] = usePageState("ClientReceivables.search", "");
   const [showSettled, setShowSettled] = usePageState("ClientReceivables.showSettled", false);
   const [selected, setSelected] = useState<Row | null>(null);
+  const [view, setView] = usePageState<"balances" | "followup" | "writeoffs">("ClientReceivables.view", "balances");
+  const [regions, setRegions] = useState<RegionTotal[]>([]);
+  const [contactFor, setContactFor] = useState<Row | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc("client_receivables_today");
+    const [{ data, error }, reg] = await Promise.all([
+      supabase.rpc("client_receivables_today"),
+      supabase.rpc("client_receivables_by_region"),
+    ]);
+    setRegions(((reg.data ?? []) as RegionTotal[]).map((r) => ({ ...r, balance: n(r.balance), overdue: n(r.overdue), age_over_90: n(r.age_over_90) })));
     if (error) setErr(friendlyDbError(error));
     else {
       setErr(null);
@@ -149,7 +178,9 @@ export default function ClientReceivables() {
         wht_deducted: n(r.wht_deducted), balance: n(r.balance), owed_before_bastion: n(r.owed_before_bastion),
         age_0_30: n(r.age_0_30), age_31_60: n(r.age_31_60), age_61_90: n(r.age_61_90), age_over_90: n(r.age_over_90),
         wht_awaiting_certificate: n(r.wht_awaiting_certificate),
+        written_off: n(r.written_off), overdue: n(r.overdue), write_off_pending: n(r.write_off_pending),
         last_paid_amount: r.last_paid_amount == null ? null : n(r.last_paid_amount),
+        promised_amount: r.promised_amount == null ? null : n(r.promised_amount),
       })));
     }
     setLoading(false);
@@ -188,6 +219,33 @@ export default function ClientReceivables() {
     );
   }
 
+  const viewTabs = (
+    <Tabs<"balances" | "followup" | "writeoffs"> value={view} onChange={setView} items={[
+      { value: "balances", label: "Balances" },
+      { value: "followup", label: "Follow-up", count: rows.filter((r) => (!regionId || r.branch_id === regionId) && r.next_follow_up && r.next_follow_up <= today()).length || undefined },
+      { value: "writeoffs", label: "Write-offs", count: rows.filter((r) => (!regionId || r.branch_id === regionId) && r.write_off_pending > 0.5).length || undefined },
+    ]} />
+  );
+
+  if (view === "followup") {
+    return (
+      <div className="space-y-4">
+        {viewTabs}
+        <FollowUpView rows={rows.filter((r) => !regionId || r.branch_id === regionId)} loading={loading} canEdit={canEdit}
+          onOpen={setSelected} onLog={setContactFor} />
+        {contactFor && <ContactModal row={contactFor} onClose={() => setContactFor(null)} onSaved={() => { setContactFor(null); void load(); }} />}
+      </div>
+    );
+  }
+  if (view === "writeoffs") {
+    return (
+      <div className="space-y-4">
+        {viewTabs}
+        <WriteOffsView companyId={companyId} regionId={regionId} onChanged={() => void load()} />
+      </div>
+    );
+  }
+
   const exportList = () => exportTable({
     fileName: `Receivables ${today()}.xlsx`,
     title: `Client receivables — balance on ${fmtDate(today())}`,
@@ -198,6 +256,7 @@ export default function ClientReceivables() {
 
   return (
     <div className="space-y-4">
+      {viewTabs}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
           ["Owed today", foot.balance, "text-foreground"],
@@ -213,6 +272,18 @@ export default function ClientReceivables() {
           </div>
         ))}
       </div>
+
+      {!regionId && regions.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {regions.map((g) => (
+            <div key={g.branch_id ?? "none"} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
+              <span className="font-medium text-foreground">{g.region_name}</span>
+              <span className="ml-2 font-ledger">{fmtBal(g.balance)}</span>
+              <span className="ml-2 text-xs text-muted-foreground">{g.clients} clients · overdue {fmt(g.overdue)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -307,20 +378,29 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
   const [err, setErr] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [taxLine, setTaxLine] = useState<Line | null>(null);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [writeOffOpen, setWriteOffOpen] = useState(false);
+  const [contacts, setContacts] = useState<{ id: string; contacted_on: string; channel: string; note: string; promised_amount: number | null; promised_by: string | null; next_follow_up: string | null }[]>([]);
+  const [pendingWo, setPendingWo] = useState<{ id: string; amount: number; reason: string; requested_at: string }[]>([]);
 
   const [pFrom, pTo] = rangeDates(range, from, to);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data, error }, chq] = await Promise.all([
+    const [{ data, error }, chq, fu, wo] = await Promise.all([
       supabase.rpc("client_receivable_ledger", { p_client_id: row.client_id, p_from: pFrom, p_to: pTo }),
       supabase.from("cheques").select("id, cheque_number, amount, cheque_date, status, bank:bank_accounts(bank_name)")
         .eq("client_id", row.client_id).eq("direction", "incoming").not("status", "in", "(cleared,bounced)").order("cheque_date"),
+      supabase.from("client_followups").select("id, contacted_on, channel, note, promised_amount, promised_by, next_follow_up")
+        .eq("client_id", row.client_id).order("contacted_on", { ascending: false }).order("created_at", { ascending: false }).limit(20),
+      supabase.from("client_write_offs").select("id, amount, reason, requested_at").eq("client_id", row.client_id).eq("status", "pending"),
     ]);
+    setContacts(((fu.data ?? []) as any[]).map((c) => ({ ...c, promised_amount: c.promised_amount == null ? null : n(c.promised_amount) })));
+    setPendingWo(((wo.data ?? []) as any[]).map((w) => ({ ...w, amount: n(w.amount) })));
     if (error) setErr(friendlyDbError(error));
     else {
       setErr(null);
-      setLines(((data ?? []) as Line[]).map((l) => ({ ...l, invoiced: n(l.invoiced), received: n(l.received), wht: n(l.wht), balance: n(l.balance) })));
+      setLines(((data ?? []) as Line[]).map((l) => ({ ...l, invoiced: n(l.invoiced), received: n(l.received), wht: n(l.wht), written_off: n(l.written_off), balance: n(l.balance) })));
     }
     setPending(((chq.data ?? []) as any[]).map((c) => ({ id: c.id, cheque_number: c.cheque_number, amount: n(c.amount), cheque_date: c.cheque_date, bank: c.bank?.bank_name ?? null })));
     setLoading(false);
@@ -336,7 +416,8 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
     details: l.line_kind === "opening" ? `${l.reference} — ${l.details}` : l.details,
     reference: l.line_kind === "opening" ? "" : l.reference,
     how: [howPaid(l), l.deposited_to, l.wht ? (l.wht_status ?? "") : ""].filter(Boolean).join(" · "),
-    invoiced: l.invoiced, received: l.received, wht: l.wht, balance: l.balance,
+    // A write-off is shown in the Received column, its details saying what it is.
+    invoiced: l.invoiced, received: l.received + l.written_off, wht: l.wht, balance: l.balance,
   }));
 
   return (
@@ -357,8 +438,16 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
         <Button variant="secondary" size="sm" onClick={() => void downloadClientLedgerPdf({ companyName, clientName: row.client_name, scope: scopeLabel, lines: exportRows, closing })}>
           <FileText className="w-4 h-4 mr-1" /> PDF
         </Button>
+        {canEdit && <Button variant="secondary" size="sm" onClick={() => setContactOpen(true)}><MessageSquare className="w-4 h-4 mr-1" /> Log contact</Button>}
+        {canEdit && row.balance > 0.5 && <Button variant="secondary" size="sm" onClick={() => setWriteOffOpen(true)}><Ban className="w-4 h-4 mr-1" /> Write off</Button>}
         {canEdit && <Button size="sm" onClick={() => setReceiptOpen(true)}><Plus className="w-4 h-4 mr-1" /> Record payment</Button>}
       </div>
+
+      {pendingWo.length > 0 && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 dark:bg-warning-500/10 p-3 text-sm text-warning-700 dark:text-warning-500">
+          Waiting for approval: {pendingWo.map((w) => `write off ${fmt(w.amount)} (${w.reason})`).join(" · ")}. Approve it under Write-offs; it is not in the balance until then.
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         {([["all", "Everything"], ["month", "This month"], ["3m", "Last 3 months"], ["fy", "This financial year"], ["custom", "Dates…"]] as [Range, string][]).map(([k, label]) => (
@@ -415,7 +504,9 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
                 <td className="px-3 py-2 text-xs whitespace-nowrap">{howPaid(l)}</td>
                 <td className="px-3 py-2 text-xs">{l.deposited_to ?? ""}</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmt(l.invoiced)}</td>
-                <td className="px-3 py-2 text-right font-ledger">{fmt(l.received)}</td>
+                <td className="px-3 py-2 text-right font-ledger">
+                  {l.line_kind === "write_off" ? <>{fmt(l.written_off)}<div className="text-[11px] font-sans text-danger-700 dark:text-danger-500">written off</div></> : fmt(l.received)}
+                </td>
                 <td className="px-3 py-2 text-right">
                   <div className="font-ledger">{fmt(l.wht)}</div>
                   <WhtBadge status={l.wht_status} cert={l.wht_certificate} />
@@ -440,6 +531,25 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
         </table>
       </div>
 
+      <div className="rounded-xl border border-border bg-card">
+        <div className="px-4 py-2 border-b border-border text-sm font-semibold">Follow-up history</div>
+        {contacts.length === 0 ? (
+          <div className="px-4 py-4 text-sm text-muted-foreground">No contact logged yet.</div>
+        ) : (
+          <ul className="divide-y divide-border text-sm">
+            {contacts.map((c) => (
+              <li key={c.id} className="px-4 py-2">
+                <span className="text-muted-foreground">{fmtDate(c.contacted_on)} · {channelLabel(c.channel)}</span> — {c.note}
+                {c.promised_amount != null && <span className="ml-2 text-xs font-semibold">Promised {fmt(c.promised_amount)} by {fmtDate(c.promised_by)}</span>}
+                {c.next_follow_up && <span className="ml-2 text-xs text-muted-foreground">Next: {fmtDate(c.next_follow_up)}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {contactOpen && <ContactModal row={row} onClose={() => setContactOpen(false)} onSaved={() => { setContactOpen(false); void load(); }} />}
+      {writeOffOpen && <WriteOffModal row={row} onClose={() => setWriteOffOpen(false)} onSaved={() => { setWriteOffOpen(false); void load(); }} />}
       {receiptOpen && (
         <ReceiptModal row={row} companyId={companyId} owed={row.balance}
           onClose={() => setReceiptOpen(false)} onSaved={() => { setReceiptOpen(false); void load(); }} />
@@ -675,5 +785,280 @@ function TaxModal({ line, onClose, onSaved }: { line: Line; onClose: () => void;
         </label>
       </div>
     </Modal>
+  );
+}
+
+// ───────────────────────────── Follow-up (0627) ─────────────────────────────
+
+/**
+ * Who to chase: every client with money older than 30 days (including what is
+ * left from before Bastion), follow-ups due today first, then the most overdue.
+ */
+function FollowUpView({ rows, loading, canEdit, onOpen, onLog }: {
+  rows: Row[]; loading: boolean; canEdit: boolean; onOpen: (r: Row) => void; onLog: (r: Row) => void;
+}) {
+  const t = today();
+  const list = rows
+    .filter((r) => r.overdue > 0.5)
+    .sort((a, b) => {
+      const ad = a.next_follow_up && a.next_follow_up <= t ? 0 : 1;
+      const bd = b.next_follow_up && b.next_follow_up <= t ? 0 : 1;
+      return ad - bd || b.overdue - a.overdue;
+    });
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Clients with money more than 30 days old, including what is left from before Bastion. Follow-ups due today or earlier come first.
+        Log each call, WhatsApp, letter or visit with what they said, any promise, and when to follow up again.
+      </p>
+      <div className="rounded-xl border border-border bg-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/60 text-left">
+            <tr className="text-xs text-muted-foreground">
+              <th className="px-3 py-2">Client</th>
+              <th className="px-3 py-2 text-right">Overdue</th>
+              <th className="px-3 py-2 text-right">Over 90 days</th>
+              <th className="px-3 py-2">Last contact</th>
+              <th className="px-3 py-2">Promise</th>
+              <th className="px-3 py-2">Follow up</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
+            ) : list.length === 0 ? (
+              <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">Nobody owes anything older than 30 days.</td></tr>
+            ) : list.map((r) => {
+              const due = !!r.next_follow_up && r.next_follow_up <= t;
+              // A promise is broken when its date has passed with no payment since the contact that made it.
+              const broken = !!r.promised_by && r.promised_by < t && (!r.last_paid_on || r.last_paid_on < (r.last_contact_on ?? ""));
+              return (
+                <tr key={r.client_id} className="border-t border-border align-top">
+                  <td className="px-3 py-2"><button className="font-medium text-foreground hover:underline text-left" onClick={() => onOpen(r)}>{r.client_name}</button></td>
+                  <td className="px-3 py-2 text-right font-ledger font-semibold">{fmt(r.overdue)}</td>
+                  <td className={`px-3 py-2 text-right font-ledger ${r.age_over_90 > 0.5 ? "text-danger-700 dark:text-danger-500" : ""}`}>{fmt(r.age_over_90)}</td>
+                  <td className="px-3 py-2 text-xs max-w-[280px]">
+                    {r.last_contact_on ? <><span className="text-muted-foreground">{fmtDate(r.last_contact_on)} · {channelLabel(r.last_contact_channel)}</span><div className="text-foreground line-clamp-2">{r.last_contact_note}</div></>
+                      : <span className="text-muted-foreground">Never contacted</span>}
+                  </td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">
+                    {r.promised_amount != null ? <span className={broken ? "text-danger-700 dark:text-danger-500 font-semibold" : ""}>{fmt(r.promised_amount)} by {fmtDate(r.promised_by)}</span> : ""}
+                  </td>
+                  <td className={`px-3 py-2 text-xs whitespace-nowrap ${due ? "text-warning-700 dark:text-warning-500 font-semibold" : "text-muted-foreground"}`}>
+                    {r.next_follow_up ? (due ? `Due ${fmtDate(r.next_follow_up)}` : fmtDate(r.next_follow_up)) : "Not set"}
+                  </td>
+                  <td className="px-3 py-2 text-right">{canEdit && <Button variant="secondary" size="sm" onClick={() => onLog(r)}>Log contact</Button>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ContactModal({ row, onClose, onSaved }: { row: Row; onClose: () => void; onSaved: () => void }) {
+  const [channel, setChannel] = useState("call");
+  const [on, setOn] = useState(today());
+  const [note, setNote] = useState("");
+  const [promised, setPromised] = useState("");
+  const [promisedBy, setPromisedBy] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("log_client_followup", {
+      p_client_id: row.client_id, p_channel: channel, p_note: note, p_contacted_on: on || null,
+      p_promised_amount: promised ? Number(promised) : null, p_promised_by: promisedBy || null, p_next_follow_up: next || null,
+    });
+    setBusy(false);
+    if (error) return setErr(friendlyDbError(error));
+    onSaved();
+  };
+  return (
+    <Modal isOpen onClose={onClose} title={`Log contact — ${row.client_name}`} error={err} onDismissError={() => setErr(null)}
+      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save"}</Button></div>}>
+      <div className="space-y-4 text-sm">
+        <p className="text-muted-foreground">They owe {fmtBal(row.balance)}{row.overdue > 0.5 ? `, of which ${fmt(row.overdue)} is more than 30 days old` : ""}.</p>
+        <div className="flex flex-wrap gap-2">
+          {CHANNELS.map(([k, label]) => (
+            <button key={k} onClick={() => setChannel(k)}
+              className={`px-3 py-1.5 rounded-lg border ${channel === k ? "bg-foreground text-background border-foreground" : "bg-card border-border"}`}>{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="lbl">Date</span>
+            <input type="date" max={today()} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={on} onChange={(e) => setOn(e.target.value)} /></label>
+          <label className="block"><span className="lbl">Follow up again on</span>
+            <input type="date" min={on} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={next} onChange={(e) => setNext(e.target.value)} /></label>
+        </div>
+        <label className="block"><span className="lbl">What did they say?</span>
+          <textarea rows={3} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Spoke to accounts; cheque being signed this week" /></label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="lbl">Promised amount (optional)</span>
+            <input type="number" inputMode="decimal" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={promised} onChange={(e) => setPromised(e.target.value)} /></label>
+          <label className="block"><span className="lbl">Promised by</span>
+            <input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={promisedBy} onChange={(e) => setPromisedBy(e.target.value)} /></label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ───────────────────────────── Write-offs (0627) ─────────────────────────────
+
+function WriteOffModal({ row, onClose, onSaved }: { row: Row; onClose: () => void; onSaved: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("request_client_write_off", { p_client_id: row.client_id, p_amount: Number(amount || 0), p_reason: reason });
+    setBusy(false);
+    if (error) return setErr(friendlyDbError(error));
+    onSaved();
+  };
+  return (
+    <Modal isOpen onClose={onClose} size="sm" title={`Write off — ${row.client_name}`} error={err} onDismissError={() => setErr(null)}
+      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="danger" onClick={() => void save()} disabled={busy}>{busy ? "Sending…" : "Ask for approval"}</Button></div>}>
+      <div className="space-y-3 text-sm">
+        <p className="text-muted-foreground">
+          For money this client will never pay. They owe {fmtBal(row.balance)}. Someone else with the "Approve bad-debt write-offs" permission must approve it;
+          until then nothing changes. Once approved it is booked as a bad-debt expense and comes off their balance.
+        </p>
+        <label className="block"><span className="lbl">Amount to write off</span>
+          <input type="number" inputMode="decimal" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <button type="button" className="text-[11px] text-brand-600 hover:underline" onClick={() => setAmount(String(Math.round(row.balance * 100) / 100))}>Everything they owe ({fmt(row.balance)})</button>
+        </label>
+        <label className="block"><span className="lbl">Why will it never be paid?</span>
+          <textarea rows={3} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Company closed; owner untraceable since March" /></label>
+      </div>
+    </Modal>
+  );
+}
+
+type WriteOff = {
+  id: string; client_id: string; amount: number; reason: string; status: "pending" | "approved" | "rejected";
+  requested_by: string; requested_at: string; decided_at: string | null; decision_note: string | null;
+  client: { name: string; branch_id: string | null } | null;
+};
+
+function WriteOffsView({ companyId, regionId, onChanged }: { companyId: string | null; regionId: string | null; onChanged: () => void }) {
+  const { profile } = useAuth();
+  const canApprove = hasPermission(profile, "receivables.write_off_approve");
+  const canSetPolicy = hasPermission(profile, "accounting.edit");
+  const [list, setList] = useState<WriteOff[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [bearer, setBearer] = useState<string>("region");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<WriteOff | null>(null);
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async () => {
+    const [w, fs] = await Promise.all([
+      supabase.from("client_write_offs").select("id, client_id, amount, reason, status, requested_by, requested_at, decided_at, decision_note, client:clients(name, branch_id)")
+        .order("requested_at", { ascending: false }),
+      companyId ? supabase.from("finance_settings").select("bad_debt_bearer").eq("company_id", companyId).maybeSingle() : Promise.resolve({ data: null } as any),
+    ]);
+    if (w.error) setErr(friendlyDbError(w.error));
+    const rows = ((w.data ?? []) as any[]).map((x) => ({ ...x, amount: n(x.amount) })) as WriteOff[];
+    setList(rows);
+    setBearer((fs.data as any)?.bad_debt_bearer ?? "region");
+    const ids = Array.from(new Set(rows.map((r) => r.requested_by)));
+    if (ids.length) {
+      const { data } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      setNames(new Map(((data ?? []) as any[]).map((p) => [p.id, p.full_name ?? ""])));
+    }
+  }, [companyId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const decide = async (w: WriteOff, approve: boolean, why: string | null) => {
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("decide_client_write_off", { p_write_off_id: w.id, p_approve: approve, p_note: why });
+    setBusy(false);
+    if (error) return setErr(friendlyDbError(error));
+    setRejecting(null); setNote("");
+    await load(); onChanged();
+  };
+  const saveBearer = async (v: string) => {
+    if (!companyId) return;
+    setBearer(v);
+    const { error } = await supabase.from("finance_settings").update({ bad_debt_bearer: v, updated_at: new Date().toISOString() }).eq("company_id", companyId);
+    if (error) setErr(friendlyDbError(error));
+  };
+
+  const scoped = list.filter((w) => !regionId || w.client?.branch_id === regionId);
+  const pending = scoped.filter((w) => w.status === "pending");
+  const done = scoped.filter((w) => w.status !== "pending");
+  const me = profile?.id;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        A write-off is asked for from the client's ledger ("Write off") and approved here by a different person. Approved write-offs are booked as bad-debt expense and come off the client's balance.
+      </p>
+      {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
+
+      <div className="rounded-xl border border-border bg-card">
+        <div className="px-4 py-2 border-b border-border text-sm font-semibold">Waiting for approval ({pending.length})</div>
+        {pending.length === 0 ? <div className="px-4 py-4 text-sm text-muted-foreground">Nothing waiting.</div> : (
+          <ul className="divide-y divide-border">
+            {pending.map((w) => (
+              <li key={w.id} className="px-4 py-3 flex flex-wrap items-center gap-3 text-sm">
+                <div className="flex-1 min-w-[240px]">
+                  <div className="font-medium">{w.client?.name ?? "—"} · <span className="font-ledger">{fmt(w.amount)}</span></div>
+                  <div className="text-xs text-muted-foreground">{w.reason} — asked by {names.get(w.requested_by) || "someone"} on {fmtDate(w.requested_at)}</div>
+                </div>
+                {canApprove && w.requested_by !== me && (
+                  <>
+                    <Button size="sm" variant="danger" disabled={busy} onClick={() => void decide(w, true, null)}>Approve write-off</Button>
+                    <Button size="sm" variant="secondary" disabled={busy} onClick={() => setRejecting(w)}>Reject</Button>
+                  </>
+                )}
+                {w.requested_by === me && <span className="text-xs text-muted-foreground">Your request — someone else approves it</span>}
+                {!canApprove && w.requested_by !== me && <span className="text-xs text-muted-foreground">Needs "Approve bad-debt write-offs"</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card">
+        <div className="px-4 py-2 border-b border-border text-sm font-semibold">Decided</div>
+        {done.length === 0 ? <div className="px-4 py-4 text-sm text-muted-foreground">No write-offs yet.</div> : (
+          <ul className="divide-y divide-border text-sm">
+            {done.map((w) => (
+              <li key={w.id} className="px-4 py-2">
+                <span className={w.status === "approved" ? "text-danger-700 dark:text-danger-500 font-semibold" : "text-muted-foreground"}>{w.status === "approved" ? "Written off" : "Rejected"}</span>
+                {" "}{w.client?.name ?? "—"} · <span className="font-ledger">{fmt(w.amount)}</span>
+                <span className="text-xs text-muted-foreground"> — {w.reason}{w.decision_note ? ` · ${w.decision_note}` : ""} · {fmtDate(w.decided_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4 text-sm flex flex-wrap items-center gap-3">
+        <span className="text-muted-foreground">A written-off debt is charged to</span>
+        <ThemedSelect value={bearer} disabled={!canSetPolicy} onChange={(e) => void saveBearer(e.target.value)}>
+          <option value="region">The client's region</option>
+          <option value="head_office">Head office</option>
+        </ThemedSelect>
+        {!canSetPolicy && <span className="text-xs text-muted-foreground">Changing this needs "Edit banks, transfers, reconciliation".</span>}
+      </div>
+
+      {rejecting && (
+        <Modal isOpen size="sm" onClose={() => setRejecting(null)} title={`Reject write-off — ${rejecting.client?.name ?? ""}`}
+          footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setRejecting(null)}>Cancel</Button><Button disabled={busy || !note.trim()} onClick={() => void decide(rejecting, false, note)}>Reject</Button></div>}>
+          <label className="block text-sm"><span className="lbl">Why?</span>
+            <textarea rows={3} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        </Modal>
+      )}
+    </div>
   );
 }

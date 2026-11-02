@@ -63,7 +63,6 @@ const ComplianceCases = lazyPage(() => import("./pages/super-admin/ComplianceCas
 const Assets = lazyPage(() => import("./pages/super-admin/Assets"));
 const Alerts = lazyPage(() => import("./pages/super-admin/Alerts"));
 const Governance = lazyPage(() => import("./pages/super-admin/Governance"));
-const Receivables = lazyPage(() => import("./pages/super-admin/Receivables"));
 const OpeningBalances = lazyPage(() => import("./pages/super-admin/OpeningBalances"));
 const RegionalScorecard = lazyPage(() => import("./pages/super-admin/RegionalScorecard"));
 const ClientRelationships = lazyPage(() => import("./pages/super-admin/ClientRelationships"));
