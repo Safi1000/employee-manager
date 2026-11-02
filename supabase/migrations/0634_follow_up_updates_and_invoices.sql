@@ -147,7 +147,10 @@ begin
     v_ran := v_ran + 1;
 
     -- 4. A login with neither key is refused, by message.
+    -- (only a super admin may change a login's permissions, so switch back to set them)
+    perform set_config('request.jwt.claims', json_build_object('sub', v_boss, 'role', 'authenticated')::text, true);
     update public.profiles set permissions = array['attendance.view'] where id = v_hr;
+    perform set_config('request.jwt.claims', json_build_object('sub', v_hr, 'role', 'authenticated')::text, true);
     v_msg := null; begin perform public.followup_updates(now() - interval '1 day', now()); exception when others then get stacked diagnostics v_msg = message_text; end;
     if v_msg is distinct from 'Your login needs the "Follow up client payments" permission for this. Ask a super admin.' then raise exception '0634 REFUSED: a login without follow-up access got "%".', v_msg; end if;
     v_ran := v_ran + 1;
