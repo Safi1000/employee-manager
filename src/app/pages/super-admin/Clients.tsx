@@ -1,4 +1,5 @@
 import ThemedSelect from "../../components/ThemedSelect";
+import ClientService from "../../components/ClientService";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Plus,
@@ -228,7 +229,7 @@ export default function Clients() {
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailRow, setDetailRow] = useState<ClientRow | null>(null);
-  const [detailTab, setDetailTab] = usePageState<"overview" | "contracts" | "invoices" | "documents">("Clients.detailTab", "overview");
+  const [detailTab, setDetailTab] = usePageState<"overview" | "contracts" | "invoices" | "service" | "documents">("Clients.detailTab", "overview");
 
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -1629,6 +1630,7 @@ export default function Clients() {
                 { v: "overview", label: "Overview" },
                 { v: "contracts", label: `Contracts (${contracts.filter((c) => c.client_id === detailRow.id).length})` },
                 { v: "invoices", label: `Invoices (${invoices.filter((i) => i.client_id === detailRow.id).length})` },
+                { v: "service", label: "Service" },
                 { v: "documents", label: "Documents" },
               ] as const).filter((t) => canSeeMoney || t.v !== "invoices").map((t) => ({ value: t.v, label: t.label }))}
             />
@@ -1768,6 +1770,7 @@ export default function Clients() {
               </div>
             )}
 
+            {detailTab === "service" && <ClientService clientId={detailRow.id} clientName={detailRow.name} canEdit={canEditClients} />}
             {detailTab === "documents" && (
               <div className="space-y-3">
                 {contractError && (

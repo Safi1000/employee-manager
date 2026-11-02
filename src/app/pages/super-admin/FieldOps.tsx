@@ -14,6 +14,7 @@ import { describeUnconfirmed, loadAttendanceSummary, type AttendanceSummary } fr
 import { usePageState } from "../../lib/pageState";
 import { loadStaffChanges, logStaffReport, staffForRegion, type StaffChanges } from "../../lib/staffChanges";
 import StaffChangesPanel from "../../components/StaffChangesPanel";
+import { invoiceStatus, loadFollowInvoices, monthShort, type FollowInvoice } from "../../lib/followUpData";
 
 // Operations ▸ Daily Reports. One row per ACTIVE CLIENT for a chosen day, each
 // with a free-text Details box; the branded PDF is built straight from those two
@@ -206,6 +207,19 @@ export default function FieldOps() {
   const [noReport, setNoReport] = useState<Set<string>>(new Set());
   /** 0568: client_id -> ticked urgent, for the selected day. */
   const [urgent, setUrgent] = useState<Set<string>>(new Set());
+  /** 3 Nov 2026: last month's invoice per client (delivered or not), shown on the
+   *  row so nobody types "Invoice submitted" — the delivery tick already knows. */
+  const [invByClient, setInvByClient] = useState<Map<string, FollowInvoice[]>>(new Map());
+  useEffect(() => { void loadFollowInvoices().then(setInvByClient).catch(() => undefined); }, []);
+  /** Clients whose urgent note was logged as a complaint this session. */
+  const [logged, setLogged] = useState<Set<string>>(new Set());
+  const logComplaint = async (clientId: string, text: string) => {
+    const { error } = await supabase.from("client_complaints").insert({
+      company_id: companyId, client_id: clientId, raised_on: date, channel: "daily_report", description: text.trim(), status: "open",
+    });
+    if (error) { setErr(error.message); return; }
+    setLogged((prev) => new Set(prev).add(clientId));
+  };
   /** 0619: client_id -> the field app's daily site reports for the selected day. */
   const [siteReports, setSiteReports] = useState<Map<string, SiteReport[]>>(new Map());
   /** 0568: the PREVIOUS day's tasks — ticked done here, and listed in the PDF when not. */
@@ -962,6 +976,9 @@ export default function FieldOps() {
                       urgent={urgent.has(c.id)}
                       siteReports={siteReports.get(c.id)}
                       onToggleUrgent={(f) => void toggleUrgent(c.id, f)}
+                      invoiceLine={(() => { const st = invoiceStatus(invByClient.get(c.id)); return st.text ? `${monthShort([...invByClient.values()][0]?.[0]?.for_month)} invoice: ${st.text}` : null; })()}
+                      onLogComplaint={urgent.has(c.id) && (details.get(c.id) ?? "").trim() && !logged.has(c.id) ? () => void logComplaint(c.id, details.get(c.id) ?? "") : undefined}
+                      complaintLogged={logged.has(c.id)}
                       locked={locked}
                       saving={saving.has(c.id)}
                       savedAt={savedAt.get(c.id)}
@@ -1178,7 +1195,7 @@ function NextDayTasks({
  * writes on blur.
  */
 function DetailsRow({
-  client, value, noReport, urgent, siteReports, onToggleUrgent, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
+  client, value, noReport, urgent, siteReports, onToggleUrgent, invoiceLine, onLogComplaint, complaintLogged, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
 }: {
   client: ClientRow;
   value: string;
@@ -1186,6 +1203,11 @@ function DetailsRow({
   urgent: boolean;
   siteReports?: SiteReport[];
   onToggleUrgent: (flag: boolean) => void;
+  /** "Oct invoice: Delivered 2 Nov, by hand" — read from the delivery tick. */
+  invoiceLine?: string | null;
+  /** Present when an urgent note can be logged as a client complaint. */
+  onLogComplaint?: () => void;
+  complaintLogged?: boolean;
   locked: boolean;
   saving: boolean;
   savedAt: number | undefined;
@@ -1203,6 +1225,11 @@ function DetailsRow({
         {urgent && <span className="ml-2 inline-flex rounded-full border border-down/40 bg-down/15 px-1.5 py-0.5 text-[10px] font-semibold text-down align-middle">Urgent</span>}
       </div>
       <div className="px-3 pb-2 pt-1 md:py-2">
+        {invoiceLine && <p className="mb-1 text-xs text-muted-foreground">{invoiceLine}</p>}
+        {onLogComplaint && (
+          <button type="button" onClick={onLogComplaint} className="mb-1 text-xs font-medium text-down hover:underline">Log this as a client complaint →</button>
+        )}
+        {complaintLogged && <p className="mb-1 text-xs text-up">Logged as a complaint — it's on Incidents › Client Complaints.</p>}
         {siteReports?.map((r) => (
           <p key={`${r.sites?.name}-${r.sent_at}`} className={`mb-1 text-xs ${r.all_ok ? "text-muted-foreground" : r.urgent ? "text-down" : "text-heed"}`}>
             <span className="font-medium">From the field{r.sites?.name && r.sites.name !== client.name ? ` (${r.sites.name})` : ""}:</span>{" "}
