@@ -1,0 +1,388 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, ChevronRight, FileText, Loader2, Search } from "lucide-react";
+import Button from "./Button";
+import Modal from "./Modal";
+import ThemedSelect from "./ThemedSelect";
+import { supabase, friendlyDbError } from "../lib/supabase";
+import { useAuth, hasPermission, hasAnyPermission } from "../lib/auth";
+import { useRegion } from "../lib/region";
+import { usePageState } from "../lib/pageState";
+import { downloadFollowUpPdf, type FollowUpPdfRow } from "../lib/followUpPdf";
+
+/**
+ * PAYMENT FOLLOW-UP (0628, DECIDED 2 Nov 2026).
+ *
+ * Who to chase for payment, and what was agreed. Read from client_followup_list(),
+ * which returns every amount as NULL to a login holding only
+ * receivables.follow_up — so the ops team sees names, how late, the usual pay
+ * day, contact notes, promise dates and next steps, and no figure at all. The
+ * screen hides the amount columns for them too, but the database is what makes
+ * it true.
+ *
+ * LATE means past the client's usual pay day for their oldest unpaid invoice, or
+ * followup_after_days (7) after it when no day is set; anything from before
+ * Bastion is always late. Exported as a PDF with figures (finance only) or
+ * without, to share whenever it is wanted — it is not part of the daily report.
+ */
+
+export type FollowRow = {
+  client_id: string;
+  client_name: string;
+  branch_id: string | null;
+  region_name: string | null;
+  usual_pay_day: number | null;
+  is_late: boolean;
+  late_since: string | null;
+  days_late: number | null;
+  from_before_bastion: boolean;
+  balance: number | null;
+  overdue: number | null;
+  last_contact_on: string | null;
+  last_contact_channel: string | null;
+  last_contact_note: string | null;
+  promised_by: string | null;
+  promised_amount: number | null;
+  next_follow_up: string | null;
+  next_step: string | null;
+  next_step_assignee: string | null;
+  next_step_assignee_name: string | null;
+  next_step_followup_id: string | null;
+  next_step_done: boolean;
+};
+
+type History = {
+  id: string; contacted_on: string; channel: string; note: string; promised_by: string | null; promised_amount: number | null;
+  next_follow_up: string | null; next_step: string | null; next_step_assignee_name: string | null; next_step_done_at: string | null; logged_by_name: string | null;
+};
+
+export const CHANNELS: [string, string][] = [["call", "Call"], ["whatsapp", "WhatsApp"], ["letter", "Letter"], ["visit", "Visit"], ["email", "Email"]];
+export const channelLabel = (c: string | null) => CHANNELS.find(([k]) => k === c)?.[1] ?? c ?? "";
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const today = () => iso(new Date());
+const fmtDate = (d: string | null) =>
+  d ? new Date(`${d.slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+const fmtShort = (d: string | null) =>
+  d ? new Date(`${d.slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
+const fmt = (v: number | null) => (v == null ? "" : Math.round(v).toLocaleString());
+const n = (v: unknown) => (v == null ? null : Number(v));
+const ordinal = (d: number) => `${d}${d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12 ? "nd" : d % 10 === 3 && d !== 13 ? "rd" : "th"}`;
+
+/** Whether this login is shown amounts. Display only: the database decides what it returns. */
+export function useCanSeeAmounts() {
+  const { profile } = useAuth();
+  return hasAnyPermission(profile, ["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"]);
+}
+
+function lateText(r: FollowRow) {
+  if (r.from_before_bastion) return "From before Bastion";
+  if (r.is_late && r.days_late != null) return `${r.days_late} day${r.days_late === 1 ? "" : "s"} late`;
+  if (r.late_since) return `Due ${fmtShort(r.late_since)}`;
+  return "Not late yet";
+}
+
+export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clientId: string) => void } = {}) {
+  const { profile, company } = useAuth();
+  const canAct = hasAnyPermission(profile, ["receivables.follow_up", "invoices.edit"]);
+  const canSeeAmounts = useCanSeeAmounts();
+  const canSetPolicy = hasPermission(profile, "accounting.edit");
+  const { regionId } = useRegion();
+
+  const [rows, setRows] = useState<FollowRow[]>([]);
+  const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
+  const [lateAfter, setLateAfter] = useState(7);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [show, setShow] = usePageState<"late" | "all" | "mine">("PaymentFollowUp.show", "late");
+  const [search, setSearch] = usePageState("PaymentFollowUp.search", "");
+  const [logFor, setLogFor] = useState<FollowRow | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [history, setHistory] = useState<History[]>([]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [l, p, fs] = await Promise.all([
+      supabase.rpc("client_followup_list"),
+      supabase.rpc("followup_assignees"),
+      company?.id ? supabase.from("finance_settings").select("followup_after_days").eq("company_id", company.id).maybeSingle() : Promise.resolve({ data: null } as any),
+    ]);
+    if (l.error) setErr(friendlyDbError(l.error));
+    else {
+      setErr(null);
+      setRows(((l.data ?? []) as any[]).map((r) => ({ ...r, balance: n(r.balance), overdue: n(r.overdue), promised_amount: n(r.promised_amount) })));
+    }
+    setPeople((p.data ?? []) as { id: string; full_name: string }[]);
+    if ((fs.data as any)?.followup_after_days != null) setLateAfter(Number((fs.data as any).followup_after_days));
+    setLoading(false);
+  }, [company?.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const openHistory = async (clientId: string) => {
+    if (open === clientId) { setOpen(null); return; }
+    setOpen(clientId);
+    setHistory([]);
+    const { data, error } = await supabase.rpc("client_followup_history", { p_client_id: clientId });
+    if (error) setErr(friendlyDbError(error));
+    else setHistory(((data ?? []) as any[]).map((h) => ({ ...h, promised_amount: n(h.promised_amount) })));
+  };
+
+  const t = today();
+  const me = profile?.id;
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows
+      .filter((r) => !regionId || r.branch_id === regionId)
+      .filter((r) => (show === "late" ? r.is_late : show === "mine" ? (!!r.next_step && !r.next_step_done && r.next_step_assignee === me) : true))
+      .filter((r) => !q || r.client_name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        // Steps due today or earlier first, then the latest-paying.
+        const ad = a.next_follow_up && a.next_follow_up <= t && !a.next_step_done ? 0 : 1;
+        const bd = b.next_follow_up && b.next_follow_up <= t && !b.next_step_done ? 0 : 1;
+        const al = a.from_before_bastion ? 100000 : a.days_late ?? -1;
+        const bl = b.from_before_bastion ? 100000 : b.days_late ?? -1;
+        return ad - bd || bl - al || a.client_name.localeCompare(b.client_name);
+      });
+  }, [rows, regionId, show, search, me, t]);
+
+  const setPayDay = async (r: FollowRow, v: string) => {
+    const { error } = await supabase.rpc("set_client_pay_day", { p_client_id: r.client_id, p_day: v ? Number(v) : null });
+    if (error) return setErr(friendlyDbError(error));
+    void load();
+  };
+  const doneStep = async (r: FollowRow) => {
+    if (!r.next_step_followup_id) return;
+    const { error } = await supabase.rpc("complete_followup_step", { p_followup_id: r.next_step_followup_id });
+    if (error) return setErr(friendlyDbError(error));
+    void load();
+  };
+  const saveLateAfter = async (v: number) => {
+    if (!company?.id) return;
+    setLateAfter(v);
+    const { error } = await supabase.from("finance_settings").update({ followup_after_days: v, updated_at: new Date().toISOString() }).eq("company_id", company.id);
+    if (error) setErr(friendlyDbError(error)); else void load();
+  };
+
+  const exportPdf = (withFigures: boolean) => {
+    const rowsOut: FollowUpPdfRow[] = visible.map((r) => ({
+      client: r.client_name,
+      region: regionId ? "" : r.region_name ?? "",
+      late: lateText(r),
+      payDay: r.usual_pay_day ? ordinal(r.usual_pay_day) : "",
+      lastContact: r.last_contact_on ? `${fmtShort(r.last_contact_on)} · ${channelLabel(r.last_contact_channel)} — ${r.last_contact_note ?? ""}` : "Not contacted",
+      promise: r.promised_by ? `by ${fmtShort(r.promised_by)}${withFigures && r.promised_amount != null ? ` · ${fmt(r.promised_amount)}` : ""}` : "",
+      nextStep: r.next_step && !r.next_step_done ? `${r.next_step}${r.next_step_assignee_name ? ` — ${r.next_step_assignee_name}` : ""}${r.next_follow_up ? `, ${fmtShort(r.next_follow_up)}` : ""}` : "",
+      owes: withFigures ? r.balance : null,
+      overdue: withFigures ? r.overdue : null,
+    }));
+    const scope = `${regionId ? (rows.find((r) => r.branch_id === regionId)?.region_name ?? "Region") : "All regions"} · ${show === "late" ? "late clients" : show === "mine" ? "my steps" : "everyone who owes"}`;
+    void downloadFollowUpPdf({ company, rows: rowsOut, withFigures, scope, asOf: fmtDate(t) });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {([["late", "Late"], ["all", "Everyone who owes"], ["mine", "My next steps"]] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setShow(k)}
+            className={`px-3 py-1.5 rounded-lg text-sm border ${show === k ? "bg-foreground text-background border-foreground" : "bg-card border-border hover:bg-muted"}`}>
+            {label}{k === "late" ? ` (${rows.filter((r) => (!regionId || r.branch_id === regionId) && r.is_late).length})` : ""}
+          </button>
+        ))}
+        <div className="relative min-w-[180px] max-w-xs flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-border bg-card text-sm" placeholder="Search clients" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div className="flex-1" />
+        <div className="inline-flex items-center rounded-lg border border-border overflow-hidden text-sm">
+          <span className="px-2.5 text-xs text-muted-foreground"><FileText className="w-3.5 h-3.5 inline" /> PDF</span>
+          <button className="px-3 py-1.5 border-l border-border hover:bg-accent" onClick={() => exportPdf(false)}>Without figures</button>
+          {canSeeAmounts && <button className="px-3 py-1.5 border-l border-border hover:bg-accent" onClick={() => exportPdf(true)}>With figures</button>}
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        A client is late once their usual pay day has passed for their oldest unpaid invoice — or {lateAfter} days after the invoice when no pay day is set.
+        Anything left from before Bastion is always late. Set each client's usual pay day in the "Pays on" column.
+      </p>
+      {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
+
+      <div className="rounded-xl border border-border bg-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/60 text-left">
+            <tr className="text-xs text-muted-foreground">
+              <th className="px-3 py-2 w-6"></th>
+              <th className="px-3 py-2">Client</th>
+              <th className="px-3 py-2">Late</th>
+              <th className="px-3 py-2">Pays on</th>
+              {canSeeAmounts && <th className="px-3 py-2 text-right">Owes</th>}
+              {canSeeAmounts && <th className="px-3 py-2 text-right">Late amount</th>}
+              <th className="px-3 py-2">Last contact</th>
+              <th className="px-3 py-2">Promise</th>
+              <th className="px-3 py-2">Next step</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={10} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
+            ) : visible.length === 0 ? (
+              <tr><td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">{show === "late" ? "No client is late." : show === "mine" ? "No open steps for you." : "No client owes anything."}</td></tr>
+            ) : visible.flatMap((r) => {
+              const stepDue = !!r.next_step && !r.next_step_done && !!r.next_follow_up && r.next_follow_up <= t;
+              const promiseMissed = !!r.promised_by && r.promised_by < t && r.is_late;
+              const main = (
+                <tr key={r.client_id} className="border-t border-border align-top">
+                  <td className="px-3 py-2">
+                    <button onClick={() => void openHistory(r.client_id)} className="text-muted-foreground hover:text-foreground" title="Follow-up history">
+                      {open === r.client_id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2">
+                    {onOpenClient ? <button className="font-medium text-foreground hover:underline text-left" onClick={() => onOpenClient(r.client_id)}>{r.client_name}</button>
+                      : <div className="font-medium text-foreground">{r.client_name}</div>}
+                    {!regionId && r.region_name && <div className="text-[11px] text-muted-foreground">{r.region_name}</div>}
+                  </td>
+                  <td className={`px-3 py-2 whitespace-nowrap text-xs ${r.is_late ? "text-danger-700 dark:text-danger-500 font-semibold" : "text-muted-foreground"}`}>{lateText(r)}</td>
+                  <td className="px-3 py-2">
+                    {canAct ? (
+                      <ThemedSelect value={r.usual_pay_day ?? ""} onChange={(e) => void setPayDay(r, e.target.value)} className="text-xs">
+                        <option value="">Not set</option>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{ordinal(d)}</option>)}
+                      </ThemedSelect>
+                    ) : <span className="text-xs">{r.usual_pay_day ? ordinal(r.usual_pay_day) : "—"}</span>}
+                  </td>
+                  {canSeeAmounts && <td className="px-3 py-2 text-right font-ledger">{fmt(r.balance)}</td>}
+                  {canSeeAmounts && <td className="px-3 py-2 text-right font-ledger">{fmt(r.overdue)}</td>}
+                  <td className="px-3 py-2 text-xs max-w-[260px]">
+                    {r.last_contact_on ? <><span className="text-muted-foreground">{fmtShort(r.last_contact_on)} · {channelLabel(r.last_contact_channel)}</span><div className="line-clamp-2">{r.last_contact_note}</div></>
+                      : <span className="text-muted-foreground">Not contacted</span>}
+                  </td>
+                  <td className={`px-3 py-2 text-xs whitespace-nowrap ${promiseMissed ? "text-danger-700 dark:text-danger-500 font-semibold" : ""}`}>
+                    {r.promised_by ? <>by {fmtShort(r.promised_by)}{canSeeAmounts && r.promised_amount != null ? <> · {fmt(r.promised_amount)}</> : null}{promiseMissed ? <div>missed</div> : null}</> : ""}
+                  </td>
+                  <td className="px-3 py-2 text-xs max-w-[220px]">
+                    {r.next_step && !r.next_step_done ? (
+                      <>
+                        <div className={stepDue ? "font-semibold text-warning-700 dark:text-warning-500" : ""}>{r.next_step}</div>
+                        <div className="text-muted-foreground">{r.next_step_assignee_name ?? "Anyone"}{r.next_follow_up ? ` · ${stepDue ? "due " : ""}${fmtShort(r.next_follow_up)}` : ""}</div>
+                        {canAct && <button className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline" onClick={() => void doneStep(r)}><Check className="w-3 h-3" /> Done</button>}
+                      </>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">{canAct && <Button variant="secondary" size="sm" onClick={() => setLogFor(r)}>Log contact</Button>}</td>
+                </tr>
+              );
+              if (open !== r.client_id) return [main];
+              return [main, (
+                <tr key={`${r.client_id}-h`} className="bg-muted/30">
+                  <td></td>
+                  <td colSpan={9} className="px-3 py-2">
+                    {history.length === 0 ? <div className="text-xs text-muted-foreground">No contact logged yet.</div> : (
+                      <ul className="space-y-1 text-xs">
+                        {history.map((h) => (
+                          <li key={h.id}>
+                            <span className="text-muted-foreground">{fmtDate(h.contacted_on)} · {channelLabel(h.channel)}{h.logged_by_name ? ` · ${h.logged_by_name}` : ""}</span> — {h.note}
+                            {h.promised_by && <span className="ml-2 font-semibold">Promised by {fmtShort(h.promised_by)}{h.promised_amount != null ? ` · ${fmt(h.promised_amount)}` : ""}</span>}
+                            {h.next_step && <span className="ml-2 text-muted-foreground">Next: {h.next_step}{h.next_step_assignee_name ? ` (${h.next_step_assignee_name})` : ""}{h.next_follow_up ? ` by ${fmtShort(h.next_follow_up)}` : ""}{h.next_step_done_at ? " ✓" : ""}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                </tr>
+              )];
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {canSetPolicy && (
+        <div className="rounded-xl border border-border bg-card p-3 text-sm flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">With no pay day set, a client is late</span>
+          <ThemedSelect value={lateAfter} onChange={(e) => void saveLateAfter(Number(e.target.value))}>
+            {[3, 5, 7, 10, 14, 21, 30].map((d) => <option key={d} value={d}>{d} days</option>)}
+          </ThemedSelect>
+          <span className="text-muted-foreground">after the invoice date.</span>
+        </div>
+      )}
+
+      {logFor && <ContactModal clientId={logFor.client_id} clientName={logFor.client_name} people={people}
+        onClose={() => setLogFor(null)} onSaved={() => { setLogFor(null); void load(); if (open === logFor.client_id) void openHistory(logFor.client_id); }} />}
+    </div>
+  );
+}
+
+/**
+ * Log a contact. Shared with the client ledger. The promise AMOUNT field is
+ * offered only to logins that can see amounts; log_client_followup refuses an
+ * amount from anyone else regardless.
+ */
+export function ContactModal({ clientId, clientName, people: given, onClose, onSaved }: {
+  clientId: string; clientName: string; people?: { id: string; full_name: string }[]; onClose: () => void; onSaved: () => void;
+}) {
+  const canSeeAmounts = useCanSeeAmounts();
+  const [people, setPeople] = useState(given ?? []);
+  const [channel, setChannel] = useState("call");
+  const [on, setOn] = useState(today());
+  const [note, setNote] = useState("");
+  const [promised, setPromised] = useState("");
+  const [promisedBy, setPromisedBy] = useState("");
+  const [step, setStep] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (given) return;
+    void supabase.rpc("followup_assignees").then(({ data }) => setPeople((data ?? []) as { id: string; full_name: string }[]));
+  }, [given]);
+
+  const save = async () => {
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("log_client_followup", {
+      p_client_id: clientId, p_channel: channel, p_note: note, p_contacted_on: on || null,
+      p_promised_amount: canSeeAmounts && promised ? Number(promised) : null, p_promised_by: promisedBy || null,
+      p_next_follow_up: next || null, p_next_step: step.trim() || null, p_next_step_assignee: assignee || null,
+    });
+    setBusy(false);
+    if (error) return setErr(friendlyDbError(error));
+    onSaved();
+  };
+  return (
+    <Modal isOpen onClose={onClose} title={`Log contact — ${clientName}`} error={err} onDismissError={() => setErr(null)}
+      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save"}</Button></div>}>
+      <div className="space-y-4 text-sm">
+        <div className="flex flex-wrap gap-2">
+          {CHANNELS.map(([k, label]) => (
+            <button key={k} onClick={() => setChannel(k)}
+              className={`px-3 py-1.5 rounded-lg border ${channel === k ? "bg-foreground text-background border-foreground" : "bg-card border-border"}`}>{label}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="lbl">Date</span>
+            <input type="date" max={today()} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={on} onChange={(e) => setOn(e.target.value)} /></label>
+          <label className="block"><span className="lbl">They promised to pay by (optional)</span>
+            <input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={promisedBy} onChange={(e) => setPromisedBy(e.target.value)} /></label>
+        </div>
+        <label className="block"><span className="lbl">What did they say?</span>
+          <textarea rows={3} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Spoke to accounts; cheque being signed this week" /></label>
+        {canSeeAmounts && (
+          <label className="block"><span className="lbl">Promised amount (optional)</span>
+            <input type="number" inputMode="decimal" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={promised} onChange={(e) => setPromised(e.target.value)} /></label>
+        )}
+        <div className="rounded-lg border border-border p-3 space-y-3">
+          <div className="lbl">Next step (optional)</div>
+          <input className="w-full px-3 py-2 rounded-lg border border-border bg-card" value={step} onChange={(e) => setStep(e.target.value)} placeholder="e.g. Visit to collect the cheque" />
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block"><span className="lbl">Who</span>
+              <ThemedSelect className="mt-1" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+                <option value="">Anyone</option>
+                {people.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </ThemedSelect></label>
+            <label className="block"><span className="lbl">By when</span>
+              <input type="date" min={on} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={next} onChange={(e) => setNext(e.target.value)} /></label>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}

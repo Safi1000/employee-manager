@@ -72,6 +72,7 @@ const AccountingCore = lazyPage(() => import("./pages/super-admin/AccountingCore
 const AccessGovernance = lazyPage(() => import("./pages/super-admin/AccessGovernance"));
 const MyProfile = lazyPage(() => import("./pages/super-admin/MyProfile"));
 const DailyReports = lazyPage(() => import("./pages/super-admin/DailyReports"));
+const PaymentFollowUpPage = lazyPage(() => import("./pages/super-admin/PaymentFollowUpPage"));
 const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const FieldReview = lazyPage(() => import("./pages/super-admin/FieldReview"));
 const FieldAppPrivacy = lazyPage(() => import("./pages/FieldAppPrivacy"));
@@ -261,6 +262,8 @@ export const router = createBrowserRouter([
       { path: "client-relationships", element: <Navigate to="/app/clients" replace /> },
       // Field Operations repurposed → Daily Reports (date-wise client report → PDF + record).
       { path: "daily-reports", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <DailyReports />) },
+      // 0628: the ops team may hold receivables.follow_up alone.
+      { path: "payment-follow-up", element: guard(["receivables.follow_up", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit"], <PaymentFollowUpPage />) },
       { path: "field-ops", element: <Navigate to="/app/daily-reports" replace /> },
       // Field app logins and site coverage. Role, not permission: admin_field_* refuse anyone but a super admin.
       { path: "field-supervisors", element: <RequireAuth roles={["super_admin"]}><FieldSupervisors /></RequireAuth> },

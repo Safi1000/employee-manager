@@ -470,6 +470,8 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "banks.view", label: "View bank accounts & cash custody" },
       { key: "receivables.view", label: "View client receivables" },
       // 0627. The second half of a write-off: approving one someone else asked for.
+      // 0628. The ops team: the Payment Follow-up page only — names and dates, never amounts.
+      { key: "receivables.follow_up", label: "Follow up client payments (names and dates only, no amounts)" },
       { key: "receivables.write_off_approve", label: "Approve bad-debt write-offs (not your own request)" },
       { key: "payables.view", label: "View accounts payable" },
       { key: "accounting.edit", label: "Edit banks, transfers, reconciliation" },

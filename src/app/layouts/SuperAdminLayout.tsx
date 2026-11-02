@@ -24,6 +24,7 @@ import {
   Settings as SettingsIcon,
   CreditCard,
   FileText,
+  PhoneCall,
   Package,
   Bell,
   Folder,
@@ -156,6 +157,7 @@ export default function SuperAdminLayout() {
   const FIELD_REVIEW: LinkDef = { to: "/app/field-review", label: "Field Review", icon: ClipboardCheck, perms: ["attendance.field_review", "warnings.approve", "field.money_approve", "employees.edit"] };
   const FIELD_SUPERVISORS: LinkDef = { to: "/app/field-supervisors", label: "Field Supervisors", icon: Smartphone, roles: ["super_admin"] };
   const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
+  const PAYMENT_FOLLOW_UP: LinkDef = { to: "/app/payment-follow-up", label: "Payment Follow-up", icon: PhoneCall, perms: ["receivables.follow_up", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/app/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
   const ACCOUNTING_CORE: LinkDef = { to: "/app/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
   // Super admins only — it grants permissions, so it must not be reachable via
@@ -266,6 +268,7 @@ export default function SuperAdminLayout() {
   // Inventory + Assets merged → Assets & Issuance.
   const operations = buildGroup("Operations", "/app/operations", [
     DAILY_REPORTS,
+    PAYMENT_FOLLOW_UP,
     // Field app logins: who supervises which sites (super admins, 30 Oct 2026).
     FIELD_SUPERVISORS,
     INCIDENTS,

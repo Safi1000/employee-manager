@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Ban, Download, FileText, Loader2, MessageSquare, Plus, Search } from "lucide-react";
 import Tabs from "./Tabs";
+import PaymentFollowUp, { ContactModal, channelLabel } from "./PaymentFollowUp";
 import Button from "./Button";
 import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
@@ -71,8 +72,6 @@ type Row = {
 
 type RegionTotal = { branch_id: string | null; region_name: string; clients: number; balance: number; overdue: number; age_over_90: number };
 
-const CHANNELS: [string, string][] = [["call", "Call"], ["whatsapp", "WhatsApp"], ["letter", "Letter"], ["visit", "Visit"], ["email", "Email"]];
-const channelLabel = (c: string | null) => CHANNELS.find(([k]) => k === c)?.[1] ?? c ?? "";
 
 type Line = {
   line_no: number;
@@ -160,7 +159,6 @@ export default function ClientReceivables() {
   const [selected, setSelected] = useState<Row | null>(null);
   const [view, setView] = usePageState<"balances" | "followup" | "writeoffs">("ClientReceivables.view", "balances");
   const [regions, setRegions] = useState<RegionTotal[]>([]);
-  const [contactFor, setContactFor] = useState<Row | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -231,9 +229,8 @@ export default function ClientReceivables() {
     return (
       <div className="space-y-4">
         {viewTabs}
-        <FollowUpView rows={rows.filter((r) => !regionId || r.branch_id === regionId)} loading={loading} canEdit={canEdit}
-          onOpen={setSelected} onLog={setContactFor} />
-        {contactFor && <ContactModal row={contactFor} onClose={() => setContactFor(null)} onSaved={() => { setContactFor(null); void load(); }} />}
+        {/* 0628: the same list the ops team sees on Payment Follow-up, with amounts for finance. */}
+        <PaymentFollowUp onOpenClient={(id) => setSelected(rows.find((r) => r.client_id === id) ?? null)} />
       </div>
     );
   }
@@ -548,7 +545,7 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
         )}
       </div>
 
-      {contactOpen && <ContactModal row={row} onClose={() => setContactOpen(false)} onSaved={() => { setContactOpen(false); void load(); }} />}
+      {contactOpen && <ContactModal clientId={row.client_id} clientName={row.client_name} onClose={() => setContactOpen(false)} onSaved={() => { setContactOpen(false); void load(); }} />}
       {writeOffOpen && <WriteOffModal row={row} onClose={() => setWriteOffOpen(false)} onSaved={() => { setWriteOffOpen(false); void load(); }} />}
       {receiptOpen && (
         <ReceiptModal row={row} companyId={companyId} owed={row.balance}
@@ -783,126 +780,6 @@ function TaxModal({ line, onClose, onSaved }: { line: Line; onClose: () => void;
           <span className="lbl">Tax deducted (PKR)</span>
           <input type="number" inputMode="decimal" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={wht} onChange={(e) => setWht(e.target.value)} />
         </label>
-      </div>
-    </Modal>
-  );
-}
-
-// ───────────────────────────── Follow-up (0627) ─────────────────────────────
-
-/**
- * Who to chase: every client with money older than 30 days (including what is
- * left from before Bastion), follow-ups due today first, then the most overdue.
- */
-function FollowUpView({ rows, loading, canEdit, onOpen, onLog }: {
-  rows: Row[]; loading: boolean; canEdit: boolean; onOpen: (r: Row) => void; onLog: (r: Row) => void;
-}) {
-  const t = today();
-  const list = rows
-    .filter((r) => r.overdue > 0.5)
-    .sort((a, b) => {
-      const ad = a.next_follow_up && a.next_follow_up <= t ? 0 : 1;
-      const bd = b.next_follow_up && b.next_follow_up <= t ? 0 : 1;
-      return ad - bd || b.overdue - a.overdue;
-    });
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        Clients with money more than 30 days old, including what is left from before Bastion. Follow-ups due today or earlier come first.
-        Log each call, WhatsApp, letter or visit with what they said, any promise, and when to follow up again.
-      </p>
-      <div className="rounded-xl border border-border bg-card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/60 text-left">
-            <tr className="text-xs text-muted-foreground">
-              <th className="px-3 py-2">Client</th>
-              <th className="px-3 py-2 text-right">Overdue</th>
-              <th className="px-3 py-2 text-right">Over 90 days</th>
-              <th className="px-3 py-2">Last contact</th>
-              <th className="px-3 py-2">Promise</th>
-              <th className="px-3 py-2">Follow up</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
-            ) : list.length === 0 ? (
-              <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">Nobody owes anything older than 30 days.</td></tr>
-            ) : list.map((r) => {
-              const due = !!r.next_follow_up && r.next_follow_up <= t;
-              // A promise is broken when its date has passed with no payment since the contact that made it.
-              const broken = !!r.promised_by && r.promised_by < t && (!r.last_paid_on || r.last_paid_on < (r.last_contact_on ?? ""));
-              return (
-                <tr key={r.client_id} className="border-t border-border align-top">
-                  <td className="px-3 py-2"><button className="font-medium text-foreground hover:underline text-left" onClick={() => onOpen(r)}>{r.client_name}</button></td>
-                  <td className="px-3 py-2 text-right font-ledger font-semibold">{fmt(r.overdue)}</td>
-                  <td className={`px-3 py-2 text-right font-ledger ${r.age_over_90 > 0.5 ? "text-danger-700 dark:text-danger-500" : ""}`}>{fmt(r.age_over_90)}</td>
-                  <td className="px-3 py-2 text-xs max-w-[280px]">
-                    {r.last_contact_on ? <><span className="text-muted-foreground">{fmtDate(r.last_contact_on)} · {channelLabel(r.last_contact_channel)}</span><div className="text-foreground line-clamp-2">{r.last_contact_note}</div></>
-                      : <span className="text-muted-foreground">Never contacted</span>}
-                  </td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">
-                    {r.promised_amount != null ? <span className={broken ? "text-danger-700 dark:text-danger-500 font-semibold" : ""}>{fmt(r.promised_amount)} by {fmtDate(r.promised_by)}</span> : ""}
-                  </td>
-                  <td className={`px-3 py-2 text-xs whitespace-nowrap ${due ? "text-warning-700 dark:text-warning-500 font-semibold" : "text-muted-foreground"}`}>
-                    {r.next_follow_up ? (due ? `Due ${fmtDate(r.next_follow_up)}` : fmtDate(r.next_follow_up)) : "Not set"}
-                  </td>
-                  <td className="px-3 py-2 text-right">{canEdit && <Button variant="secondary" size="sm" onClick={() => onLog(r)}>Log contact</Button>}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function ContactModal({ row, onClose, onSaved }: { row: Row; onClose: () => void; onSaved: () => void }) {
-  const [channel, setChannel] = useState("call");
-  const [on, setOn] = useState(today());
-  const [note, setNote] = useState("");
-  const [promised, setPromised] = useState("");
-  const [promisedBy, setPromisedBy] = useState("");
-  const [next, setNext] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const save = async () => {
-    setBusy(true); setErr(null);
-    const { error } = await supabase.rpc("log_client_followup", {
-      p_client_id: row.client_id, p_channel: channel, p_note: note, p_contacted_on: on || null,
-      p_promised_amount: promised ? Number(promised) : null, p_promised_by: promisedBy || null, p_next_follow_up: next || null,
-    });
-    setBusy(false);
-    if (error) return setErr(friendlyDbError(error));
-    onSaved();
-  };
-  return (
-    <Modal isOpen onClose={onClose} title={`Log contact — ${row.client_name}`} error={err} onDismissError={() => setErr(null)}
-      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save"}</Button></div>}>
-      <div className="space-y-4 text-sm">
-        <p className="text-muted-foreground">They owe {fmtBal(row.balance)}{row.overdue > 0.5 ? `, of which ${fmt(row.overdue)} is more than 30 days old` : ""}.</p>
-        <div className="flex flex-wrap gap-2">
-          {CHANNELS.map(([k, label]) => (
-            <button key={k} onClick={() => setChannel(k)}
-              className={`px-3 py-1.5 rounded-lg border ${channel === k ? "bg-foreground text-background border-foreground" : "bg-card border-border"}`}>{label}</button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block"><span className="lbl">Date</span>
-            <input type="date" max={today()} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={on} onChange={(e) => setOn(e.target.value)} /></label>
-          <label className="block"><span className="lbl">Follow up again on</span>
-            <input type="date" min={on} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={next} onChange={(e) => setNext(e.target.value)} /></label>
-        </div>
-        <label className="block"><span className="lbl">What did they say?</span>
-          <textarea rows={3} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Spoke to accounts; cheque being signed this week" /></label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block"><span className="lbl">Promised amount (optional)</span>
-            <input type="number" inputMode="decimal" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={promised} onChange={(e) => setPromised(e.target.value)} /></label>
-          <label className="block"><span className="lbl">Promised by</span>
-            <input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={promisedBy} onChange={(e) => setPromisedBy(e.target.value)} /></label>
-        </div>
       </div>
     </Modal>
   );
