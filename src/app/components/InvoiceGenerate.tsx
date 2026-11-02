@@ -355,14 +355,17 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
   // CompanyPrefix from Invoice Structure settings (falls back to company-name
   // initials); ClientPrefix reuses the client's Employee-ID prefix.
   const suggestNumber = useCallback(
-    (client: Client, taken: Set<string>): string => {
+    (client: Client, taken: Set<string>, servicePeriodStart?: string): string => {
       const settings = { ...DEFAULT_INVOICE_SETTINGS, ...(company?.invoice_settings ?? {}) };
       const initials = (name?: string | null) =>
         (name ?? "").split(/\s+/).filter((w) => /^[A-Za-z]/.test(w)).slice(0, 3).map((w) => w[0].toUpperCase()).join("");
       const companyPrefix = (settings.company_prefix?.trim() || initials(company?.legal_name || company?.name) || "INV").toUpperCase();
       const clientPrefix = (client.employee_id_prefix?.trim() || client.client_code || "CLT").toUpperCase();
-      const yy = period.slice(2, 4);
-      const mm = period.slice(5, 7);
+      // 3 Nov 2026: the number names the month BILLED (the period's start), not the
+      // month the generator was run for — GGS-26-INK-11 billed October.
+      const basis = servicePeriodStart || period;
+      const yy = basis.slice(2, 4);
+      const mm = basis.slice(5, 7);
       const base = `${companyPrefix}-${yy}-${clientPrefix}-${mm}`;
       if (!taken.has(base)) return base;
       let n = 2;
@@ -407,7 +410,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
         const columns = withAmountLast((client.variable_columns && client.variable_columns.length > 0)
           ? client.variable_columns
           : DEFAULT_VARIABLE_COLUMNS);
-        const number = suggestNumber(client, taken);
+        const number = suggestNumber(client, taken, start);
         taken.add(number);
         return {
           contractId: con.id,
@@ -469,7 +472,7 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
           component: t.component,
         }));
       const remitIndex = Math.max(0, (client.remit_accounts ?? []).findIndex((r) => r.is_default));
-      const number = suggestNumber(client, taken);
+      const number = suggestNumber(client, taken, start);
       taken.add(number);
       return {
         contractId: con.id,
