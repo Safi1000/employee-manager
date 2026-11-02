@@ -55,7 +55,7 @@ begin
   v_src := replace(v_src, procedure_anchor,
     'values (v_company, p_guard_id, p_new_client_id, p_contract_line_id, v_site, v_eff,
             -- 0629: a move from an existing posting is a transfer, not a new hire.
-            case when v_start is not null then ''transfer'' else ''new_hire'' end);');
+            (case when v_start is not null then ''transfer'' else ''new_hire'' end)::public.deployment_reason);');
 
   procedure_anchor := '           join_date = v_eff,';
   v_cnt := (length(v_src) - length(replace(v_src, procedure_anchor, ''))) / length(procedure_anchor);
