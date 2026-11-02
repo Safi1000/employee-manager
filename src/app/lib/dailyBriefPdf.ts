@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
+import { keepReport } from "./reportArchive";
 import { formatDate } from "./date";
 import type { Company } from "./supabase";
 import { describeUnconfirmed, type AttendanceSummary } from "./attendanceSummary";
@@ -569,5 +570,7 @@ export function generateOperationsPdf(company: Company | null | undefined, parts
   const anyDaily = parts.some((pt) => pt.daily), anyAtt = parts.some((pt) => pt.attendance);
   footer(doc, b, anyDaily ? refOf("DOR", day) : refOf("ATR", day));
   const kind = anyDaily && anyAtt ? "Daily and attendance report" : anyDaily ? "Daily operations report" : "Attendance report";
-  void savePdf(doc, `${kind}${fileRegion ? ` ${fileRegion}` : ""} ${day}.pdf`);
+  const fileName = `${kind}${fileRegion ? ` ${fileRegion}` : ""} ${day}.pdf`;
+  // 0633: the same file is kept for the CEO dashboard, after savePdf stamps it.
+  void savePdf(doc, fileName).then(() => keepReport(doc, { companyId: company?.id, kind: anyDaily && anyAtt ? "daily_attendance" : anyDaily ? "daily" : "attendance", reportDate: day, region: fileRegion, fileName }));
 }

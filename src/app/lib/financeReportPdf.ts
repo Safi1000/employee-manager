@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
+import { keepReport } from "./reportArchive";
 import type { Company } from "./supabase";
 import { brandingFromCompany } from "./pdfBranding";
 import { INK, LH, M, Page, RED, RULE, SOFT, W, footer, heading, letterhead, longDay, refOf, signOff } from "./dailyBriefPdf";
@@ -175,6 +176,9 @@ export async function downloadFinanceReportPdf(opts: { company: Company | null |
 
   signOff(p, "Prepared by", opts.preparedBy ? [opts.preparedBy] : []);
   footer(doc, b, ref);
-  await savePdf(doc, `Finance report${opts.region ? ` ${opts.region}` : ""} ${todayIso}.pdf`);
+  const fileName = `Finance report${opts.region ? ` ${opts.region}` : ""} ${todayIso}.pdf`;
+  await savePdf(doc, fileName);
+  // 0633: kept for the CEO dashboard — the stamped copy, as downloaded.
+  void keepReport(doc, { companyId: opts.company?.id, kind: "finance", reportDate: todayIso, region: opts.region, fileName });
   void longDay;
 }
