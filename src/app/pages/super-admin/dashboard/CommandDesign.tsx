@@ -32,7 +32,8 @@ const AGE = [
   { label: "0–30 days", color: "#2f5d8a" },
   { label: "31–60", color: "#7fa3c4" },
   { label: "61–90", color: "#e9a73c" },
-  { label: "90+", color: "#a3392a" },
+  // Opening balances still owed (31 Aug) are undated, so they count here until dated.
+  { label: "90+ / opening", color: "#a3392a" },
 ] as const;
 
 function Card({ kicker, title, aside, children, className = "" }: { kicker: string; title?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string }) {
@@ -271,7 +272,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             {d.can.receivables && c?.receiptsMtd != null && <BandStat to="/app/invoices" label="Received, month to date" value={mil(c.receiptsMtd)} sub="from clients" />}
             {d.can.accounting && <BandStat to="/app/accounting" label="Cash and bank" value={mil(cashTotal)} sub={`${d.banks.length} bank accounts${c?.cashInHand != null ? " + cash held" : ""}`} />}
             {tally && <BandStat to="/app/accounting" label="Banks tallied" value={tally.value} sub={tally.sub} tone={tally.tone} title={tally.tip} />}
-            {d.can.receivables && ar && <BandStat to="/app/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% older than 90 days`} tone={ar90 > 0.25 ? "bad" : undefined} />}
+            {d.can.receivables && ar && <BandStat to="/app/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% over 90 days or opening`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
         </div>
 
@@ -577,7 +578,9 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
                     <span className="font-display text-lg font-bold group-hover:underline truncate max-w-full">{r.name}</span>
                     {r.charged != null && <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${r.charged ? "bg-brand-100 text-brand-700 dark:text-brand-500" : "bg-muted text-muted-foreground"}`}>{r.charged ? "Head office charged" : "Head office not charged"}</span>}
                   </span>
-                  <span className="flex flex-col"><span className="text-xs text-muted-foreground">Profit, last month</span><span className="font-ledger text-2xl font-semibold">{mil(r.net)}</span></span>
+                  <span className="flex flex-col"><span className="text-xs text-muted-foreground">Profit, last month</span><span className={`font-ledger text-2xl font-semibold ${!c.payrollLast ? "opacity-60" : ""}`}>{mil(r.net)}</span>
+                    {/* 3 Nov 2026: with last month's payroll not in, this "profit" is revenue less overheads (ISB/RWP read 93%). */}
+                    {!c.payrollLast && <span className="text-[11px] text-warning-700 dark:text-warning-500">Payroll not in yet — salaries left out</span>}</span>
                   <svg width="100%" height="46" viewBox="0 0 200 46" preserveAspectRatio="none" role="img" aria-label={`${r.name} invoices over six months`}>
                     <polyline points={`0,46 ${pts.join(" ")} 200,46`} fill="color-mix(in srgb, var(--color-brand-500) 28%, transparent)" stroke="none" />
                     <polyline points={pts.join(" ")} fill="none" stroke="var(--color-brand-700)" strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />

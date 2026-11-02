@@ -1014,9 +1014,12 @@ export default function Invoices() {
         {tab === "ledger" && (
           <div className="mt-3">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                <StatCard title="Total invoiced" value={`PKR ${summary.invoiced.toLocaleString()}`} icon={ReceiptText} tone="brand" onClick={() => openSummary("invoiced")} />
-                <StatCard title="Total received" value={`PKR ${summary.received.toLocaleString()}`} icon={CheckCircle2} tone="success" onClick={() => openSummary("received")} />
-                <StatCard title="Outstanding" value={`PKR ${summary.outstanding.toLocaleString()}`} icon={Clock} tone="warning" onClick={() => openSummary("outstanding")} />
+                {/* 3 Nov 2026: whole rupees on tiles; and "Outstanding" says what it covers —
+                    these invoices only. What clients owe in all (opening balances
+                    included) is the Receivables tab. */}
+                <StatCard title="Total invoiced" value={`PKR ${Math.round(summary.invoiced).toLocaleString()}`} icon={ReceiptText} tone="brand" onClick={() => openSummary("invoiced")} />
+                <StatCard title="Total received" value={`PKR ${Math.round(summary.received).toLocaleString()}`} icon={CheckCircle2} tone="success" onClick={() => openSummary("received")} />
+                <StatCard title="Outstanding on these invoices" value={`PKR ${Math.round(summary.outstanding).toLocaleString()}`} icon={Clock} tone="warning" onClick={() => openSummary("outstanding")} />
                 <StatCard
                   title="Collected"
                   value={summary.invoiced > 0 ? `${Math.round((summary.received / summary.invoiced) * 100)}%` : "—"}

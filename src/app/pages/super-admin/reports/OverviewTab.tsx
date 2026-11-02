@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { loadLatestChecks, ranAt } from "../../../lib/ledgerChecks";
 import { AlertTriangle, Building2, CheckCircle2, Loader2, Scale, ShieldAlert, Users } from "lucide-react";
 import StatCard from "../../../components/StatCard";
 import Badge from "../../../components/Badge";
@@ -24,6 +25,7 @@ import {
  */
 
 type CheckRow = { check_name: string; expected: number; actual: number; difference: number; passed: boolean };
+// 0635: read from the kept nightly run (ledger_checks() outlasts a page's timeout).
 
 /** The function behind each control, for its drill-down rows. */
 const CHECK_ROWS: Record<string, { fn: string; args: "co" | "co_month" | "none"; label: string }> = {
@@ -130,7 +132,7 @@ function CheckRows({ name, period }: { name: string; period: string }) {
 function FindingCard({ name, check, period }: { name: string; check: CheckRow | undefined; period: string }) {
   const [open, setOpen] = useState(false);
   const meta = CHECK_ROWS[name];
-  const status = check == null ? <Badge tone="neutral">Proposed (0516)</Badge>
+  const status = check == null ? <Badge tone="neutral">Not run yet</Badge>
     : check.passed ? <Badge tone="success">Clear</Badge> : <Badge tone="danger">{money(check.actual)} found</Badge>;
   return (
     <div className="border border-border rounded-lg">
@@ -193,6 +195,8 @@ export function BridgePanel({ period }: { period: string }) {
 export default function OverviewTab({ period, onOpenTab }: { period: string; onOpenTab: (t: "clients" | "statements") => void }) {
   const companyId = useCompanyId();
   const [checks, setChecks] = useState<CheckRow[] | null>(null);
+  const [checksAt, setChecksAt] = useState<string | null>(null);
+  const [checksErr, setChecksErr] = useState<string | null>(null);
   const [hoLine, setHoLine] = useState<number | null>(null);
   const [cover, setCover] = useState<{ value: number | null; missing: boolean }>({ value: null, missing: false });
   const [error, setError] = useState<string | null>(null);
@@ -204,13 +208,13 @@ export default function OverviewTab({ period, onOpenTab }: { period: string; onO
     void (async () => {
       setChecks(null);
       const [lc, cs, cv] = await Promise.all([
-        supabase.rpc("ledger_checks", { p_company_id: companyId }),
+        loadLatestChecks(companyId),
         supabase.rpc("client_statement_loaded", { p_start: monthStart(period), p_end: monthEnd(period), p_basis: "revenue", p_company_id: companyId }),
         callRpc<{ unbilled_cover: number }[]>("client_cover", { p_company_id: companyId, p_month: monthStart(period) }),
       ]);
       if (cancelled) return;
-      if (lc.error) { setError(lc.error.message); return; }
-      setChecks((lc.data ?? []) as CheckRow[]);
+      setChecksErr(lc.error); setChecksAt(lc.runAt);
+      setChecks(lc.error ? [] : (lc.rows as CheckRow[]));
       const ho = ((cs.data ?? []) as { client_id: string | null; ho_share: number }[]).find((r) => r.client_id == null);
       setHoLine(ho ? Number(ho.ho_share) : 0);
       setCover({ value: cv.data ? cv.data.reduce((s, r) => s + Number(r.unbilled_cover || 0), 0) : null, missing: cv.missing });
@@ -248,10 +252,12 @@ export default function OverviewTab({ period, onOpenTab }: { period: string; onO
 
       <div id="overview-red-controls" className="scroll-mt-4">
       <Panel icon={ShieldAlert} tone="danger" title="Every red control"
-        description="Straight from ledger_checks. Expected, actual and the difference; open one for the rows behind it."
+        description={`From last night's run${checksAt ? ` (${ranAt(checksAt)})` : ""}. Expected, actual and the difference; open one for the rows behind it.`}
         flush>
         {!checks ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Running the checks…</div>
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading last night's checks…</div>
+        ) : checksErr ? (
+          <div className="px-5 py-6 text-sm text-muted-foreground">{checksErr}</div>
         ) : red.length === 0 ? (
           <div className="flex items-center gap-2 px-5 py-6 text-sm text-success-700"><CheckCircle2 className="w-4 h-4" /> Every control is green.</div>
         ) : (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { loadLatestChecks, ranAt } from "../../lib/ledgerChecks";
 import { Link } from "react-router";
 import Header from "../../components/Header";
 import Tabs from "../../components/Tabs";
@@ -44,6 +45,9 @@ export default function Accountant() {
   const [period, setPeriod] = usePageState<string>("Accountant.period", previousMonthKey());
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [red, setRed] = useState<number | null>(null);
+  /** 0635: when the kept run is from, or why there is none. */
+  const [checksAt, setChecksAt] = useState<string | null>(null);
+  const [checksErr, setChecksErr] = useState<string | null>(null);
   const [closed, setClosed] = useState<boolean | null>(null);
   const months = recentMonths(15);
 
@@ -51,12 +55,12 @@ export default function Accountant() {
     if (!companyId) return;
     let cancelled = false;
     void Promise.all([
-      supabase.rpc("ledger_checks", { p_company_id: companyId }),
+      loadLatestChecks(companyId),
       supabase.from("accounting_periods").select("period_month").eq("period_month", monthStart(period)).maybeSingle(),
     ]).then(([lc, ap]) => {
       if (cancelled) return;
-      const rows = (lc.data ?? []) as { check_name: string; passed: boolean }[];
-      setRed(lc.error ? null : rows.filter((r) => !r.passed && r.check_name !== "checks_evaluated").length);
+      setRed(lc.error ? null : lc.rows.filter((r) => !r.passed && r.check_name !== "checks_evaluated").length);
+      setChecksAt(lc.runAt); setChecksErr(lc.error);
       setClosed(ap.data != null);
     });
     return () => { cancelled = true; };
@@ -78,7 +82,7 @@ export default function Accountant() {
             <button type="button" onClick={() => setSection("checks")} className="text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 hover:border-brand-500/70">
               <span className="lbl">Controls red</span>
               <span className={`font-ledger text-2xl font-semibold leading-none ${red ? "text-down" : "text-up"}`}>{red == null ? "…" : red}</span>
-              <span className="text-xs text-muted-foreground">{red == null ? "running the nightly controls…" : red ? "open Checks for the rows behind each" : "every control is green"}</span>
+              <span className="text-xs text-muted-foreground">{checksErr ? checksErr : red == null ? "reading last night's controls…" : `${red ? "open Checks for the rows behind each" : "every control is green"} · as of ${ranAt(checksAt)}`}</span>
             </button>
             <Link to="/app/period-close" className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 hover:border-brand-500/70">
               <span className="lbl">{monthLabel(period)}</span>

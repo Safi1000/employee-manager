@@ -209,6 +209,11 @@ export default function Clients() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  /** 3 Nov 2026: what each client owes, from client_receivables_today() — the
+   *  Receivables page's own reading, opening balances included. The card and
+   *  the band used to sum open invoices only and showed 21.1M against 31.6M,
+   *  with negative "owes" for clients who had paid against an opening balance. */
+  const [owedToday, setOwedToday] = useState<Map<string, { balance: number; overdue: number; lastPaidOn: string | null; lastPaidMode: string | null }>>(new Map());
   const [postedByClientId, setPostedByClientId] = useState<Map<string, number>>(new Map());
   // Phase 4: per-client committed slots vs active line assignments.
   const [committedByClientId, setCommittedByClientId] = useState<Map<string, number>>(new Map());
@@ -338,6 +343,11 @@ export default function Clients() {
     setBranches((branchesRes.data ?? []) as Branch[]);
     setContracts(cs);
     setInvoices((invoicesRes.data ?? []) as Invoice[]);
+    if (canSeeMoney) {
+      const { data: rec } = await supabase.rpc("client_receivables_today");
+      setOwedToday(new Map(((rec ?? []) as any[]).map((r) => [r.client_id as string,
+        { balance: Number(r.balance ?? 0), overdue: Number(r.overdue ?? 0), lastPaidOn: r.last_paid_on ?? null, lastPaidMode: r.last_paid_mode ?? null }])));
+    }
     setLoading(false);
   };
 
@@ -376,20 +386,24 @@ export default function Clients() {
   }, [rows, search, statusFilter, industryFilter, activeClientIds]);
 
   // Portfolio figures for the band and the client cards (2026-10-20 redesign).
-  // Read from the invoices and counts this page already loads — nothing new is
-  // fetched and nothing is redefined.
+  // What is owed comes from client_receivables_today (above); the last invoice
+  // from the invoices this page already loads.
   const owedByClient = useMemo(() => {
-    const m = new Map<string, { owed: number; last: string | null; lastAmount: number; oldestOpen: string | null }>();
+    const m = new Map<string, { owed: number; overdue: number; lastPaidOn: string | null; lastPaidMode: string | null; last: string | null; lastAmount: number; oldestOpen: string | null }>();
     for (const i of invoices as unknown as { client_id: string; invoice_date: string; invoice_amount: number; amount_received: number; outstanding?: number | null }[]) {
-      const cur = m.get(i.client_id) ?? { owed: 0, last: null, lastAmount: 0, oldestOpen: null };
+      const cur = m.get(i.client_id) ?? { owed: 0, overdue: 0, lastPaidOn: null, lastPaidMode: null, last: null, lastAmount: 0, oldestOpen: null };
       const open = Number(i.outstanding ?? Math.max(0, Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0)));
-      cur.owed += open;
       if (open > 0.5 && (!cur.oldestOpen || i.invoice_date < cur.oldestOpen)) cur.oldestOpen = i.invoice_date;
       if (!cur.last || i.invoice_date > cur.last) { cur.last = i.invoice_date; cur.lastAmount = Number(i.invoice_amount ?? 0); }
       m.set(i.client_id, cur);
     }
+    for (const [id, r] of owedToday) {
+      const cur = m.get(id) ?? { owed: 0, overdue: 0, lastPaidOn: null, lastPaidMode: null, last: null, lastAmount: 0, oldestOpen: null };
+      cur.owed = r.balance; cur.overdue = r.overdue; cur.lastPaidOn = r.lastPaidOn; cur.lastPaidMode = r.lastPaidMode;
+      m.set(id, cur);
+    }
     return m;
-  }, [invoices]);
+  }, [invoices, owedToday]);
   const portfolio = useMemo(() => {
     const active = rows.filter((r) => activeClientIds.has(r.id));
     const guards = active.reduce((n, r) => n + Number(r.employees_count ?? 0), 0);
@@ -635,6 +649,13 @@ export default function Clients() {
   const handleDelete = async (row: ClientRow) => {
     if (row.employees_count > 0) {
       setError(`Cannot delete ${row.name}: ${row.employees_count} active employee(s) are assigned. Reassign them first.`);
+      return;
+    }
+    // 3 Nov 2026: a client with invoices or a balance is history, not a mistake —
+    // end its contract instead, so the ledger and its receivable stay intact.
+    const o = owedByClient.get(row.id);
+    if (o && (o.last || Math.abs(o.owed) > 0.5)) {
+      setError(`Cannot delete ${row.name}: it has invoices${Math.abs(o.owed) > 0.5 ? ` and a balance of ${Math.round(o.owed).toLocaleString()}` : ""}. End its contract instead — it then shows under Inactive.`);
       return;
     }
     if (!window.confirm(`Delete client "${row.name}"? This cannot be undone.`)) return;
@@ -1276,7 +1297,7 @@ export default function Clients() {
                 { label: "Guards deployed", v: portfolio.guards.toLocaleString(), sub: "across active clients", tone: "text-foreground",
                   open: () => setSheet({ kicker, title: "Guards, by client", big: portfolio.guards.toLocaleString(), rows: guardRows }) },
                 canSeeMoney
-                  ? { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "open invoices, all clients", tone: portfolio.owed ? "text-heed" : "text-up",
+                  ? { label: "Owed to us", v: <><span className="cur">PKR</span>{Math.round(portfolio.owed).toLocaleString()}</>, sub: "today, opening balances included", tone: portfolio.owed ? "text-heed" : "text-up",
                       open: () => setSheet({ kicker, title: "Owed to us, by client", big: `PKR ${Math.round(portfolio.owed).toLocaleString()}`,
                         rows: rows.map((r) => ({ r, owed: owedByClient.get(r.id)?.owed ?? 0 })).filter((x) => Math.round(x.owed) !== 0)
                           .sort((a, b) => b.owed - a.owed).map((x) => ({ label: x.r.name, value: Math.round(x.owed).toLocaleString() })),
@@ -1375,7 +1396,7 @@ export default function Clients() {
                         return (
                           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border font-ledger ${tone}`}
                             title={`Health ${h.score}/100\n${h.parts.map((x) => `${x.k}: ${x.got}/25 — ${x.note}`).join("\n")}`}>
-                            ♥ {h.score}
+                            Health {h.score}
                           </span>
                         );
                       })()}
@@ -1387,16 +1408,19 @@ export default function Clients() {
                     <div><div className="lbl">Contracts</div><div className="font-ledger text-lg font-semibold">{row.contracts_count}</div></div>
                     {canSeeMoney && <div className="text-right"><div className="lbl">Owes</div><div className={`font-ledger text-lg font-semibold whitespace-nowrap ${o && o.owed > 0 ? "text-warning-700 dark:text-warning-500" : "text-foreground"}`}>{o ? Math.round(o.owed).toLocaleString() : "0"}</div></div>}
                   </div>
-                  <div className="flex flex-col gap-1">
+                  {canSeeMoney ? (
+                    <div className="flex justify-between gap-2 text-[11px] text-muted-foreground">
+                      <span>Overdue <span className={`font-ledger ${o && o.overdue > 0.5 ? "text-danger-700 dark:text-danger-500 font-semibold" : "text-foreground"}`}>{o ? Math.round(o.overdue).toLocaleString() : "0"}</span></span>
+                      <span className="truncate">{o?.lastPaidOn ? <>Last paid <span className="font-ledger text-foreground">{formatDate(o.lastPaidOn)}</span>{o.lastPaidMode ? ` · ${o.lastPaidMode}` : ""}</> : "No payment yet"}</span>
+                    </div>
+                  ) : (
                     <div className="flex justify-between text-[11px] text-muted-foreground"><span>Share of deployed guards</span><span className="font-ledger">{Math.round(share * 100)}%</span></div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, share * 100)}%` }} /></div>
-                  </div>
+                  )}
                   <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs text-muted-foreground">
                     <span className="truncate">{o?.last ? <>Last invoice <span className="font-ledger text-foreground">{formatDate(o.last)}</span> · {Math.round(o.lastAmount).toLocaleString()}</> : "Not invoiced yet"}</span>
                     <span className="flex gap-0.5 flex-shrink-0">
                       <button type="button" onClick={() => { setDetailRow(row); setDetailTab("overview"); }} className="p-1.5 rounded-lg hover:bg-accent" title="View details" aria-label={`View ${row.name}`}><Eye className="w-4 h-4" /></button>
                       {canEditClients && <button type="button" onClick={() => { populateForm(row); setEditingId(row.id); setExpanded({ basic: true, tax: false, billing: false }); }} className="p-1.5 rounded-lg hover:bg-accent" title="Edit" aria-label={`Edit ${row.name}`}><Pencil className="w-4 h-4" /></button>}
-                      {canEditClients && <button type="button" onClick={() => handleDelete(row)} className="p-1.5 rounded-lg text-danger-600 hover:bg-danger-50" title="Delete" aria-label={`Delete ${row.name}`}><Trash2 className="w-4 h-4" /></button>}
                     </span>
                   </div>
                 </div>

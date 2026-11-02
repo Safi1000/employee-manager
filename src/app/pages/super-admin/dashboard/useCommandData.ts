@@ -21,7 +21,11 @@ import { GROUPS, KNOWN } from "../accountant/AccountsGrid";
  *                  contract and no invoice for it is "not billed" (2026-10-21:
  *                  by invoice_date, September's invoices raised in October
  *                  read as October's and every client looked un-invoiced).
- *   receivables    invoices.outstanding > 0, aged by invoice_date
+ *   receivables    client_receivables_today() — the one receivables reading
+ *                  (3 Nov 2026: this panel summed invoices.outstanding and
+ *                  left out opening balances, so it said 23.67M while the
+ *                  Receivables page said 31.6M). Opening balances still owed
+ *                  are not yet dated, so they sit in the oldest bucket.
  *   client map     client_statement_loaded(), revenue basis, last full month —
  *                  the same client P&L Financial Reports and partners read
  *
@@ -150,10 +154,8 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
         !can.receivables ? skip : fetchAllRows<{ amount: number }>(() =>
           withRegion(supabase.from("invoice_payments").select("amount").gte("payment_date", mStart).lte("payment_date", today), regionId) as never,
         ),
-        // 4 — open invoices for ageing
-        !can.receivables ? skip : fetchAllRows<{ client_id: string; invoice_date: string; outstanding: number }>(() =>
-          withRegion(supabase.from("invoices").select("client_id, invoice_date, outstanding").gt("outstanding", 0), regionId) as never,
-        ),
+        // 4 — what each client owes today, aged (the Receivables page's own reading)
+        !can.receivables ? skip : supabase.rpc("client_receivables_today"),
         // 5 — cash held by custodians
         can.accounting ? supabase.rpc("cash_in_hand", { p_company_id: companyId }) : skip,
         // 6 — expenses this month
@@ -285,26 +287,25 @@ export function useCommandData(companyId: string | null | undefined, regionId: s
       }
 
       // Receivables
-      const open = ok<{ client_id: string; invoice_date: string; outstanding: number }[]>(4);
+      type Owed = { client_id: string; client_name: string; branch_id: string | null; balance: number; owed_before_bastion: number;
+        age_0_30: number; age_31_60: number; age_61_90: number; age_over_90: number };
+      const owed = ok<Owed[]>(4);
       let receivables: CommandData["receivables"] = null;
-      if (open) {
-        const byClient = new Map<string, [number, number, number, number]>();
+      if (owed) {
+        const rows = owed.filter((r) => !regionId || r.branch_id === regionId);
         const total: [number, number, number, number] = [0, 0, 0, 0];
-        for (const r of open) {
-          const days = Math.floor((now.getTime() - new Date(`${r.invoice_date}T00:00:00`).getTime()) / 86400000);
-          const b = days <= 30 ? 0 : days <= 60 ? 1 : days <= 90 ? 2 : 3;
-          const amt = Number(r.outstanding ?? 0);
-          total[b] += amt;
-          const row = byClient.get(r.client_id) ?? [0, 0, 0, 0];
-          row[b] += amt;
-          byClient.set(r.client_id, row);
+        const byClient: AgeRow[] = [];
+        for (const r of rows) {
+          // The opening balance still owed (31 Aug) is not dated yet: it goes in the oldest bucket.
+          const b: [number, number, number, number] = [Number(r.age_0_30), Number(r.age_31_60), Number(r.age_61_90), Number(r.age_over_90) + Number(r.owed_before_bastion)];
+          b.forEach((v, i) => { total[i] += v; });
+          if (b.some((v) => v > 0.5)) byClient.push({ clientId: r.client_id, name: r.client_name, regionId: r.branch_id, buckets: b });
         }
         receivables = {
-          total: total.reduce((a, b) => a + b, 0),
+          // The balance, as Receivables shows it (credits included), not the bucket sum.
+          total: rows.reduce((s, r) => s + Number(r.balance ?? 0), 0),
           buckets: total,
-          byClient: [...byClient.entries()]
-            .map(([id, buckets]) => ({ clientId: id, name: clientInfo.get(id)?.name ?? "Client", regionId: clientInfo.get(id)?.branch ?? null, buckets }))
-            .sort((a, b) => b.buckets.reduce((x, y) => x + y, 0) - a.buckets.reduce((x, y) => x + y, 0)),
+          byClient: byClient.sort((a, b) => b.buckets.reduce((x, y) => x + y, 0) - a.buckets.reduce((x, y) => x + y, 0)),
         };
       }
 
