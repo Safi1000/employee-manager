@@ -32,8 +32,8 @@ begin
   get diagnostics v_n = row_count;
   if v_n <> 239 then raise exception '0631a REFUSED: wrote % rows, expected 239.', v_n; end if;
 
-  select md5(string_agg(coalesce(client_id::text,'')||'|'||sheet_client||'|'||source_name||'|'||sheet_month::text||'|'||coalesce(p_balance::text,'')||'|'||coalesce(invoice::text,'')||'|'||coalesce(deduction::text,'')||'|'||coalesce(deduction_only::text,'')||'|'||coalesce(wht_salary::text,'')||'|'||coalesce(received::text,'')||'|'||coalesce(balance::text,'')||'|'||coalesce(received_date::text,'')||'|'||coalesce(received_date_text,'')||'|'||coalesce(note,'')||'|'||source_file||'|'||source_row::text||'|'||row_hidden::text, E'\n' order by source_file, source_row)) into v_dig
+  select md5(string_agg(coalesce(client_id::text,'')||'|'||sheet_client||'|'||source_name||'|'||sheet_month::text||'|'||coalesce(p_balance::text,'')||'|'||coalesce(invoice::text,'')||'|'||coalesce(deduction::text,'')||'|'||coalesce(deduction_only::text,'')||'|'||coalesce(wht_salary::text,'')||'|'||coalesce(received::text,'')||'|'||coalesce(balance::text,'')||'|'||coalesce(received_date::text,'')||'|'||coalesce(received_date_text,'')||'|'||coalesce(note,'')||'|'||source_file||'|'||source_row::text||'|'||row_hidden::text, E'\n' order by source_file collate "C", source_row)) into v_dig
     from public.client_sheet_history
-   where (source_file, source_row) between ('Invoice_Sheet_FTM_Apr_2025.xlsx!Sheet1', 3) and ('Invoice_Sheet_FTM_Jan_2026.xlsx!Sheet1', 24);
+   where (source_file collate "C", source_row) between ('Invoice_Sheet_FTM_Apr_2025.xlsx!Sheet1', 3) and ('Invoice_Sheet_FTM_Jan_2026.xlsx!Sheet1', 24);
   if v_dig <> '409fd189a7654e6e33ca408dd3fc2a52' then raise exception '0631a REFUSED: the rows written do not match the file (digest %).', v_dig; end if;
 end $load$;

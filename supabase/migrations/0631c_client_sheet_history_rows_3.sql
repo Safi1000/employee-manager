@@ -32,9 +32,9 @@ begin
   get diagnostics v_n = row_count;
   if v_n <> 237 then raise exception '0631c REFUSED: wrote % rows, expected 237.', v_n; end if;
 
-  select md5(string_agg(coalesce(client_id::text,'')||'|'||sheet_client||'|'||source_name||'|'||sheet_month::text||'|'||coalesce(p_balance::text,'')||'|'||coalesce(invoice::text,'')||'|'||coalesce(deduction::text,'')||'|'||coalesce(deduction_only::text,'')||'|'||coalesce(wht_salary::text,'')||'|'||coalesce(received::text,'')||'|'||coalesce(balance::text,'')||'|'||coalesce(received_date::text,'')||'|'||coalesce(received_date_text,'')||'|'||coalesce(note,'')||'|'||source_file||'|'||source_row::text||'|'||row_hidden::text, E'\n' order by source_file, source_row)) into v_dig
+  select md5(string_agg(coalesce(client_id::text,'')||'|'||sheet_client||'|'||source_name||'|'||sheet_month::text||'|'||coalesce(p_balance::text,'')||'|'||coalesce(invoice::text,'')||'|'||coalesce(deduction::text,'')||'|'||coalesce(deduction_only::text,'')||'|'||coalesce(wht_salary::text,'')||'|'||coalesce(received::text,'')||'|'||coalesce(balance::text,'')||'|'||coalesce(received_date::text,'')||'|'||coalesce(received_date_text,'')||'|'||coalesce(note,'')||'|'||source_file||'|'||source_row::text||'|'||row_hidden::text, E'\n' order by source_file collate "C", source_row)) into v_dig
     from public.client_sheet_history
-   where (source_file, source_row) between ('Invoice_Sheet_FTM_May_2024.xlsx!Sheet1', 20) and ('Invoice_Sheet_FTM_Sept.xlsx!Sheet1', 35);
+   where (source_file collate "C", source_row) between ('Invoice_Sheet_FTM_May_2024.xlsx!Sheet1', 20) and ('Invoice_Sheet_FTM_Sept.xlsx!Sheet1', 35);
   if v_dig <> '0c14595f9002d0f243d5ebe5f47dd005' then raise exception '0631c REFUSED: the rows written do not match the file (digest %).', v_dig; end if;
   -- The whole load: 715 rows on 46 sheet clients (624 rows on Bastion clients), invoiced 200306684, received 183228902.
   if (select count(*) from public.client_sheet_history) <> 715 then raise exception '0631c REFUSED: the history holds % rows, expected 715.', (select count(*) from public.client_sheet_history); end if;
