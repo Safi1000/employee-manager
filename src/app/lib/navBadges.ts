@@ -39,12 +39,16 @@ export function useNavBadges(companyId: string | null, regionId: string | null):
       if (cancelled) return;
       const month = lastMonth.toLocaleDateString(undefined, { month: "long" });
       const next: Record<string, NavBadge> = {};
-      if (!al.error && al.count) next["Dashboard"] = { n: al.count, title: `${al.count} open alert${al.count === 1 ? "" : "s"}` };
-      if (!ps.error && ps.count) next["Workforce"] = { n: ps.count, title: `${ps.count} ${month} payslip${ps.count === 1 ? "" : "s"} not yet paid` };
-      if (!fx.error && fx.count) next["Finance"] = { n: fx.count, title: `${fx.count} fixed expense${fx.count === 1 ? "" : "s"} waiting for a decision` };
-      const unread = typeof cm.data === "number" ? cm.data : 0;
-      if (!cm.error && unread) next["Comments"] = { n: unread, title: `${unread} conversation${unread === 1 ? "" : "s"} with an unread reply` };
-      if (!cu.error && cu.count) next["Compliance"] = { n: cu.count, title: `${cu.count} guard document${cu.count === 1 ? "" : "s"} expired` };
+      // Keyed by the section each page now sits in (sidebar regrouped 2 Nov 2026):
+      // alerts and unread replies on Overview, payslips with expenses on
+      // Finance, expired documents on Admin (the Compliance Calendar's home).
+      const unread = !cm.error && typeof cm.data === "number" ? cm.data : 0;
+      const alerts = !al.error ? al.count ?? 0 : 0;
+      if (alerts || unread) next["Overview"] = { n: alerts + unread, title: [alerts ? `${alerts} open alert${alerts === 1 ? "" : "s"}` : "", unread ? `${unread} conversation${unread === 1 ? "" : "s"} with an unread reply` : ""].filter(Boolean).join(" · ") };
+      const pay = !ps.error ? ps.count ?? 0 : 0;
+      const fixed = !fx.error ? fx.count ?? 0 : 0;
+      if (pay || fixed) next["Finance"] = { n: pay + fixed, title: [pay ? `${pay} ${month} payslip${pay === 1 ? "" : "s"} not yet paid` : "", fixed ? `${fixed} fixed expense${fixed === 1 ? "" : "s"} waiting for a decision` : ""].filter(Boolean).join(" · ") };
+      if (!cu.error && cu.count) next["Admin"] = { n: cu.count, title: `${cu.count} guard document${cu.count === 1 ? "" : "s"} expired` };
       setBadges(next);
     };
     void load();
