@@ -43,7 +43,8 @@ export default function ProfileCompletionPanel({
   onPick: (g: CompletionGroup) => void;
 }) {
   const [rows, setRows] = useState<CompletionGroup[] | null>(null);
-  const [open, setOpen] = useState(true);
+  // 3 Nov 2026: folded by default so the roster is on the first screen; the header still shows the count.
+  const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [editing, setEditing] = useState<CompletionGroup | null>(null);

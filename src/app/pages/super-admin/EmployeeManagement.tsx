@@ -1274,6 +1274,12 @@ export default function EmployeeManagement() {
       total: scope.length,
       active,
       inactive: scope.length - active,
+      // 3 Nov 2026: the tile said "left, fired or on leave" — nobody inactive is on leave; say what they are.
+      inactiveBreakdown: (() => {
+        const m = new Map<string, number>();
+        for (const e of scope) if (e.status !== "Active") { const k = String((e as { lifecycle_state?: string }).lifecycle_state ?? "inactive"); m.set(k, (m.get(k) ?? 0) + 1); }
+        return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} ${k}`).join(" · ");
+      })(),
       missingKeyFields: scope.filter(isMissingKeyFields).length,
       // Band figures (2026-10-20 redesign) — every one is a filter the list
       // already supports, so a tile is a shortcut, never a second definition.
@@ -6104,7 +6110,7 @@ function EmployeeBand({
   counts, clientName, empTab, onTab, flags, onAll, onMissing, onIncomplete, onExpired, onDuplicate, onInactive, onCategory, category,
 }: {
   counts: {
-    total: number; active: number; inactive: number; missingKeyFields: number; incomplete: number;
+    total: number; active: number; inactive: number; inactiveBreakdown: string; missingKeyFields: number; incomplete: number;
     expiredCards: number; duplicateCnic: number; joinedThisMonth: number;
     byCategory: { client: number; office_staff: number; reliever: number };
   };
@@ -6142,7 +6148,7 @@ function EmployeeBand({
         <button type="button" onClick={onInactive} className={tile(flags.inactive)}>
           <span className="lbl">Inactive</span>
           <span className={fig}>{counts.inactive.toLocaleString()}</span>
-          <span className="text-xs text-muted-foreground">left, fired or on leave</span>
+          <span className="text-xs text-muted-foreground truncate">{counts.inactiveBreakdown || "none"}</span>
         </button>
         <button type="button" onClick={onMissing} className={tile(flags.missing)} title="Records missing CNIC and/or Join Date — tap to show only these">
           <span className="lbl">No CNIC / join date</span>

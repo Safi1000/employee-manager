@@ -59,6 +59,17 @@ export default function FieldReview() {
   type View = "attendance" | "warnings" | "money" | "trips" | "employees";
   const [view, setView] = useState<View>(canAttendance ? "attendance" : canWarnings ? "warnings" : canMoney ? "money" : canTrips ? "trips" : "employees");
   const [moneyCount, setMoneyCount] = useState<number | undefined>(undefined);
+  // 3 Nov 2026: every tab carries its count, so nobody opens five tabs to find one item.
+  const [queueCounts, setQueueCounts] = useState<{ money: number; trips: number; employees: number }>({ money: 0, trips: 0, employees: 0 });
+  useEffect(() => {
+    const head = { count: "exact" as const, head: true };
+    void Promise.all([
+      canMoney ? supabase.from("field_money_requests").select("id", head).eq("status", "pending") : Promise.resolve({ count: 0 }),
+      canTrips ? supabase.from("field_trips").select("id", head).eq("status", "ended").is("added_at", null) : Promise.resolve({ count: 0 }),
+      canEmployees ? supabase.from("field_employee_changes").select("id", head).eq("status", "pending") : Promise.resolve({ count: 0 }),
+      canEmployees ? supabase.from("field_documents").select("id", head).eq("status", "received") : Promise.resolve({ count: 0 }),
+    ]).then(([m, t, e, d]) => setQueueCounts({ money: m.count ?? 0, trips: t.count ?? 0, employees: (e.count ?? 0) + (d.count ?? 0) }));
+  }, [canMoney, canTrips, canEmployees]);
   const [confs, setConfs] = useState<Conf[]>([]);
   const [warnings, setWarnings] = useState<PendingWarning[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,9 +99,9 @@ export default function FieldReview() {
   const items = useMemo(() => [
     ...(canAttendance ? [{ value: "attendance" as const, label: "Site attendance", count: confs.filter((c) => c.review_status === "pending").length || undefined }] : []),
     ...(canWarnings ? [{ value: "warnings" as const, label: "Warnings", count: warnings.length || undefined }] : []),
-    ...(canMoney ? [{ value: "money" as const, label: "Expense requests", count: moneyCount || undefined }] : []),
-    ...(canTrips ? [{ value: "trips" as const, label: "Trips" }] : []),
-    ...(canEmployees ? [{ value: "employees" as const, label: "Employee updates" }] : []),
+    ...(canMoney ? [{ value: "money" as const, label: "Expense requests", count: (moneyCount || queueCounts.money) || undefined }] : []),
+    ...(canTrips ? [{ value: "trips" as const, label: "Trips", count: queueCounts.trips || undefined }] : []),
+    ...(canEmployees ? [{ value: "employees" as const, label: "Employee updates", count: queueCounts.employees || undefined }] : []),
   ], [canAttendance, canWarnings, canMoney, canTrips, canEmployees, confs, warnings, moneyCount]);
 
   return (

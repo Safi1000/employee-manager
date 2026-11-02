@@ -3,6 +3,7 @@ import CommentsButton from "../../components/CommentsButton";
 import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { createPortal } from "react-dom";
 import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Building2, Lock, Check, Copy, Eye } from "lucide-react";
 // jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
@@ -2648,11 +2649,14 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           {fvLoading ? (
             <div className="flex items-center justify-center py-20 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
           ) : shellScopes.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-12 text-center">
-              {fvSearch.trim() && fvScopes.length > 0
-                ? `No Finance-Verified client matches “${fvSearch.trim()}”.`
-                : `No Finance-Verified clients for ${formatPeriod(selectedPeriod)}. Finance-verify a client in Payroll Run to disburse it here.`}
-            </p>
+            <div className="py-10 text-center space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {fvSearch.trim() && fvScopes.length > 0
+                  ? `No Finance-Verified client matches “${fvSearch.trim()}”.`
+                  : `No Finance-Verified clients for ${formatPeriod(selectedPeriod)} yet. Finance-verify a client in Payroll Run to disburse it here.`}
+              </p>
+              {!fvSearch.trim() && <RunPipeline period={selectedPeriod.slice(0, 7) + "-01"} />}
+            </div>
           ) : (
             <div className="space-y-3">
               {shellScopes.map((s) => {
@@ -4803,6 +4807,41 @@ function PayrollBand({ totals, clients, clientsDone, period, onOpen }: {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Where the month's run stands (3 Nov 2026): before anything is finance-verified
+ * this page read 0% and zeros, as if no run had started. Counts from the same
+ * tables Attendance Run and Payroll Run read.
+ */
+function RunPipeline({ period }: { period: string }) {
+  const [p, setP] = useState<{ withHr: number; withOps: number; halvesDone: number; review: number; verified: number } | null>(null);
+  useEffect(() => {
+    void Promise.all([
+      supabase.from("attendance_half_verifications").select("hr_verified_at, ops_verified_at").eq("period_month", period),
+      supabase.from("payroll_run_phases").select("phase").eq("period_month", period),
+    ]).then(([h, ph]) => {
+      const halves = (h.data ?? []) as { hr_verified_at: string | null; ops_verified_at: string | null }[];
+      const phases = (ph.data ?? []) as { phase: string }[];
+      setP({
+        withHr: halves.filter((x) => !x.hr_verified_at).length,
+        withOps: halves.filter((x) => x.hr_verified_at && !x.ops_verified_at).length,
+        halvesDone: halves.filter((x) => x.ops_verified_at).length,
+        review: phases.filter((x) => x.phase === "review").length,
+        verified: phases.filter((x) => x.phase === "finance_verify").length,
+      });
+    });
+  }, [period]);
+  if (!p) return null;
+  return (
+    <div className="inline-flex flex-wrap justify-center gap-2 text-xs">
+      {[["Attendance halves with HR", p.withHr], ["Halves waiting on Ops", p.withOps], ["Halves verified", p.halvesDone], ["Groups in Review", p.review], ["Groups finance-verified", p.verified]].map(([k, v]) => (
+        <span key={k as string} className="rounded-lg border border-border bg-card px-2.5 py-1"><span className="text-muted-foreground">{k}</span> <span className="font-ledger font-semibold text-foreground">{v}</span></span>
+      ))}
+      <Link to="/app/payroll-run" className="rounded-lg border border-brand-500/50 px-2.5 py-1 text-brand-700 dark:text-brand-500 hover:bg-brand-500/10">Open Payroll Run →</Link>
     </div>
   );
 }

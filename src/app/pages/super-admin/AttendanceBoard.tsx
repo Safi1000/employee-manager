@@ -829,7 +829,10 @@ export default function AttendanceBoard() {
           sites: [{ siteId: "__all__", siteName: "All sites", shifts: [combineSites(sites.flatMap((st) => st.shifts))] }],
         };
       })
-      .sort((a, b) => a.clientName.localeCompare(b.clientName));
+      .sort((a, b) => a.clientName.localeCompare(b.clientName))
+      // 3 Nov 2026: a client with nobody on the roster (the settled Lahore
+      // clients) is a register that can never be finished — leave it out.
+      .filter((c) => c.sites.some((st) => st.shifts.some((r) => r.roster.length > 0)));
   }, [visibleRows, siteWise]);
 
   const summary = useMemo(() => {
