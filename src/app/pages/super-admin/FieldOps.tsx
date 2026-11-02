@@ -1327,7 +1327,7 @@ function OtherUpdates({
  * absentees and leave by name on opening a row, and the clients nobody
  * confirmed. It reads the day BEFORE the report's date.
  */
-function AttendanceReport({
+export function AttendanceReport({
   summary, loading, date, regionLabel, regionNames, notes, canExplain, onExplain,
 }: {
   summary: AttendanceSummary | null;
