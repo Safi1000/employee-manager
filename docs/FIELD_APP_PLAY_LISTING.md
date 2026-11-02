@@ -50,7 +50,7 @@ collecting something new, update this and the privacy page first.
 >
 > ایپ سے بھیجی گئی ہر چیز دفتر Bastion میں دیکھتا ہے۔ ایپ ہر کردار کو صرف ضروری معلومات دکھاتی ہے — شناختی کارڈ نمبر، تنخواہ یا بینک کی تفصیل کبھی نہیں۔
 
-**Category:** Business · **Developer:** TECHXSERVE Enterprise · **Contact email:** info@techxserve.com
+**Category:** Business · **Developer:** TECHXSERVE Enterprise (Pvt) Ltd · **Contact email:** info@techxserve.com
 **Graphics:** app icon 512×512 (from `mobile/assets/icon.png`), feature graphic
 1024×500, and 2–8 phone screenshots — take them from the test phone (home,
 attendance, visit, Daily Report, my expenses, Urdu home).
@@ -100,7 +100,7 @@ health, browsing history, payment card details, background location.
 
 ## Before submitting
 
-1. Privacy page names TECHXSERVE Enterprise as publisher and info@techxserve.com as contact — done.
+1. Privacy page names TECHXSERVE Enterprise (Pvt) Ltd as publisher and info@techxserve.com as contact — done.
 2. Make the review logins and keep their phone-approval in mind — Google's
    reviewer's phone will appear on Field Supervisors waiting for approval.
 3. Start on **Internal testing** (up to 100 testers added by email, no review

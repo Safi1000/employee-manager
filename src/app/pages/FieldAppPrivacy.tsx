@@ -4,14 +4,15 @@
  * does as built (0607–0625), and must change whenever the app collects
  * something new.
  *
- * The app is published on the stores by TECHXSERVE Enterprise (the developer of
- * Bastion) for GGS, whose staff use it; contact given by Shayan, 30 Oct 2026.
+ * The app is published on the stores by TECHXSERVE Enterprise (Pvt) Ltd (the developer of
+ * Bastion) for GGS, whose staff use it; contact given by Shayan, 30 Oct 2026; name
+ * matched to the registered name on the Play account, 2 Nov 2026.
  */
 
 const COMPANY = "GGS";
-const PUBLISHER = "TECHXSERVE Enterprise";
+const PUBLISHER = "TECHXSERVE Enterprise (Pvt) Ltd";
 const CONTACT: string | null = "info@techxserve.com";
-const UPDATED = "30 October 2026";
+const UPDATED = "2 November 2026";
 
 function H({ children }: { children: React.ReactNode }) {
   return <h2 className="mt-8 text-lg font-semibold text-foreground">{children}</h2>;
