@@ -76,6 +76,11 @@ const PaymentFollowUpPage = lazyPage(() => import("./pages/super-admin/PaymentFo
 const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const FieldReview = lazyPage(() => import("./pages/super-admin/FieldReview"));
 const FieldAppPrivacy = lazyPage(() => import("./pages/FieldAppPrivacy"));
+const PrivacyPage = lazyPage(() => import("./pages/LegalPages").then((m) => ({ default: m.Privacy })));
+const TermsPage = lazyPage(() => import("./pages/LegalPages").then((m) => ({ default: m.Terms })));
+const DataProcessingPage = lazyPage(() => import("./pages/LegalPages").then((m) => ({ default: m.DataProcessing })));
+const SecurityPage = lazyPage(() => import("./pages/LegalPages").then((m) => ({ default: m.Security })));
+const ContactPage = lazyPage(() => import("./pages/LegalPages").then((m) => ({ default: m.Contact })));
 const FieldActivityPage = lazyPage(() => import("./pages/super-admin/FieldActivity"));
 const IncidentsHub = lazyPage(() => import("./pages/super-admin/IncidentsHub"));
 
@@ -113,6 +118,13 @@ const publicRoutes = [
   { path: "/signup/complete", Component: SignupComplete },
   // The field app's privacy policy — the page Google Play and the App Store link to.
   { path: "/privacy/field-app", Component: FieldAppPrivacy },
+  // The pages the landing footer names (LegalPages.tsx).
+  { path: "/privacy", Component: PrivacyPage },
+  { path: "/terms", Component: TermsPage },
+  { path: "/data-processing", Component: DataProcessingPage },
+  { path: "/security", Component: SecurityPage },
+  { path: "/contact", Component: ContactPage },
+  { path: "/about", Component: ContactPage },
 ];
 
 /** An old /super-admin… or /super-super-admin… address, sent to the same page under its new prefix. */

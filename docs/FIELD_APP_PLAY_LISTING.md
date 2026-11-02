@@ -5,7 +5,15 @@ describes the app as built (0607–0625, build 9 onward). If the app starts
 collecting something new, update this and the privacy page first.
 
 - **Privacy policy URL:** `https://bastion.techxserve.com/privacy/field-app`
+- **Website:** `https://bastion.techxserve.com` — its footer links every page below
+- **Terms of service:** `https://bastion.techxserve.com/terms`
+- **Data processing:** `https://bastion.techxserve.com/data-processing`
+- **Security:** `https://bastion.techxserve.com/security`
+- **About and contact:** `https://bastion.techxserve.com/contact`
+- **Bastion (web) privacy policy:** `https://bastion.techxserve.com/privacy` — not the one Play asks for; that is the field-app page above
+- **Developer:** TECHXSERVE Enterprise (Pvt) Ltd · **Contact email:** info@techxserve.com
 - **Package name:** `pk.ggs.field`
+- **Version:** versionName `1.0.0` (`version` in `mobile/app.json`); versionCode = the GitHub run number, automatically. targetSdk 36 (React Native default).
 - **Upload:** the `.aab` from the latest "Field app APK" run on GitHub
   (artifact `ggs-field-<n>-play-bundle`). Turn on **Play App Signing** when
   asked; our key is the *upload* key.
@@ -51,9 +59,48 @@ collecting something new, update this and the privacy page first.
 > ایپ سے بھیجی گئی ہر چیز دفتر Bastion میں دیکھتا ہے۔ ایپ ہر کردار کو صرف ضروری معلومات دکھاتی ہے — شناختی کارڈ نمبر، تنخواہ یا بینک کی تفصیل کبھی نہیں۔
 
 **Category:** Business · **Developer:** TECHXSERVE Enterprise (Pvt) Ltd · **Contact email:** info@techxserve.com
-**Graphics:** app icon 512×512 (from `mobile/assets/icon.png`), feature graphic
-1024×500, and 2–8 phone screenshots — take them from the test phone (home,
-attendance, visit, Daily Report, my expenses, Urdu home).
+**Graphics** (in `mobile/store-assets/`, each rendered from the `.html` beside it with headless Chrome):
+- App icon 512×512 — `icon-512.png`, the Bastion shield. Note `mobile/assets/icon.png`
+  and the launcher icons are still Expo's placeholders; replace them before the first
+  upload so the installed app matches the store icon.
+- Feature graphic 1024×500 — `feature-1024x500.png`.
+- 2–8 phone screenshots — take them on the test phone signed in to the **demo
+  company** (below), never GGS: sites, attendance sheet, a guard's card, Urdu home.
+
+## Demo company (screenshots and the reviewer)
+
+`Northgate Security (Demo)` on prod, seeded 2 Nov 2026 by `scripts/seed-play-demo.sql`
+(approved by name). Every person, client, site and phone number is invented:
+Lahore region; Aurora Business Park (Tower A, Tower B) and Riverside Medical
+Centre (Main Gate); guards NGS-101 to NGS-110.
+
+- **Field login:** supervisor code `NGS-001` + a 6-digit PIN.
+- **Web login** `demo-admin@techxserve.com`, super admin of the demo company only —
+  used to approve phones (Operations › Field Supervisors).
+- The PIN and password are **not** in the repo; they were handed over separately.
+  Reset the PIN on Field Supervisors as the demo admin if it is lost.
+
+## First release
+
+- **Release name** (seen only in Play Console): `1.0.0 (build N)`, N = the run number on the `.aab`.
+- **Release notes:**
+
+```
+<en-US>
+First release of GGS Field.
+• Supervisors: see your site's guards, confirm shift attendance and relievers, photograph guards without a photo
+• Office staff: site visits with checklists and photos, incident reports and SOS, Daily Report as PDF, expense and advance requests, trips by odometer photo, staff file updates
+• English and Urdu
+Login is created by GGS; each phone is approved by the office.
+</en-US>
+<ur>
+GGS فیلڈ کا پہلا ورژن۔
+• سپروائزر: اپنی سائٹ کے گارڈز دیکھیں، شفٹ کی حاضری اور ریلیور کی تصدیق کریں، گارڈ کی تصویر لیں
+• دفتری عملہ: سائٹ دورے، واقعات کی رپورٹ اور SOS، روزانہ رپورٹ PDF میں، اخراجات اور ایڈوانس کی درخواستیں، سفر، ملازمین کی فائل
+• انگریزی اور اردو
+لاگ اِن GGS بناتا ہے؛ ہر فون کی منظوری دفتر دیتا ہے۔
+</ur>
+```
 
 ---
 
@@ -62,7 +109,7 @@ attendance, visit, Daily Report, my expenses, Urdu home).
 | Question | Answer |
 |---|---|
 | Privacy policy | the URL above |
-| App access | **All or some functionality is restricted** → give a review login. Create a test office login with Field app keys and a test supervisor (code + PIN), approve the reviewer's phone when it appears, and write the steps in the box. |
+| App access | **All or some functionality is restricted** → give the demo company's supervisor login: choose "Supervisor", code `NGS-001`, the PIN. Say in the box that the phone then waits for approval by the office; approve it as `demo-admin@techxserve.com` when it appears. |
 | Ads | No ads |
 | Content rating | Questionnaire → *Utility / productivity*, no violence, no user-to-user content → rated Everyone |
 | Target audience | 18 and over |
@@ -101,8 +148,8 @@ health, browsing history, payment card details, background location.
 ## Before submitting
 
 1. Privacy page names TECHXSERVE Enterprise (Pvt) Ltd as publisher and info@techxserve.com as contact — done.
-2. Make the review logins and keep their phone-approval in mind — Google's
-   reviewer's phone will appear on Field Supervisors waiting for approval.
+2. Review login — done: the demo company's `NGS-001`. Google's reviewer's phone
+   appears on the demo company's Field Supervisors waiting for approval.
 3. Start on **Internal testing** (up to 100 testers added by email, no review
    wait). To keep it staff-only for good, stay on a **closed testing** track
    with a tester list — Play's public Production track is visible to anyone
