@@ -1,4 +1,5 @@
 import ThemedSelect from "../../components/ThemedSelect";
+import ClientContacts from "../../components/ClientContacts";
 import ClientService from "../../components/ClientService";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -1637,6 +1638,7 @@ export default function Clients() {
 
             {detailTab === "overview" && (
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <ClientContacts clientId={detailRow.id} />
                 <Field label="Code"><span className="font-mono">{detailRow.client_code}</span></Field>
                 <Field label="Industry">{detailRow.industry ?? "—"}</Field>
                 <Field label="Email">{detailRow.email ?? "—"}</Field>
