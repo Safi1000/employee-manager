@@ -17,6 +17,8 @@ import JournalView from "./JournalView";
 export default function AccountingCore() {
   return (
     <TabHub
+      // 3 Nov 2026: open on the Trial Balance (daily use), not the one-time opening import.
+      defaultTab="tb"
       tabs={[
         { key: "opening", label: "Opening Balances", render: () => <OpeningBalances /> },
         { key: "coa", label: "Chart of Accounts", render: () => <ChartOfAccounts /> },

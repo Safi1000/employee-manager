@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { supabase } from "../../../lib/supabase";
 import { Link } from "react-router";
 import { AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
 import DetailSheet, { type DetailContent } from "../../../components/DetailSheet";
@@ -111,7 +112,20 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
   const payScale = Math.max(cashTotal + dueFirst, payNeed, 1) * 1.05;
   const spare = cashTotal + dueFirst - payNeed;
 
+  // 3 Nov 2026 audit: the two backlogs that mattered most were nowhere on the
+  // dashboard — people who left with clearance never done (294), and active
+  // staff with no base salary (49; Waqas's zero October pay). Head-only counts.
+  const [backlog, setBacklog] = useState<{ uncleared: number; noSalary: number } | null>(null);
+  useEffect(() => {
+    void Promise.all([
+      d.can.compliance ? supabase.from("compliance_upcoming").select("ref_id", { count: "exact", head: true }).eq("kind", "uncleared_separation").lt("days_remaining", 0) : Promise.resolve({ count: 0, error: null }),
+      d.can.employees ? supabase.from("employees").select("id", { count: "exact", head: true }).eq("lifecycle_state", "active").or("base_salary.is.null,base_salary.eq.0") : Promise.resolve({ count: 0, error: null }),
+    ]).then(([u, s2]) => setBacklog({ uncleared: u.error ? 0 : u.count ?? 0, noSalary: s2.error ? 0 : s2.count ?? 0 }));
+  }, [d.can.compliance, d.can.employees]);
+
   const attention = [
+    backlog && backlog.noSalary > 0 && { n: backlog.noSalary, text: "active staff with no base salary — they'd be paid 0", to: "/app/assignments" },
+    backlog && backlog.uncleared > 0 && { n: backlog.uncleared, text: "people who left with clearance not done", to: "/app/assets-issuance?tab=clearance" },
     d.can.compliance && d.licencesOverdue > 0 && { n: d.licencesOverdue, text: "guards with an expired document", to: "/app/compliance" },
     d.can.compliance && d.licencesExpiring - d.licencesOverdue > 0 && { n: d.licencesExpiring - d.licencesOverdue, text: "guard documents expiring in 30 days", to: "/app/compliance" },
     d.can.incidents && d.openIncidents > 0 && { n: d.openIncidents, text: "open incidents", to: "/app/incidents" },

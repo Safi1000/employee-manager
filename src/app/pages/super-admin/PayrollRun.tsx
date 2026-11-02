@@ -101,6 +101,27 @@ export default function PayrollRun() {
 
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [verified, setVerified] = useState<Set<string>>(new Set());       // scope keys OPS-verified this month
+  /** 3 Nov 2026: each half's state per scope key, so a blocked card says which half waits on whom. */
+  const [halves, setHalves] = useState<Map<string, { half: number; hr: string | null; ops: string | null }[]>>(new Map());
+  useEffect(() => {
+    void supabase.from("attendance_half_verifications").select("client_id, category, half, hr_verified_by_name, ops_verified_by_name, hr_verified_at, ops_verified_at")
+      .eq("period_month", period).then(({ data }) => {
+        const m = new Map<string, { half: number; hr: string | null; ops: string | null }[]>();
+        for (const r of (data ?? []) as any[]) {
+          const key = r.client_id ?? `cat:${r.category}`;
+          m.set(key, [...(m.get(key) ?? []), { half: Number(r.half), hr: r.hr_verified_at ? (r.hr_verified_by_name ?? "HR") : null, ops: r.ops_verified_at ? (r.ops_verified_by_name ?? "Ops") : null }]);
+        }
+        setHalves(m);
+      });
+  }, [period]);
+  const halfLine = (key: string) => {
+    const hs = halves.get(key) ?? [];
+    return [1, 2].map((h) => {
+      const x = hs.find((y) => y.half === h);
+      const label = h === 1 ? "1st half" : "2nd half";
+      return !x || !x.hr ? `${label}: with HR` : !x.ops ? `${label}: waiting on Ops` : `${label}: done`;
+    }).join(" · ");
+  };
   const [verifiedAt, setVerifiedAt] = useState<Map<string, string>>(new Map()); // key → OPS verified timestamp
   const [phaseByKey, setPhaseByKey] = useState<Map<string, Phase>>(new Map());
   const [financeVerified, setFinanceVerified] = useState<Set<string>>(new Set()); // permanently Finance Verified keys
@@ -449,11 +470,13 @@ export default function PayrollRun() {
     () =>
       scopes
         .filter((s) => !phaseByKey.has(s.key) && matchesSearch(s))
+        // 3 Nov 2026: a group with nobody in it (the settled Lahore clients) is not work.
+        .filter((s) => !s.verifiable || (rowsByScope.get(s.key)?.length ?? 0) > 0)
         .sort((a, b) => {
           const ready = (s: Scope) => (!s.verifiable || verified.has(s.key) ? 0 : 1);
           return ready(a) - ready(b);
         }),
-    [scopes, phaseByKey, verified, matchesSearch],
+    [scopes, phaseByKey, verified, matchesSearch, rowsByScope],
   );
   const reviewScopes = useMemo(
     () => scopes.filter((s) => phaseByKey.get(s.key) === "review" && matchesSearch(s)),
@@ -541,6 +564,7 @@ export default function PayrollRun() {
     const failed: string[] = [];
     for (const s of ready) {
       if (!(await isVerifiedNow(s))) { failed.push(s.name); continue; }
+      if (noBaseCount(s) > 0) { failed.push(`${s.name} (${noBaseCount(s)} with no base salary)`); continue; }
       const { error } = await supabase.from("payroll_run_phases")
         .insert({ client_id: s.clientId, category: s.category, period_month: period, phase: "review", moved_by: profile?.id ?? null });
       if (error) failed.push(`${s.name} (${error.message})`);
@@ -686,9 +710,11 @@ export default function PayrollRun() {
   // 2026-10-28: guards with no base salary, flagged on the card before it is opened.
   // Not on the Relievers card: a per-day reliever has no base by design (the
   // roster itself, which knows his daily rate, still flags a real gap).
+  const noBaseCount = (s: Scope) => s.category === "reliever" ? 0
+    : (liveRowsByScope.get(s.key) ?? rowsByScope.get(s.key) ?? []).filter((r) => !(Number(r.baseSalary) > 0)).length;
   const NoBase = ({ s }: { s: Scope }) => {
     if (s.category === "reliever") return null;
-    const n = (liveRowsByScope.get(s.key) ?? rowsByScope.get(s.key) ?? []).filter((r) => !(Number(r.baseSalary) > 0)).length;
+    const n = noBaseCount(s);
     return n ? <span className="ml-1.5 inline-flex rounded-full border border-down/40 bg-down/15 px-1.5 py-0.5 text-[10px] font-semibold text-down" title="Guards with no base salary — they would be paid nothing">{n} no base salary</span> : null;
   };
   const moneyLine = (s: Scope): string | null => {
@@ -875,11 +901,12 @@ export default function PayrollRun() {
                         ) : ok ? (
                           <p className="text-xs text-success-700 dark:text-success-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> Attendance verified for {fmtMonth(month)}{verifiedAt.get(s.key) ? ` · ${fmtStamp(verifiedAt.get(s.key))}` : ""}</p>
                         ) : (
-                          <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Attendance not verified for {fmtMonth(month)} — both halves need HR and Ops verification</p>
+                          <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> {fmtMonth(month)} attendance — {halfLine(s.key)}</p>
                         )}
                       </div>
                       {ok ? (
-                        <Button size="sm" variant="primary" disabled={busyKey === s.key} onClick={() => moveToReview(s)}>
+                        <Button size="sm" variant="primary" disabled={busyKey === s.key || noBaseCount(s) > 0} onClick={() => moveToReview(s)}
+                          title={noBaseCount(s) > 0 ? "Set the missing base salaries first — they would be paid nothing" : undefined}>
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Move to Review <ArrowRight className="w-4 h-4 ml-1.5" /></>}
                         </Button>
                       ) : (

@@ -33,7 +33,8 @@ export function useNavBadges(companyId: string | null, regionId: string | null):
         withRegionOrUnassigned(supabase.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("state", "open"), regionId),
         withRegion(supabase.from("payslips").select("id", { count: "exact", head: true }).eq("period_month", lastKey).eq("disbursed", false).gt("net_salary", 0), regionId),
         withRegionOrUnassigned(supabase.from("fixed_expense_instances").select("id", { count: "exact", head: true }).eq("period_month", thisKey).eq("status", "pending"), regionId),
-        withRegionOrUnassigned(supabase.from("compliance_upcoming").select("ref_id", { count: "exact", head: true }).eq("company_id", companyId).lt("days_remaining", 0), regionId),
+        // 3 Nov 2026: overdue rows by kind — most are uncleared separations, not documents.
+        withRegionOrUnassigned(supabase.from("compliance_upcoming").select("kind").eq("company_id", companyId).lt("days_remaining", 0), regionId),
         supabase.rpc("my_unread_comment_threads"),
       ]);
       if (cancelled) return;
@@ -48,7 +49,12 @@ export function useNavBadges(companyId: string | null, regionId: string | null):
       const pay = !ps.error ? ps.count ?? 0 : 0;
       const fixed = !fx.error ? fx.count ?? 0 : 0;
       if (pay || fixed) next["Finance"] = { n: pay + fixed, title: [pay ? `${pay} ${month} payslip${pay === 1 ? "" : "s"} not yet paid` : "", fixed ? `${fixed} fixed expense${fixed === 1 ? "" : "s"} waiting for a decision` : ""].filter(Boolean).join(" · ") };
-      if (!cu.error && cu.count) next["Admin"] = { n: cu.count, title: `${cu.count} guard document${cu.count === 1 ? "" : "s"} expired` };
+      if (!cu.error && cu.data?.length) {
+        const kinds = (cu.data as { kind: string }[]).reduce((m, r) => m.set(r.kind, (m.get(r.kind) ?? 0) + 1), new Map<string, number>());
+        const sep = kinds.get("uncleared_separation") ?? 0;
+        const docs = [...kinds.entries()].filter(([k]) => k !== "uncleared_separation").reduce((t, [, n]) => t + n, 0);
+        next["Admin"] = { n: sep + docs, title: [docs ? `${docs} expired or overdue date${docs === 1 ? "" : "s"} (documents, contracts)` : "", sep ? `${sep} people who left with clearance not completed` : ""].filter(Boolean).join(" · ") };
+      }
       setBadges(next);
     };
     void load();

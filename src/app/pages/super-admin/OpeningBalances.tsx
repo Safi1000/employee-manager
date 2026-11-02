@@ -301,7 +301,7 @@ export default function OpeningBalances() {
   if (!companyId) {
     return (
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-        <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)" />
+        <Header title="Opening Balances" subtitle="Import and post the opening trial balance" />
         <div className="border border-border rounded-md p-6 max-w-xl">
           <p className="text-sm text-foreground mb-2">No company selected.</p>
           <p className="text-sm text-muted-foreground">
@@ -315,7 +315,7 @@ export default function OpeningBalances() {
 
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-      <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)">
+      <Header title="Opening Balances" subtitle="Import and post the opening trial balance">
         {(() => {
           // Where the selected batch stands, as the four steps it has to pass.
           // The money on this band is opening_batch_totals' — nothing summed here.

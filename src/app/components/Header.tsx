@@ -155,11 +155,6 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
       style={children ? { clipPath: "inset(0 0 var(--fold, 0px) 0)" } : undefined}>
       <div ref={bandRef} className="band on-dark rounded-2xl md:rounded-[22px] px-4 md:px-7 py-3.5 md:py-5 flex flex-col gap-3 md:gap-4 overflow-hidden"
         style={children ? { clipPath: "inset(0 0 var(--fold, 0px) 0 round var(--band-r, 22px))" } : undefined}>
-        {hub && hub.tabs.length > 1 && (
-          <div className="-mx-1 overflow-x-auto">
-            <HubStrip tabs={hub.tabs} active={hub.active} onSelect={hub.select} />
-          </div>
-        )}
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div className="min-w-0">
             {line && (
@@ -181,6 +176,13 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
               page headers hold page actions only. */}
           {actions && <div className="flex items-center gap-2 md:gap-2.5 flex-wrap">{actions}</div>}
         </div>
+        {/* 3 Nov 2026: the hub's switch sits under the title, where every other
+            page's tabs sit — it used to be drawn above the kicker. */}
+        {hub && hub.tabs.length > 1 && (
+          <div className="-mx-1 overflow-x-auto">
+            <HubStrip tabs={hub.tabs} active={hub.active} onSelect={hub.select} />
+          </div>
+        )}
         {children && (
           // The figures fade and lift slightly as the band closes over them.
           <div
