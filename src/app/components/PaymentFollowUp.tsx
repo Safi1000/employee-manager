@@ -164,17 +164,26 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
   const exportPdf = (withFigures: boolean) => {
     const rowsOut: FollowUpPdfRow[] = visible.map((r) => ({
       client: r.client_name,
-      region: regionId ? "" : r.region_name ?? "",
+      region: r.region_name,
       late: lateText(r),
+      isLate: r.is_late,
       payDay: r.usual_pay_day ? ordinal(r.usual_pay_day) : "",
-      lastContact: r.last_contact_on ? `${fmtShort(r.last_contact_on)} · ${channelLabel(r.last_contact_channel)} — ${r.last_contact_note ?? ""}` : "Not contacted",
-      promise: r.promised_by ? `by ${fmtShort(r.promised_by)}${withFigures && r.promised_amount != null ? ` · ${fmt(r.promised_amount)}` : ""}` : "",
-      nextStep: r.next_step && !r.next_step_done ? `${r.next_step}${r.next_step_assignee_name ? ` — ${r.next_step_assignee_name}` : ""}${r.next_follow_up ? `, ${fmtShort(r.next_follow_up)}` : ""}` : "",
+      lastContactOn: r.last_contact_on,
+      lastContact: r.last_contact_on ? `${channelLabel(r.last_contact_channel)}: ${r.last_contact_note ?? ""}` : null,
+      promise: r.promised_by ? `by ${fmtShort(r.promised_by)}${withFigures && r.promised_amount != null ? ` (${fmt(r.promised_amount)})` : ""}` : null,
+      nextStep: r.next_step && !r.next_step_done ? r.next_step : null,
+      nextWho: r.next_step && !r.next_step_done ? r.next_step_assignee_name : null,
+      nextBy: r.next_step && !r.next_step_done ? r.next_follow_up : null,
       owes: withFigures ? r.balance : null,
       overdue: withFigures ? r.overdue : null,
     }));
-    const scope = `${regionId ? (rows.find((r) => r.branch_id === regionId)?.region_name ?? "Region") : "All regions"} · ${show === "late" ? "late clients" : show === "mine" ? "my steps" : "everyone who owes"}`;
-    void downloadFollowUpPdf({ company, rows: rowsOut, withFigures, scope, asOf: fmtDate(t) });
+    void downloadFollowUpPdf({
+      company, rows: rowsOut, withFigures,
+      region: regionId ? (rows.find((r) => r.branch_id === regionId)?.region_name ?? null) : null,
+      scopeNote: show === "late" ? "Late clients" : show === "mine" ? "My next steps" : "Everyone who owes",
+      todayIso: t,
+      preparedBy: profile?.full_name ?? "",
+    });
   };
 
   return (

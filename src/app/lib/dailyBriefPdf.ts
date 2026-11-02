@@ -26,16 +26,19 @@ import { brandingFromCompany, imageFormat, type PdfBranding } from "./pdfBrandin
  * export apart or together — generateOperationsPdf takes either or both.
  */
 
-const M = 20;
-const W = 210 - M * 2;
+// Exported (with Page, letterhead, heading, signOff, footer, refOf) so every
+// letter-style report — daily, attendance, payment follow-up (0628) — is drawn by
+// the same pieces and cannot drift apart.
+export const M = 20;
+export const W = 210 - M * 2;
 const BOTTOM = 297 - 22;
-const LH = 4.9;
+export const LH = 4.9;
 
-type RGB = [number, number, number];
-const INK: RGB = [20, 20, 20];
-const SOFT: RGB = [90, 90, 90];
-const RULE: RGB = [120, 120, 120];
-const RED: RGB = [150, 20, 20];
+export type RGB = [number, number, number];
+export const INK: RGB = [20, 20, 20];
+export const SOFT: RGB = [90, 90, 90];
+export const RULE: RGB = [120, 120, 120];
+export const RED: RGB = [150, 20, 20];
 
 export type BriefClient = { client_name: string; details: string | null; no_report?: boolean; urgent?: boolean };
 export type BriefTask = { title: string; assignee: string | null; done?: boolean };
@@ -59,10 +62,10 @@ export type DailyBrief = {
 };
 
 const hasNote = (c: BriefClient) => !c.no_report && (c.details ?? "").trim().length > 0;
-const longDay = (iso: string) =>
+export const longDay = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-class Page {
+export class Page {
   y = 0;
   extractedBy = "";
   constructor(public doc: jsPDF, public b: PdfBranding) {}
@@ -79,7 +82,7 @@ class Page {
 }
 
 /** Logo, company name, double rule, centred title, Date / Region / Ref. */
-function letterhead(p: Page, title: string, dateIso: string, region: string | null, ref: string) {
+export function letterhead(p: Page, title: string, dateIso: string, region: string | null, ref: string, department = "Operations Department") {
   const { doc, b } = p;
   p.y = M;
   const fmt = b.logoUrl ? imageFormat(b.logoUrl) : null;
@@ -93,7 +96,7 @@ function letterhead(p: Page, title: string, dateIso: string, region: string | nu
     } catch { /* no logo */ }
   }
   p.font("bold", 15); p.color(INK); doc.text(b.legalName, textX, p.y + 5);
-  p.font("italic", 9.5); p.color(SOFT); doc.text("Operations Department", textX, p.y + 10.5);
+  p.font("italic", 9.5); p.color(SOFT); doc.text(department, textX, p.y + 10.5);
   p.y += 16;
   p.rule(true);
   p.y += 9;
@@ -109,7 +112,7 @@ function letterhead(p: Page, title: string, dateIso: string, region: string | nu
   p.y += 8;
 }
 
-function heading(p: Page, text: string) {
+export function heading(p: Page, text: string) {
   p.need(14);
   p.font("bold", 12); p.color(INK);
   p.doc.text(text, M, p.y);
@@ -316,7 +319,7 @@ function drawDaily(p: Page, d: DailyBrief) {
  * updated_by / marked_by), and separately who extracted it: extracting is not
  * preparing. Shayan: "i did nothing i just extracted".
  */
-function signOff(p: Page, label: string, names: string[]) {
+export function signOff(p: Page, label: string, names: string[]) {
   const doc = p.doc;
   p.need(24);
   p.y += 10;
@@ -481,7 +484,7 @@ function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Recor
   signOff(p, "Attendance marked by", markedBy);
 }
 
-function footer(doc: jsPDF, b: PdfBranding, ref: string) {
+export function footer(doc: jsPDF, b: PdfBranding, ref: string) {
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i);
@@ -492,7 +495,7 @@ function footer(doc: jsPDF, b: PdfBranding, ref: string) {
   }
 }
 
-const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/")}`;
+export const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/")}`;
 
 type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string>; markedBy?: string[]; explanations?: Record<string, string> } };
 
