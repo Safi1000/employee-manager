@@ -175,15 +175,17 @@ export default function AttendanceSheetModal({
         // Guard → current site (open posting). Used both to narrow to one site
         // AND to match each guard against the right per-site confirmation.
         const siteByGuard = await loadSiteByGuard(realClientId);
+        const [cy, cm] = month.split("-").map(Number);
+        const monthEndDate = `${month}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
+        // The month's roster: who was POSTED to this client in it, not who is here now.
         const employees = await loadSheetEmployees({
           clientId: realClientId, category, siteId, siteByGuard, clientPrefix: prefix,
+          startDate: monthStartDate, endDate: monthEndDate,
           ...(synthetic ? { branchId } : {}),
         });
 
         // Monthly Board shows ONLY supervisor-confirmed attendance: an
         // unconfirmed mark renders blank, exactly as if it were never entered.
-        const [cy, cm] = month.split("-").map(Number);
-        const monthEndDate = `${month}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
         const confirmedOnly = await loadConfirmationGate({
           clientId: realClientId, category,
           startDate: monthStartDate, endDate: monthEndDate, siteByGuard,
@@ -195,6 +197,7 @@ export default function AttendanceSheetModal({
           contracts: (contracts ?? []) as any[],
           clients: client ? ([client] as any[]) : [],
           confirmedOnly,
+          clientId: realClientId,
         });
         // Standalone reliever coverage: guards who covered THIS client on some
         // day(s) but aren't on its roster (real clients only). Roster guards'

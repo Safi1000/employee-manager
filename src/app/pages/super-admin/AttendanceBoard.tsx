@@ -1875,6 +1875,7 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
   const siteByGuard = await loadSiteByGuard(realClientId);
   const employees = await loadSheetEmployees({
     clientId: realClientId, category, siteByGuard, clientPrefix: prefix,
+    startDate, endDate,
   });
   if (employees.length === 0) return 0;
 
@@ -1890,6 +1891,7 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
     contracts: (contracts ?? []) as any[],
     clients: clientRow ? ([clientRow] as any[]) : [],
     confirmedOnly,
+    clientId: realClientId,
   });
 
   // Standalone reliever coverage, appended and serialled on after the roster,

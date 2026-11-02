@@ -21,7 +21,17 @@ export type SheetEmployee = {
   termination_date: string | null;
   lifecycle_state: string | null;
   shift: string | null;
+  /**
+   * 2 Nov 2026: this guard's postings at THE CLIENT THE SHEET IS FOR (from
+   * deployments), or null when the guard has none recorded there (legacy rows,
+   * category groups). A day outside every posting is not this client's day: a
+   * mark on it is not shown here and an empty day reads X.
+   */
+  postings?: { start: string; end: string | null }[] | null;
 };
+
+const inPostings = (e: SheetEmployee, iso: string) =>
+  !e.postings || e.postings.some((p) => p.start <= iso && (p.end === null || iso <= p.end));
 
 // P/A/L/DD symbol from either vocabulary (legacy Present/Absent/Leave or the
 // spec's present/absent/rotation_leave/…). Worked statuses count as present;
@@ -148,7 +158,15 @@ export async function loadConfirmationGate(opts: {
 
 /** The roster a sheet is built from: one client's guards, or a synthetic
  *  category group. Relievers and archived rows are excluded — a reliever is
- *  never on a roster and is surfaced by buildRelieverRows instead. */
+ *  never on a roster and is surfaced by buildRelieverRows instead.
+ *
+ *  WHO IS ON A CLIENT'S SHEET (fixed 2 Nov 2026). It used to be "employees whose
+ *  CURRENT client is this one". A guard moved from Regent 1 to Ms. Yasmin Yousaf
+ *  on 1 Nov therefore appeared on Ms. Yasmin's OCTOBER sheet with his 31 Regent 1
+ *  days, and vanished from Regent 1's. With a window, a client's sheet is now the
+ *  guards POSTED THERE during it (deployments overlapping the window), each
+ *  carrying those postings; a guard with no posting recorded at this client at
+ *  all falls back to the current-client rule, so legacy rows are not lost. */
 export async function loadSheetEmployees(opts: {
   clientId?: string | null;
   category?: string | null;
@@ -157,18 +175,39 @@ export async function loadSheetEmployees(opts: {
   clientPrefix?: string | null;
   /** Staff groups are per region (0498). undefined = every region; null = staff with no region. */
   branchId?: string | null;
+  /** The sheet's window. With a client, the roster is who was posted there in it. */
+  startDate?: string;
+  endDate?: string;
 }): Promise<SheetEmployee[]> {
+  // A client's postings, per guard — all of them, so "has none here" is known.
+  const postingsByGuard = new Map<string, { start: string; end: string | null }[]>();
+  const postedInWindow = new Set<string>();
+  if (!opts.category && opts.clientId && opts.startDate && opts.endDate) {
+    const { data: deps } = await supabase.from("deployments").select("guard_id, start_date, end_date").eq("client_id", opts.clientId);
+    for (const d of (deps ?? []) as { guard_id: string; start_date: string; end_date: string | null }[]) {
+      postingsByGuard.set(d.guard_id, [...(postingsByGuard.get(d.guard_id) ?? []), { start: d.start_date, end: d.end_date }]);
+      if (d.start_date <= opts.endDate && (d.end_date === null || d.end_date >= opts.startDate)) postedInWindow.add(d.guard_id);
+    }
+  }
   const q = supabase
     .from("employees")
     .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
     .neq("lifecycle_state", "archived")
     .neq("category", "reliever");
-  const scoped = opts.category ? q.eq("category", opts.category) : q.eq("client_id", opts.clientId as string);
+  const scoped = opts.category
+    ? q.eq("category", opts.category)
+    : postedInWindow.size > 0
+      ? q.or(`client_id.eq.${opts.clientId},id.in.(${[...postedInWindow].join(",")})`)
+      : q.eq("client_id", opts.clientId as string);
   const { data } = await (opts.category && opts.branchId !== undefined
     ? (opts.branchId === null ? scoped.is("branch_id", null) : scoped.eq("branch_id", opts.branchId))
     : scoped);
 
   let list = (data ?? []) as any[];
+  if (!opts.category && opts.startDate && opts.endDate) {
+    // Posted here during the window, or (no posting recorded here at all) currently here.
+    list = list.filter((e) => postedInWindow.has(e.id) || (!postingsByGuard.has(e.id) && e.client_id === opts.clientId));
+  }
   if (opts.siteId && opts.siteByGuard) list = list.filter((e) => opts.siteByGuard!.get(e.id) === opts.siteId);
 
   return list
@@ -183,6 +222,7 @@ export async function loadSheetEmployees(opts: {
       termination_date: e.termination_date ?? null,
       lifecycle_state: e.lifecycle_state ?? null,
       shift: e.shift ?? null,
+      postings: postingsByGuard.get(e.id) ?? null,
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
@@ -228,8 +268,14 @@ export async function buildAttendanceRows(opts: {
   // attendance — an unconfirmed mark (bulk-marked, reported, awaiting) renders
   // as blank, exactly as if it were never entered.
   confirmedOnly?: (empId: string, iso: string, workedShift: string) => boolean;
+  /**
+   * The client this sheet is for (2 Nov 2026). A guard's ordinary mark worked FOR
+   * ANOTHER CLIENT, or on a day he was not posted here, is that client's day and
+   * is not drawn on this sheet. Omitted for category groups.
+   */
+  clientId?: string | null;
 }): Promise<{ rows: AttendanceEmployeeRow[]; daysInMonth: number; monthLabel: string; cellsByEmp: Map<string, Map<string, string>> }> {
-  const { employees, contracts, clients, confirmedOnly } = opts;
+  const { employees, contracts, clients, confirmedOnly, clientId } = opts;
   const { dates, label: monthLabel } = windowOf(opts);
   const dim = dates.length;
   const monthStart = dates[0];
@@ -252,7 +298,7 @@ export async function buildAttendanceRows(opts: {
   const records = await fetchAllRows<any>(() =>
     supabase
       .from("attendance_records")
-      .select("employee_id, attendance_date, status, worked_shift, supervisor_override")
+      .select("employee_id, attendance_date, status, worked_shift, supervisor_override, worked_for_client_id, entry_type")
       .gte("attendance_date", monthStart)
       .lte("attendance_date", monthEnd)
       .in("employee_id", empIds)
@@ -275,7 +321,15 @@ export async function buildAttendanceRows(opts: {
   // it was set by an override (the one edit allowed once locked).
   const marksByDay = new Map<string, Map<number, Mark[]>>();
   const cellsByEmp = new Map<string, Map<string, string>>();
+  const empById = new Map(roster.map((e) => [e.id, e]));
   for (const r of records ?? []) {
+    // Another client's day (see clientId above): an ordinary mark worked for a
+    // different client, or a mark on a day this guard was not posted here.
+    if (clientId) {
+      const otherClient = r.worked_for_client_id && r.worked_for_client_id !== clientId && (r.entry_type ?? "normal") === "normal";
+      const emp = empById.get(r.employee_id);
+      if (otherClient || (emp && !inPostings(emp, String(r.attendance_date).slice(0, 10)))) continue;
+    }
     // 1-based column index. Identical to day-of-month for a whole-month sheet,
     // which is the key AttendanceSheetModal's grid already reads
     // (`${i + 1}|${shift}`), so the viewer is untouched.
@@ -413,7 +467,7 @@ export async function buildAttendanceRows(opts: {
       const cell = dayMap.get(d);
       // No record AND not employed that day → "X" (separated / pre-join / off-contract),
       // otherwise blank. A real record always wins — history is reported as-is.
-      const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");
+      const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) || (clientId && !inPostings(emp, iso)) ? SEPARATION_MARK : "");
       statusByDay.push(sym);
       if (sym === "P") p += 1;
       else if (sym === "DD") { p += 1; dd += 1; }
