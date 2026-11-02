@@ -37,8 +37,20 @@ export function formatDateTime(value: string | number | Date | null | undefined)
 }
 
 /**
- * MM/DD/YYYY. The app standard is DD/MM/YYYY (formatDate); this is for the few
- * places asked to read US-style, currently the Contracts period column.
+ * "1 Oct 2026" — cannot be misread whichever way round the reader expects
+ * the day and month. Contract periods use it (3 Nov 2026 audit: "10/01/2026"
+ * in the US style asked for on 3 Aug read as 10 January to everyone else).
+ */
+export function formatDay(value: string | number | Date | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const d = toDate(value);
+  if (Number.isNaN(d.getTime())) return typeof value === "string" ? value : "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/**
+ * MM/DD/YYYY. The app standard is DD/MM/YYYY (formatDate). No screen uses it
+ * since 3 Nov 2026 (Contracts moved to formatDay); kept in case a screen needs it.
  */
 export function formatDateUS(value: string | number | Date | null | undefined): string {
   if (value == null || value === "") return "—";

@@ -438,7 +438,8 @@ export default function Tasks() {
                   )}
                   {columns[status].map((t) => {
                     const assignee = t.assignee_id ? userMap.get(t.assignee_id) : null;
-                    const daysLeft = t.due_date ? dayDiff(t.due_date) : null;
+                    // 3 Nov 2026: a finished task is not overdue, whatever its due date was.
+                    const daysLeft = t.due_date && status !== "done" ? dayDiff(t.due_date) : null;
                     const overdue = daysLeft !== null && daysLeft < 0;
                     const soon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
                     return (

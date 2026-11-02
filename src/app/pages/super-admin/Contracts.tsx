@@ -24,7 +24,7 @@ import ContractCyclesModal from "../../components/ContractCyclesModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import MobileCardList from "../../components/MobileCardList";
-import { formatDateUS } from "../../lib/date";
+import { formatDay } from "../../lib/date";
 import {
   supabase,
   CONTRACT_TYPE_LABEL,
@@ -389,7 +389,7 @@ export default function Contracts() {
       >
         {!loading && (
           <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5">
               {[
                 { label: "Live contracts", v: book.live.toLocaleString(), sub: "active today", tone: "text-foreground", on: false, click: () => setStatusFilter("active") },
                 { label: "Contracted value", v: <><span className="cur">PKR</span>{Math.round(book.value).toLocaleString()}</>, sub: "per month, live contracts", tone: "text-foreground", on: false,
@@ -416,6 +416,16 @@ export default function Contracts() {
                     rows: book.runway.filter((x) => x.days >= 0 && x.days <= 60).map((x) => ({ label: `${x.client} · ${x.code}`, value: `${x.days} days`, hint: `PKR ${Math.round(x.value).toLocaleString()} a month` })),
                     link: { to: "/app/compliance?tab=renewals", label: "Open Contract Renewals" } }) },
                 { label: "Needs renewal", v: book.needsRenewal.toLocaleString(), sub: "past their end date", tone: book.needsRenewal ? "text-down" : "text-up", on: statusFilter === "needs_renewal", click: () => setStatusFilter(statusFilter === "needs_renewal" ? "all" : "needs_renewal") },
+                // 3 Nov 2026 audit: most live contracts had no signed copy on file.
+                (() => {
+                  const unsigned = filteredRows.filter((r) => r.status === "active" && !r.drive_file_id && !r.contract_file_name);
+                  const noEsc = filteredRows.filter((r) => r.status === "active" && r.contract_type !== "services" && !(Number(r.annual_escalation_pct) > 0));
+                  return { label: "No signed copy", v: unsigned.length.toLocaleString(), sub: `${noEsc.length} with no annual escalation set`, tone: unsigned.length ? "text-heed" : "text-up", on: false,
+                    click: () => setSheet({ kicker: "Contracts · on file", title: "Live contracts with no signed copy", big: String(unsigned.length),
+                      note: "Upload the signed contract on each (the Document column). Below: also the live guard contracts with no annual escalation % set.",
+                      rows: [...unsigned.map((r) => ({ label: `${r.client_name} · ${r.contract_code}`, value: "no signed copy" })),
+                             ...noEsc.map((r) => ({ label: `${r.client_name} · ${r.contract_code}`, value: "no escalation %" }))] }) };
+                })(),
               ].map((t) => {
                 const body = (<><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></>);
                 const cls = `text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 min-w-0 hover:border-brand-500/70 ${t.on ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"}`;
@@ -512,13 +522,13 @@ export default function Contracts() {
                   const { eff, effEndDate, renewed, endingSoon, expired, dleft } = deriveContract(row);
                   return (
                     <>
-                      {formatDateUS(row.start_date)}
+                      {formatDay(row.start_date)}
                       {eff.isInfinite ? (
                         <span className="text-muted-foreground"> → no end date{renewed && " (renewed)"}</span>
                       ) : (
                         effEndDate && (
                           <span className={endingSoon ? "text-warning-700" : expired ? "text-danger-700" : "text-muted-foreground"}>
-                            {" "}→ {formatDateUS(effEndDate)}
+                            {" "}→ {formatDay(effEndDate)}
                             {renewed && " (renewed)"}
                             {endingSoon && ` (${dleft}d)`}
                           </span>
@@ -651,7 +661,7 @@ export default function Contracts() {
                       <td className="px-4 py-3 text-sm text-muted-foreground">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
                         {/* Period reads MM/DD/YYYY; the rest of the app is DD/MM/YYYY. */}
-                        <div>{formatDateUS(row.start_date)}</div>
+                        <div>{formatDay(row.start_date)}</div>
                         {eff.isInfinite ? (
                           // No end date (base or via renewal) — can never read "ending soon".
                           <div className="text-xs text-muted-foreground">
@@ -662,7 +672,7 @@ export default function Contracts() {
                         ) : (
                           effEndDate && (
                             <div className={endingSoon ? "text-warning-700 text-xs" : expired ? "text-danger-700 text-xs" : "text-xs text-muted-foreground"}>
-                              → {formatDateUS(effEndDate)}
+                              → {formatDay(effEndDate)}
                               {renewed && " (renewed)"}
                               {endingSoon && ` (${dleft}d)`}
                             </div>

@@ -168,6 +168,18 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
     navigate(`${activeTab === "receivables" ? "/app/invoices" : "/app/expenses"}?${q.toString()}`, { replace: true });
   }, [embed, activeTab, searchParams, navigate]);
   useEffect(() => { if (embed && activeTab !== embed) setActiveTab(embed); }, [embed, activeTab]);
+  // 3 Nov 2026: this page no longer loads the receivables or payables tabs on its
+  // own route, so the net position read "Owed to us 0 · We owe 0". What clients
+  // owe now comes from client_receivables_today(); payables appear only when loaded.
+  const [owedToUs, setOwedToUs] = useState<number | null>(null);
+  useEffect(() => {
+    if (embed) return;
+    void supabase.rpc("client_receivables_today").then(({ data, error }) => {
+      if (error) { setOwedToUs(null); return; }
+      setOwedToUs(((data ?? []) as { branch_id: string | null; balance: number }[])
+        .filter((r) => !regionId || r.branch_id === regionId).reduce((t, r) => t + Number(r.balance ?? 0), 0));
+    });
+  }, [embed, regionId]);
 
   // Which tabs this user may see. banks.view / receivables.view /
   // payables.view were split out of a single accounting.view, so each tab is
@@ -2365,12 +2377,12 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               each tab shows below. */}
           <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
             <span className="lbl">Net position</span>
-            {[
+            {([
               { k: regionId ? "Bank (company)" : "Bank", v: totalAccountBalance },
               { k: regionId ? "Cash held (company)" : "Cash held", v: cashBalance },
-              { k: "Owed to us", v: receivableTotals.outstanding },
-              { k: "We owe", v: -(payableTotals.pending + payableTotals.overdue) },
-            ].map((x) => (
+              owedToUs != null ? { k: "Clients owe us", v: owedToUs } : null,
+              payableTotals.pending + payableTotals.overdue > 0 ? { k: "We owe", v: -(payableTotals.pending + payableTotals.overdue) } : null,
+            ].filter(Boolean) as { k: string; v: number }[]).map((x) => (
               <span key={x.k} className="flex items-baseline gap-2 text-sm">
                 <span className="text-muted-foreground">{x.k}</span>
                 <span className={`font-ledger font-semibold ${x.v < 0 ? "text-down" : "text-foreground"}`}>{x.v < 0 ? "−" : ""}{Math.abs(Math.round(x.v)).toLocaleString()}</span>
@@ -2378,7 +2390,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
             ))}
             <span className="ml-auto flex items-baseline gap-2">
               <span className="text-muted-foreground text-sm">=</span>
-              <span className="font-ledger text-xl font-semibold text-up"><span className="cur">PKR</span>{Math.round(totalAccountBalance + cashBalance + receivableTotals.outstanding - payableTotals.pending - payableTotals.overdue).toLocaleString()}</span>
+              <span className="font-ledger text-xl font-semibold text-up"><span className="cur">PKR</span>{Math.round(totalAccountBalance + cashBalance + (owedToUs ?? 0) - payableTotals.pending - payableTotals.overdue).toLocaleString()}</span>
             </span>
           </div>
           <Tabs<typeof activeTab>
@@ -2396,22 +2408,20 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                   Σ custodians
                 </span>
               </div>
-              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-up"><span className="cur">PKR</span>{cashBalance.toLocaleString()}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Opening: PKR {cashOpeningBalance.toLocaleString()}
-              </p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-up" title={`Opening (custodians, at cutover): PKR ${Math.round(cashOpeningBalance).toLocaleString()}`}><span className="cur">PKR</span>{Math.round(cashBalance).toLocaleString()}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">held by custodians today</p>
             </div>
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <p className="lbl mb-1">Bank Balance</p>
-              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-brand-700 dark:text-brand-500"><span className="cur">PKR</span>{totalAccountBalance.toLocaleString()}</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-brand-700 dark:text-brand-500"><span className="cur">PKR</span>{Math.round(totalAccountBalance).toLocaleString()}</p>
             </div>
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
               <p className="lbl mb-1">Cheques in Transit</p>
-              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{totalPendingCheques.toLocaleString()}</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{Math.round(totalPendingCheques).toLocaleString()}</p>
             </div>
             <div className="bg-card p-4 md:p-4 rounded-2xl border border-brand-500/60">
               <p className="lbl mb-1">Net Available Cash</p>
-              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground"><span className="cur">PKR</span>{grandTotal.toLocaleString()}</p>
+              <p className="font-ledger whitespace-nowrap font-semibold tracking-tight text-2xl text-foreground"><span className="cur">PKR</span>{Math.round(grandTotal).toLocaleString()}</p>
             </div>
           </div>
         )}
@@ -3208,7 +3218,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                                   className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-danger-50 text-danger-700 border border-danger-200"
                                   title={c.bounce_reason ?? undefined}
                                 >
-                                  Bounced{c.bounced_at ? ` · ${c.bounced_at.slice(0, 10)}` : ""}
+                                  Bounced{c.bounced_at ? ` · ${formatDate(c.bounced_at.slice(0, 10))}` : ""}
                                 </span>
                               ) : c.status === "pending" ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-warning-50 text-warning-700">
@@ -3216,7 +3226,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-success-50 text-success-700">
-                                  Cleared{c.cleared_at ? ` · ${c.cleared_at.slice(0, 10)}` : ""}
+                                  Cleared{c.cleared_at ? ` · ${formatDate(c.cleared_at.slice(0, 10))}` : ""}
                                 </span>
                               )}
                             </td>
@@ -3848,13 +3858,13 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                 <p>
                   {chequeView.status === "bounced" ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-danger-50 text-danger-700 border border-danger-200">
-                      Bounced{chequeView.bounced_at ? ` · ${chequeView.bounced_at.slice(0, 10)}` : ""}
+                      Bounced{chequeView.bounced_at ? ` · ${formatDate(chequeView.bounced_at.slice(0, 10))}` : ""}
                     </span>
                   ) : chequeView.status === "pending" ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-warning-50 text-warning-700">Pending</span>
                   ) : (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-xs bg-success-50 text-success-700">
-                      Cleared{chequeView.cleared_at ? ` · ${chequeView.cleared_at.slice(0, 10)}` : ""}
+                      Cleared{chequeView.cleared_at ? ` · ${formatDate(chequeView.cleared_at.slice(0, 10))}` : ""}
                     </span>
                   )}
                   {chequeView.bounce_reason && (

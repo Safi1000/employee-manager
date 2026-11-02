@@ -79,6 +79,9 @@ type HistoryRow = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+/** 3 Nov 2026: registers are marked for the day before, so a page opened on
+ *  today is always empty in the morning — open on yesterday (local time). */
+const yesterdayLocal = () => { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 const daysAgo = (n: number) => {
   const d = new Date();
@@ -137,7 +140,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   } | null>(null);
   const [undoing, setUndoing] = useState(false);
 
-  const [date, setDate] = usePageState<string>("AttendanceManagement.date", today());
+  const [date, setDate] = usePageState<string>("AttendanceManagement.date", yesterdayLocal());
   const [clientFilter, setClientFilter] = usePageState("AttendanceManagement.clientFilter", "all");
   const [shiftFilter, setShiftFilter] = usePageState<"all" | "day" | "night">("AttendanceManagement.shiftFilter", "all");
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.

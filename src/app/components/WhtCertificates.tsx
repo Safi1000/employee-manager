@@ -150,6 +150,11 @@ export default function WhtCertificates({ companyId, onChanged }: { companyId: s
         <>
           <p className="text-xs text-muted-foreground">
             Tax clients deducted from their payments, waiting for the certificate. When one arrives, tick the payments it covers and record it once.
+            {/* 3 Nov 2026: the whole amount waiting, and each payment's effective rate — an odd rate is how a wrong entry is caught. */}
+            {!loading && byClient.length > 0 && (() => {
+              const all = byClient.flatMap((g) => g.rows);
+              return <> <span className="font-semibold text-foreground">{fmt(all.reduce((t, r) => t + r.withholding_amount, 0))} waiting across {all.length} payment{all.length === 1 ? "" : "s"}.</span></>;
+            })()}
           </p>
           {loading ? <div className="py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</div>
             : byClient.length === 0 ? <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">No tax is waiting for a certificate.</div>
@@ -171,7 +176,7 @@ export default function WhtCertificates({ companyId, onChanged }: { companyId: s
                   <table className="w-full text-sm">
                     <thead><tr className="text-xs text-muted-foreground text-left">
                       <th className="px-4 py-2 w-8"></th><th className="px-2 py-2">Payment date</th><th className="px-2 py-2">Invoice</th>
-                      <th className="px-2 py-2 text-right">Received</th><th className="px-2 py-2 text-right">Tax deducted</th><th className="px-4 py-2 text-right">Waiting</th>
+                      <th className="px-2 py-2 text-right">Received</th><th className="px-2 py-2 text-right">Tax deducted</th><th className="px-2 py-2 text-right" title="Tax as a share of the gross (received + tax)">Rate</th><th className="px-4 py-2 text-right">Waiting</th>
                     </tr></thead>
                     <tbody>
                       {g.rows.map((r) => {
@@ -183,6 +188,7 @@ export default function WhtCertificates({ companyId, onChanged }: { companyId: s
                             <td className="px-2 py-2 font-ledger text-xs">{r.invoice_number ?? "On account"}</td>
                             <td className="px-2 py-2 text-right font-ledger">{fmt(r.amount)}</td>
                             <td className="px-2 py-2 text-right font-ledger font-semibold">{fmt(r.withholding_amount)}</td>
+                            <td className="px-2 py-2 text-right font-ledger text-xs text-muted-foreground">{r.amount + r.withholding_amount > 0 ? `${((r.withholding_amount / (r.amount + r.withholding_amount)) * 100).toFixed(1)}%` : ""}</td>
                             <td className={`px-4 py-2 text-right text-xs ${age > 45 ? "text-danger-700 dark:text-danger-500 font-semibold" : "text-muted-foreground"}`}>{age} days</td>
                           </tr>
                         );

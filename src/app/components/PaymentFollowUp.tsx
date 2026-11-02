@@ -75,6 +75,9 @@ const n = (v: unknown) => (v == null ? null : Number(v));
 const ordinal = (d: number) => `${d}${d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12 ? "nd" : d % 10 === 3 && d !== 13 ? "rd" : "th"}`;
 
 /** Whether this login is shown amounts. Display only: the database decides what it returns. */
+/** Balances under this are grouped away on request (write-off candidates, mostly former clients). */
+const SMALL = 50000;
+
 export function useCanSeeAmounts() {
   const { profile } = useAuth();
   return hasAnyPermission(profile, ["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"]);
@@ -109,6 +112,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [show, setShow] = usePageState<"late" | "all" | "mine">("PaymentFollowUp.show", "late");
+  const [hideSmall, setHideSmall] = usePageState("PaymentFollowUp.hideSmall", false);
   const [search, setSearch] = usePageState("PaymentFollowUp.search", "");
   const [logFor, setLogFor] = useState<FollowRow | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -159,6 +163,8 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
       .filter((r) => !regionId || r.branch_id === regionId)
       .filter((r) => (show === "late" ? r.is_late : show === "mine" ? (!!r.next_step && !r.next_step_done && r.next_step_assignee === me) : true))
       .filter((r) => !q || r.client_name.toLowerCase().includes(q))
+      // 3 Nov 2026: small former-client balances (4,620 · 5,000 · 12,500) sat among HMC and Nova.
+      .filter((r) => !hideSmall || r.balance == null || Math.abs(r.balance) >= SMALL)
       .sort((a, b) => {
         // Steps due today or earlier first, then the latest-paying.
         const ad = a.next_follow_up && a.next_follow_up <= t && !a.next_step_done ? 0 : 1;
@@ -167,7 +173,18 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
         const bl = b.from_before_bastion ? 100000 : b.days_late ?? -1;
         return ad - bd || bl - al || a.client_name.localeCompare(b.client_name);
       });
-  }, [rows, regionId, show, search, me, t]);
+  }, [rows, regionId, show, search, me, t, hideSmall]);
+  const smallCount = rows.filter((r) => (!regionId || r.branch_id === regionId) && r.balance != null && Math.abs(r.balance) < SMALL && (show !== "late" || r.is_late)).length;
+  // Clients whose usual pay day is not set but the invoice sheets suggest one.
+  const suggestable = rows.filter((r) => !r.usual_pay_day && usualDay.has(r.client_id));
+  const acceptSuggestions = async () => {
+    setErr(null);
+    for (const r of suggestable) {
+      const { error } = await supabase.rpc("set_client_pay_day", { p_client_id: r.client_id, p_day: usualDay.get(r.client_id)!.day });
+      if (error) { setErr(friendlyDbError(error)); break; }
+    }
+    void load();
+  };
 
   const setPayDay = async (r: FollowRow, v: string) => {
     const { error } = await supabase.rpc("set_client_pay_day", { p_client_id: r.client_id, p_day: v ? Number(v) : null });
@@ -282,6 +299,16 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
       <p className="text-xs text-muted-foreground">
         A client is late once their usual pay day has passed for their oldest unpaid invoice — or {lateAfter} days after the invoice when no pay day is set.
         An opening balance still unpaid (as at 31 Aug 2026) is late from that date. Set each client's usual pay day in the "Pays on" column.
+        {canAct && suggestable.length > 0 && (
+          <> <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline font-medium" onClick={() => void acceptSuggestions()}>
+            Use the invoice sheets' usual day for {suggestable.length} client{suggestable.length === 1 ? "" : "s"}
+          </button></>
+        )}
+        {canSeeAmounts && (smallCount > 0 || hideSmall) && (
+          <> · <button type="button" className="hover:underline" onClick={() => setHideSmall(!hideSmall)}>
+            {hideSmall ? "Show balances under 50,000" : `Hide ${smallCount} balance${smallCount === 1 ? "" : "s"} under 50,000`}
+          </button></>
+        )}
       </p>
       {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
 

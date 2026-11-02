@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2, RotateCcw } from "lucide-react";
 import Modal from "./Modal";
 import Button from "./Button";
-import { formatDateUS } from "../lib/date";
+import { formatDay } from "../lib/date";
 import { supabase, type Contract } from "../lib/supabase";
 
 /**
@@ -75,11 +75,11 @@ export default function ContractRenewModal({
         <div className="bg-muted/50 border border-border rounded-md p-3 text-sm">
           <p className="text-foreground">{clientName}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Current term: {formatDateUS(contract.start_date)}
+            Current term: {formatDay(contract.start_date)}
             {contract.is_infinite
               ? " → no end date"
               : contract.end_date
-                ? ` → ${formatDateUS(contract.end_date)}`
+                ? ` → ${formatDay(contract.end_date)}`
                 : " → no end date"}
           </p>
         </div>

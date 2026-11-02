@@ -95,6 +95,9 @@ function normalizeStatus(raw: unknown): Status {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+/** 3 Nov 2026: registers are marked for the day before, so a page opened on
+ *  today is always empty in the morning — open on yesterday (local time). */
+const yesterdayLocal = () => { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 // Humanized label for a non-client category (office_staff → "Office Staff").
 // Dynamic: any future category renders as a title-cased row group.
@@ -208,7 +211,7 @@ export default function AttendanceBoard() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
   const branding = brandingFromCompany(company);
-  const [date, setDate] = usePageState("AttendanceBoard.date", today());
+  const [date, setDate] = usePageState("AttendanceBoard.date", yesterdayLocal());
   const [tab, setTab] = usePageState<"board" | "monthly" | "vacancies" | "shifts">("AttendanceBoard.tab", "board");
   // Each band figure opens the registers behind it (2026-10-22: "every figure clickable").
   const [bandSheet, setBandSheet] = useState<DetailContent | null>(null);

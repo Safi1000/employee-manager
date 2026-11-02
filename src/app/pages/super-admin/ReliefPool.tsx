@@ -43,13 +43,16 @@ type DayRow = { id: string; employee_id: string; status: string; site_id: string
 type Gap = { guard_id: string; name: string; status: string; site_id: string | null; client_id: string | null; shift: string | null; covered_by: string | null };
 
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+/** 3 Nov 2026: registers are marked for the day before, so a page opened on
+ *  today is always empty in the morning — open on yesterday (local time). */
+const yesterdayLocal = () => { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const fmtDay = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 const SHIFTS = ["day", "evening", "night"];
 
 export default function ReliefPool() {
   const { profile } = useAuth();
   const canEdit = hasPermission(profile, "attendance.edit");
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(yesterdayLocal());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

@@ -533,12 +533,16 @@ export default function Expenses() {
   const [advPaidByFilter, setAdvPaidByFilter] = usePageState<"all" | "none" | string>("Expenses.advPaidByFilter", "all");
   const [fixedPaidByFilter, setFixedPaidByFilter] = usePageState<"all" | "none" | string>("Expenses.fixedPaidByFilter", "all");
 
+  // 3 Nov 2026: in the first week of a month the new month is nearly empty
+  // (the page opened on "Nov, 0 entries"); open on last month until the 8th.
   const currentMonthKey = () => {
     const d = new Date();
+    if (d.getDate() <= 7) d.setMonth(d.getMonth() - 1, 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
 
   const [search, setSearch] = usePageState("Expenses.search", "");
+  const [showCategories, setShowCategories] = useState(false);
   const [categoryFilter, setCategoryFilter] = usePageState("Expenses.categoryFilter", "all");
   const [clientFilter, setClientFilter] = usePageState<"all" | "office" | string>("Expenses.clientFilter", "all");
   const [modeFilter, setModeFilter] = usePageState<"all" | ExpensePaymentMode>("Expenses.modeFilter", "all");
@@ -3147,14 +3151,23 @@ export default function Expenses() {
         </div>
         )}
 
-        {activeTab === "expenses" && (
+        {/* 3 Nov 2026: a setting, not daily work — folded to one line under the list. */}
+        {activeTab === "expenses" && !showCategories && (
+          <button type="button" onClick={() => setShowCategories(true)} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+            Manage expense categories ({categories.length}) →
+          </button>
+        )}
+        {activeTab === "expenses" && showCategories && (
         <div className="bg-card rounded-2xl border border-border p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base text-foreground">Category Management</h3>
-            <Button variant="primary" size="sm" onClick={openCatAdd}>
-              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Add Category
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowCategories(false)}>Hide</Button>
+              <Button variant="primary" size="sm" onClick={openCatAdd}>
+                <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Add Category
+              </Button>
+            </div>
           </div>
           {categories.length === 0 ? (
             <p className="text-sm text-muted-foreground">No categories yet. Add one to start categorizing expenses.</p>
