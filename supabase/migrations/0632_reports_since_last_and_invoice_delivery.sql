@@ -329,7 +329,7 @@ begin
       where d.company_id = v_co and d.created_at >= p_from and d.created_at < p_to and d.reason::text = 'transfer'
         and (v_branch is null or e.branch_id = v_branch)), '[]'::jsonb),
     'salary_changes', coalesce((select jsonb_agg(jsonb_build_object('name', e.full_name, 'code', e.employee_code, 'from_date', s.effective_date,
-                                                                    'base', s.base_salary, 'reason', coalesce(s.salary_change_reason, s.reason), 'branch_id', e.branch_id) order by s.effective_date)
+                                                                    'base', s.base_salary, 'reason', coalesce(s.salary_change_reason::text, s.reason), 'branch_id', e.branch_id) order by s.effective_date)
       from public.employee_salary_history s join public.employees e on e.id = s.employee_id
       where s.company_id = v_co and s.created_at >= p_from and s.created_at < p_to and (v_branch is null or e.branch_id = v_branch)), '[]'::jsonb),
     -- Documents running out in the next 30 days, for staff still employed.
