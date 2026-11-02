@@ -80,8 +80,15 @@ export function useCanSeeAmounts() {
   return hasAnyPermission(profile, ["invoices.view", "invoices.edit", "receivables.view", "accounting.edit"]);
 }
 
+/** The opening balances were taken on at 31 Aug 2026; an amount still owed from them is late from that day. */
+const OPENING_DATE = "2026-08-31";
 function lateText(r: FollowRow) {
-  if (r.from_before_bastion) return "From before Bastion";
+  // Shayan, 2 Nov 2026: no "before Bastion" wording anywhere — an unpaid opening
+  // balance reads as days late since the opening date, like any other debt.
+  if (r.from_before_bastion) {
+    const d = Math.floor((new Date(`${today()}T00:00:00`).getTime() - new Date(`${OPENING_DATE}T00:00:00`).getTime()) / 86400000);
+    return `${d} days late (since 31 Aug)`;
+  }
   if (r.is_late && r.days_late != null) return `${r.days_late} day${r.days_late === 1 ? "" : "s"} late`;
   if (r.late_since) return `Due ${fmtShort(r.late_since)}`;
   return "Not late yet";
@@ -274,7 +281,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
 
       <p className="text-xs text-muted-foreground">
         A client is late once their usual pay day has passed for their oldest unpaid invoice — or {lateAfter} days after the invoice when no pay day is set.
-        Anything left from before Bastion is always late. Set each client's usual pay day in the "Pays on" column.
+        An opening balance still unpaid (as at 31 Aug 2026) is late from that date. Set each client's usual pay day in the "Pays on" column.
       </p>
       {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
 
@@ -327,7 +334,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
                     {(() => {
                       const u = usualDay.get(r.client_id);
                       if (!u || u.day === r.usual_pay_day) return null;
-                      const label = `Usually ~${ordinal(u.day)} (${u.n} payments before Bastion)`;
+                      const label = `Usually ~${ordinal(u.day)} (${u.n} payments on the invoice sheets)`;
                       return canAct
                         ? <button className="block text-[11px] text-brand-600 hover:underline mt-0.5" title="From the dated receipts on the monthly invoice sheets" onClick={() => void setPayDay(r, String(u.day))}>{label}</button>
                         : <div className="text-[11px] text-muted-foreground mt-0.5">{label}</div>;

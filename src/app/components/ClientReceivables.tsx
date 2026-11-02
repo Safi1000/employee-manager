@@ -18,7 +18,7 @@ import { downloadClientLedgerPdf } from "../lib/clientLedgerPdf";
  * CLIENT RECEIVABLES (0626, DECIDED 2 Nov 2026). Replaces the month-picker
  * receivables table.
  *
- * The list opens on BALANCE TODAY: brought forward (before Bastion), what each
+ * The list opens on BALANCE TODAY: the opening balance at 31 Aug 2026, what each
  * client owes now and how old it is, and their last payment. The client ledger
  * reads like a bank statement, by date: an advance invoice sits on the day it
  * was sent, with the month it bills for beside it; each payment is one line with
@@ -246,7 +246,7 @@ export default function ClientReceivables() {
   const exportList = () => exportTable({
     fileName: `Receivables ${today()}.xlsx`,
     title: `Client receivables — balance on ${fmtDate(today())}`,
-    headers: ["Client", "Owes now", "Before Bastion (still owed)", "0–30 days", "31–60 days", "61–90 days", "Over 90 days", "Tax awaiting certificate", "Last payment", "Mode", "Amount"],
+    headers: ["Client", "Owes now", "Opening balance 31 Aug (still owed)", "0–30 days", "31–60 days", "61–90 days", "Over 90 days", "Tax awaiting certificate", "Last payment", "Mode", "Amount"],
     rows: visible.map((r) => [r.client_name, Math.round(r.balance), Math.round(r.owed_before_bastion), Math.round(r.age_0_30), Math.round(r.age_31_60),
       Math.round(r.age_61_90), Math.round(r.age_over_90), Math.round(r.wht_awaiting_certificate), fmtDate(r.last_paid_on), r.last_paid_mode ?? "", r.last_paid_amount ?? ""]),
   });
@@ -257,7 +257,7 @@ export default function ClientReceivables() {
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
           ["Owed today", foot.balance, "text-foreground"],
-          ["Before Bastion", foot.bf, "text-muted-foreground"],
+          ["Opening (31 Aug)", foot.bf, "text-muted-foreground"],
           ["0–30 days", foot.a0, "text-foreground"],
           ["31–60 days", foot.a31, "text-warning-700 dark:text-warning-500"],
           ["61–90 days", foot.a61, "text-warning-700 dark:text-warning-500"],
@@ -298,8 +298,8 @@ export default function ClientReceivables() {
       {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
 
       <p className="text-xs text-muted-foreground">
-        Balances are as of today. Payments clear the oldest amount first: the balance from before Bastion, then invoices by date.
-        "Before Bastion" is what is still owed from the balance brought in when Bastion started. Click a client for their ledger.
+        Balances are as of today. Payments clear the oldest amount first: the opening balance, then invoices by date.
+        "Opening (31 Aug)" is what is still owed from each client's opening balance at 31 Aug 2026. Click a client for their ledger.
       </p>
 
       <div className="rounded-xl border border-border bg-card overflow-x-auto">
@@ -308,7 +308,7 @@ export default function ClientReceivables() {
             <tr className="text-xs text-muted-foreground">
               <th className="px-3 py-2">Client</th>
               <th className="px-3 py-2 text-right">Owes now</th>
-              <th className="px-3 py-2 text-right">Before Bastion</th>
+              <th className="px-3 py-2 text-right">Opening (31 Aug)</th>
               <th className="px-3 py-2 text-right">0–30 days</th>
               <th className="px-3 py-2 text-right">31–60</th>
               <th className="px-3 py-2 text-right">61–90</th>
@@ -399,7 +399,11 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
     if (error) setErr(friendlyDbError(error));
     else {
       setErr(null);
-      setLines(((data ?? []) as Line[]).map((l) => ({ ...l, invoiced: n(l.invoiced), received: n(l.received), wht: n(l.wht), written_off: n(l.written_off), balance: n(l.balance) })));
+      // The database still labels the opening line "Balance before Bastion"; Shayan
+      // wants no such wording (2 Nov 2026), so it reads as an opening balance here
+      // and in the PDF/Excel built from these lines. To be changed at the source
+      // with the dated opening items.
+      setLines(((data ?? []) as Line[]).map((l) => ({ ...l, details: l.details === "Balance before Bastion" ? "Opening balance at 31 Aug 2026" : l.details, invoiced: n(l.invoiced), received: n(l.received), wht: n(l.wht), written_off: n(l.written_off), balance: n(l.balance) })));
     }
     setPending(((chq.data ?? []) as any[]).map((c) => ({ id: c.id, cheque_number: c.cheque_number, amount: n(c.amount), cheque_date: c.cheque_date, bank: c.bank?.bank_name ?? null })));
     setLoading(false);
@@ -944,7 +948,7 @@ function WriteOffsView({ companyId, regionId, onChanged }: { companyId: string |
   );
 }
 
-// ───────────────────────────── Before Bastion (0631) ─────────────────────────────
+// ───────────────────────────── Invoice-sheet history (0631) ─────────────────────────────
 
 type SheetRow = {
   id: number; source_name: string; sheet_month: string; p_balance: number | null; invoice: number | null;
@@ -974,7 +978,7 @@ function SheetHistory({ clientId }: { clientId: string }) {
   return (
     <div className="rounded-xl border border-border bg-card">
       <button className="w-full flex items-center justify-between px-4 py-2 border-b border-border text-sm" onClick={() => setOpen(!open)}>
-        <span className="font-semibold">Before Bastion — from the monthly invoice sheets</span>
+        <span className="font-semibold">Monthly invoice sheets</span>
         <span className="text-xs text-muted-foreground">{fmtMonth(first)} – {fmtMonth(last)} · {rows.length} rows · {open ? "Hide" : "Show"}</span>
       </button>
       {open && (
@@ -1034,8 +1038,8 @@ export function FormerClients() {
   return (
     <div className="rounded-xl border border-border bg-card">
       <button className="w-full flex items-center justify-between px-4 py-2 text-sm" onClick={() => setOpen(!open)}>
-        <span className="font-semibold">Former clients (before Bastion)</span>
-        <span className="text-xs text-muted-foreground">{byClient.size} clients on the monthly invoice sheets who are not in Bastion · {open ? "Hide" : "Show"}</span>
+        <span className="font-semibold">Inactive clients</span>
+        <span className="text-xs text-muted-foreground">{byClient.size} clients from the monthly invoice sheets with no current contract · {open ? "Hide" : "Show"}</span>
       </button>
       {open && (
         <table className="w-full text-sm border-t border-border">

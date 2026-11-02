@@ -32,7 +32,7 @@ import { methodLabel, modeLabel, type FollowUpdates } from "./followUpData";
 export type FollowUpPdfRow = {
   client: string;
   region: string | null;
-  late: string;              // "12 days late", "From before Bastion", "Due 18 Nov"
+  late: string;              // "12 days late", "63 days late (since 31 Aug)", "Due 18 Nov"
   isLate: boolean;
   payDay: string;            // "5th" or ""
   lastPaidOn: string | null; // 0630
