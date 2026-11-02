@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import {
   LucideIcon, LogOut, X, KeyRound, ChevronDown, Search, Pin, Clock, UserRound, LayoutDashboard,
-  Building2, Users, Siren, Landmark, ShieldCheck, Settings as SettingsIcon, Folder, Smartphone, BookOpen,
+  Building2, Users, Siren, Landmark, ShieldCheck, Settings as SettingsIcon, Folder, Smartphone,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { togglePin, usePinned, useRecent, pushRecent } from "../lib/navPrefs";
@@ -57,7 +57,6 @@ const SECTION_META: Record<string, { icon: LucideIcon; short: string }> = {
   // 2 Nov 2026: the field app's screens, and the books split from day-to-day money.
   "Field App": { icon: Smartphone, short: "Field" },
   Finance: { icon: Landmark, short: "Finance" },
-  "Accounts & Reports": { icon: BookOpen, short: "Accounts" },
   "Profit-Share": { icon: Landmark, short: "Profit" },
   Compliance: { icon: ShieldCheck, short: "Comply" },
   Admin: { icon: SettingsIcon, short: "Admin" },

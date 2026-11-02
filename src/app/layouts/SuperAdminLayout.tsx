@@ -234,14 +234,15 @@ export default function SuperAdminLayout() {
   // 2026-10-21: no Overview section any more. The Dashboard is the rail's
   // first icon (and the Bastion mark above it), and Tasks sits beside it as
   // its own icon — two one-tap destinations rather than a flyout of two.
-  const dashLink = linkOrNull(profile, DASHBOARD);
-  if (dashLink) links.push(dashLink);
-  const ceoLink = linkOrNull(profile, CEO_DASHBOARD);
-  if (ceoLink) links.push(ceoLink);
-  const tasksLink = linkOrNull(profile, TASKS);
-  if (tasksLink) links.push(tasksLink);
-  const commentsLink = linkOrNull(profile, COMMENTS);
-  if (commentsLink) links.push(commentsLink);
+  // 2 Nov 2026 (Shayan): back to one Overview section — four loose icons on
+  // the rail looked odd beside the sections and made it too long.
+  const overview = buildGroup("Overview", "/app/overview", [
+    DASHBOARD,
+    CEO_DASHBOARD,
+    TASKS,
+    COMMENTS,
+  ]);
+  if (overview) links.push(overview);
 
   // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
   // Deployment; billing → Invoices); Client Relationships dissolved (complaints
@@ -288,9 +289,12 @@ export default function SuperAdminLayout() {
   if (operations) links.push(operations);
 
   // FINANCE (2 Nov 2026, Shayan: "payroll and all finance related in one
-  // side"): the day-to-day money — billed, chased, spent, paid, banked. A login
-  // holding only receivables.follow_up sees this group with Payment Follow-up
-  // alone, and no figures.
+  // side"): one section, the day-to-day money first — billed, chased, spent,
+  // paid, banked — then the books and what is read from them. A login holding
+  // only receivables.follow_up sees Payment Follow-up alone, and no figures.
+  // Accounting Core is the only way in to the Chart of Accounts, Trial Balance,
+  // Journal and Opening Balances. Cash Flow is a tab of Financial Reports;
+  // Regional Operating Expenses stays hidden (route kept).
   const finance = buildGroup("Finance", "/app/finance", [
     INVOICES,
     PAYMENT_FOLLOW_UP,
@@ -298,14 +302,6 @@ export default function SuperAdminLayout() {
     PAYROLL,
     PAYROLL_RUN,
     BANKS,
-  ]);
-  if (finance) links.push(finance);
-
-  // ACCOUNTS & REPORTS (2 Nov 2026): the books and what is read from them,
-  // directly beneath Finance. Accounting Core is the only way in to the Chart
-  // of Accounts, Trial Balance, Journal and Opening Balances. Cash Flow is a tab
-  // of Financial Reports; Regional Operating Expenses stays hidden (route kept).
-  const accounts = buildGroup("Accounts & Reports", "/app/accounts", [
     FINANCE_REPORT,
     REPORTS,
     ACCOUNTANT,
@@ -314,7 +310,7 @@ export default function SuperAdminLayout() {
     PARTNERSHIP,
     PERIOD_CLOSE,
   ]);
-  if (accounts) links.push(accounts);
+  if (finance) links.push(finance);
 
   // PROFIT-SHARE — hidden in its entirety. Treasury & Reserves lives here now,
   // so it is hidden with the group. Regional Scorecard used to be listed here
@@ -334,16 +330,15 @@ export default function SuperAdminLayout() {
   // Licenses & Renewals and Contract Renewals are tabs of the Compliance
   // Calendar now, so it is the group's only entry.
   // Documents and Compliance Cases hidden (routes kept).
-  const compliance = buildGroup("Compliance", "/app/comply", [
-    COMPLIANCE,
-  ]);
-  if (compliance) links.push(compliance);
+  // 2 Nov 2026: the Compliance Calendar is the section's only page, so it
+  // lives in Admin rather than taking a rail icon of its own.
 
   // ADMIN — Users & Permissions + Governance merged → Access & Governance.
   // Alerts hidden (route kept).
   const admin = buildGroup("Admin", "/app/admin", [
     // TASKS moved to Overview, beneath Dashboard.
     ACCESS_GOVERNANCE,
+    COMPLIANCE,
     AUDIT_LOG,
     REVERSALS,
     SETTINGS,
