@@ -14,8 +14,8 @@
 --   * No follow-up owner per client. Each contact can set a NEXT STEP — what, who,
 --     by when — and that step is marked done when it is done.
 --   * An ops login may record that a promise was made and by when, never how much.
---   * Not in the daily report. A separate Payment follow-up report (Daily Reports →
---     Payment follow-up), exported with figures (finance only) or without.
+--   * Not in the daily report. A separate Payment Follow-up page and report
+--     (Operations → Payment Follow-up), exported with figures (finance only) or without.
 --
 -- HOW THE "NO FIGURES" RULE IS ENFORCED. Not by the screen. An ops login holds
 -- receivables.follow_up and no invoice/receivable read key, so RLS already hides
@@ -370,7 +370,8 @@ declare v_amounts boolean; v_branch uuid;
 begin
   perform public.require_follow_up_access(false);
   -- tenant guard [resolved]: owning company from p_client_id via public.clients
-  if p_client_id is not null then perform public.assert_same_company((select company_id from public.clients where id = p_client_id)); end if;
+  -- (qualified: this function returns a column named id)
+  if p_client_id is not null then perform public.assert_same_company((select c0.company_id from public.clients c0 where c0.id = p_client_id)); end if;
   select c.branch_id into v_branch from public.clients c where c.id = p_client_id;
   if public.is_branched_user() and not public.is_super_super_admin() and v_branch is distinct from public.current_branch_id() then
     raise exception 'This client is in another region.' using errcode = '42501';
