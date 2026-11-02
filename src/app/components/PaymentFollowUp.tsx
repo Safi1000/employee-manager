@@ -48,6 +48,10 @@ export type FollowRow = {
   next_step_assignee_name: string | null;
   next_step_followup_id: string | null;
   next_step_done: boolean;
+  /** 0630: date and mode for everyone; the amount only for logins that can see amounts. */
+  last_paid_on: string | null;
+  last_paid_mode: string | null;
+  last_paid_amount: number | null;
 };
 
 type History = {
@@ -108,7 +112,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
     if (l.error) setErr(friendlyDbError(l.error));
     else {
       setErr(null);
-      setRows(((l.data ?? []) as any[]).map((r) => ({ ...r, balance: n(r.balance), overdue: n(r.overdue), promised_amount: n(r.promised_amount) })));
+      setRows(((l.data ?? []) as any[]).map((r) => ({ ...r, balance: n(r.balance), overdue: n(r.overdue), promised_amount: n(r.promised_amount), last_paid_amount: n(r.last_paid_amount) })));
     }
     setPeople((p.data ?? []) as { id: string; full_name: string }[]);
     if ((fs.data as any)?.followup_after_days != null) setLateAfter(Number((fs.data as any).followup_after_days));
@@ -168,6 +172,8 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
       late: lateText(r),
       isLate: r.is_late,
       payDay: r.usual_pay_day ? ordinal(r.usual_pay_day) : "",
+      lastPaidOn: r.last_paid_on,
+      lastPaid: r.last_paid_on ? `${fmtShort(r.last_paid_on)}${r.last_paid_mode ? ` · ${r.last_paid_mode}` : ""}${withFigures && r.last_paid_amount != null ? ` · ${fmt(r.last_paid_amount)}` : ""}` : "Never",
       lastContactOn: r.last_contact_on,
       lastContact: r.last_contact_on ? `${channelLabel(r.last_contact_channel)}: ${r.last_contact_note ?? ""}` : null,
       promise: r.promised_by ? `by ${fmtShort(r.promised_by)}${withFigures && r.promised_amount != null ? ` (${fmt(r.promised_amount)})` : ""}` : null,
@@ -221,6 +227,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
               <th className="px-3 py-2">Client</th>
               <th className="px-3 py-2">Late</th>
               <th className="px-3 py-2">Pays on</th>
+              <th className="px-3 py-2">Last paid</th>
               {canSeeAmounts && <th className="px-3 py-2 text-right">Owes</th>}
               {canSeeAmounts && <th className="px-3 py-2 text-right">Late amount</th>}
               <th className="px-3 py-2">Last contact</th>
@@ -231,9 +238,9 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
+              <tr><td colSpan={11} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">{show === "late" ? "No client is late." : show === "mine" ? "No open steps for you." : "No client owes anything."}</td></tr>
+              <tr><td colSpan={11} className="px-3 py-10 text-center text-muted-foreground">{show === "late" ? "No client is late." : show === "mine" ? "No open steps for you." : "No client owes anything."}</td></tr>
             ) : visible.flatMap((r) => {
               const stepDue = !!r.next_step && !r.next_step_done && !!r.next_follow_up && r.next_follow_up <= t;
               const promiseMissed = !!r.promised_by && r.promised_by < t && r.is_late;
@@ -257,6 +264,9 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
                         {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{ordinal(d)}</option>)}
                       </ThemedSelect>
                     ) : <span className="text-xs">{r.usual_pay_day ? ordinal(r.usual_pay_day) : "—"}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">
+                    {r.last_paid_on ? <>{fmtShort(r.last_paid_on)}<div className="text-muted-foreground">{r.last_paid_mode}{canSeeAmounts && r.last_paid_amount != null ? ` · ${fmt(r.last_paid_amount)}` : ""}</div></> : <span className="text-muted-foreground">Never</span>}
                   </td>
                   {canSeeAmounts && <td className="px-3 py-2 text-right font-ledger">{fmt(r.balance)}</td>}
                   {canSeeAmounts && <td className="px-3 py-2 text-right font-ledger">{fmt(r.overdue)}</td>}
@@ -283,7 +293,7 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
               return [main, (
                 <tr key={`${r.client_id}-h`} className="bg-muted/30">
                   <td></td>
-                  <td colSpan={9} className="px-3 py-2">
+                  <td colSpan={10} className="px-3 py-2">
                     {history.length === 0 ? <div className="text-xs text-muted-foreground">No contact logged yet.</div> : (
                       <ul className="space-y-1 text-xs">
                         {history.map((h) => (

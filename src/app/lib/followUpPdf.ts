@@ -11,7 +11,8 @@ import { INK, LH, M, Page, RED, RULE, SOFT, W, footer, heading, letterhead, long
  *
  *   opening line   how many clients are late, how many next steps are due
  *   1. Clients for follow-up   ruled table: client, how late, usual pay day,
- *                              (owes, late amount — with figures only), next step;
+ *                              last paid (0630), (owes, late amount — with
+ *                              figures only), next step;
  *                              grouped by region under "All regions"
  *   2. Contact notes           one numbered paragraph per client contacted:
  *                              last contact, what they said, any promise
@@ -29,6 +30,8 @@ export type FollowUpPdfRow = {
   late: string;              // "12 days late", "From before Bastion", "Due 18 Nov"
   isLate: boolean;
   payDay: string;            // "5th" or ""
+  lastPaidOn: string | null; // 0630
+  lastPaid: string;          // "15 Oct · Cheque" (+ " · 510,151" with figures), or "Never"
   lastContactOn: string | null;
   lastContact: string | null; // "Call — cheque this week"
   promise: string | null;    // "by 9 Nov" (+ " · 548,550" with figures)
@@ -75,18 +78,20 @@ export async function downloadFollowUpPdf(opts: {
   const COLS = withFigures
     ? [
         { label: "S/No", w: 10, right: false },
-        { label: "Client", w: 44, right: false },
-        { label: "Status", w: 30, right: false },
-        { label: "Owes", w: 22, right: true },
-        { label: "Late amount", w: 22, right: true },
-        { label: "Next step", w: W - 128, right: false },
+        { label: "Client", w: 34, right: false },
+        { label: "Status", w: 26, right: false },
+        { label: "Last paid", w: 28, right: false },
+        { label: "Owes", w: 20, right: true },
+        { label: "Late amount", w: 20, right: true },
+        { label: "Next step", w: W - 138, right: false },
       ]
     : [
         { label: "S/No", w: 10, right: false },
-        { label: "Client", w: 46, right: false },
-        { label: "Status", w: 38, right: false },
-        { label: "Pays on", w: 16, right: false },
-        { label: "Next step", w: W - 110, right: false },
+        { label: "Client", w: 38, right: false },
+        { label: "Status", w: 34, right: false },
+        { label: "Pays on", w: 14, right: false },
+        { label: "Last paid", w: 26, right: false },
+        { label: "Next step", w: W - 122, right: false },
       ];
   const head = () => {
     p.need(8);
@@ -115,8 +120,8 @@ export async function downloadFollowUpPdf(opts: {
       const step = r.nextStep ? `${r.nextStep}${r.nextWho ? ` — ${r.nextWho}` : ""}${r.nextBy ? `, ${short(r.nextBy)}` : ""}` : "—";
       const status = withFigures && r.payDay ? `${r.late} (pays on the ${r.payDay})` : r.late;
       const cells = withFigures
-        ? [`${n}.`, r.client, status, amt(r.owes), amt(r.overdue), step]
-        : [`${n}.`, r.client, status, r.payDay || "—", step];
+        ? [`${n}.`, r.client, status, r.lastPaid, amt(r.owes), amt(r.overdue), step]
+        : [`${n}.`, r.client, status, r.payDay || "—", r.lastPaid, step];
       p.font("normal", 10);
       const wrapped = cells.map((t, i) => p.wrap(t, COLS[i].w - 2));
       const h = Math.max(...wrapped.map((w) => w.length)) * LH;
@@ -145,9 +150,9 @@ export async function downloadFollowUpPdf(opts: {
     const over = rows.reduce((s, r) => s + (r.overdue ?? 0), 0);
     p.font("bold", 10); p.color(INK);
     doc.text("Total", M + COLS[0].w + 1, p.y);
-    const xOwes = M + COLS[0].w + COLS[1].w + COLS[2].w;
-    doc.text(amt(owes), xOwes + COLS[3].w - 1, p.y, { align: "right" });
-    doc.text(amt(over), xOwes + COLS[3].w + COLS[4].w - 1, p.y, { align: "right" });
+    const xOwes = M + COLS[0].w + COLS[1].w + COLS[2].w + COLS[3].w;
+    doc.text(amt(owes), xOwes + COLS[4].w - 1, p.y, { align: "right" });
+    doc.text(amt(over), xOwes + COLS[4].w + COLS[5].w - 1, p.y, { align: "right" });
     p.y += 2; doc.line(M, p.y, M + W, p.y); doc.line(M, p.y + 0.8, M + W, p.y + 0.8);
   }
   p.y += 9;
