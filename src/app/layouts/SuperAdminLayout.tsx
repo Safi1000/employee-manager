@@ -26,6 +26,7 @@ import {
   FileText,
   PhoneCall,
   Calculator,
+  ShieldCheck,
   Gauge,
   Package,
   Bell,
@@ -161,6 +162,7 @@ export default function SuperAdminLayout() {
   const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   // 0632: the finance report, and the CEO dashboard (its own key).
   const FINANCE_REPORT: LinkDef = { to: "/app/finance-report", label: "Finance Report", icon: FileText, perms: ["reports.view", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit", "dashboard.ceo"] };
+  const VETTING: LinkDef = { to: "/app/vetting", label: "Vetting", icon: ShieldCheck, perms: ["employees.view", "employees.edit"] };
   const RATE_CALCULATOR: LinkDef = { to: "/app/rate-calculator", label: "Rate Calculator", icon: Calculator, perms: ["contracts.view", "contracts.edit"] };
   const CEO_DASHBOARD: LinkDef = { to: "/app/ceo", label: "CEO Dashboard", icon: Gauge, perms: ["dashboard.ceo"] };
   const PAYMENT_FOLLOW_UP: LinkDef = { to: "/app/payment-follow-up", label: "Payment Follow-up", icon: PhoneCall, perms: ["receivables.follow_up", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
@@ -264,6 +266,7 @@ export default function SuperAdminLayout() {
   // moved to Finance, the field-app screens to their own Field App group.
   const workforce = buildGroup("Workforce", "/app/workforce", [
     EMPLOYEES,
+    VETTING,
     ASSIGNMENTS,
     ATTENDANCE,
     ATTENDANCE_RUN,

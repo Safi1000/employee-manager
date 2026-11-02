@@ -19,6 +19,7 @@ const SECTION_OF: Record<string, string> = {
   "client-relationships": "Clients & Contracts",
 
   employees: "Workforce",
+  vetting: "Workforce",
   assignments: "Workforce",
   attendance: "Workforce",
   "attendance-run": "Workforce",

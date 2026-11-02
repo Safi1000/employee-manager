@@ -76,6 +76,7 @@ const PaymentFollowUpPage = lazyPage(() => import("./pages/super-admin/PaymentFo
 const FinanceReportPage = lazyPage(() => import("./pages/super-admin/FinanceReportPage"));
 const CeoDashboard = lazyPage(() => import("./pages/super-admin/CeoDashboard"));
 const RateCalculator = lazyPage(() => import("./pages/super-admin/RateCalculator"));
+const Vetting = lazyPage(() => import("./pages/super-admin/Vetting"));
 const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const FieldReview = lazyPage(() => import("./pages/super-admin/FieldReview"));
 const FieldAppPrivacy = lazyPage(() => import("./pages/FieldAppPrivacy"));
@@ -283,6 +284,8 @@ export const router = createBrowserRouter([
       { path: "finance-report", element: guard(["reports.view", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit", "dashboard.ceo"], <FinanceReportPage />) },
       { path: "ceo", element: guard(["dashboard.ceo"], <CeoDashboard />) },
       // 3 Nov 2026: pricing tool — reads contracts and the roster, writes nothing.
+      // 3 Nov 2026: the vetting drive — every active guard against the hiring checklist.
+      { path: "vetting", element: guard(["employees.view", "employees.edit"], <Vetting />) },
       { path: "rate-calculator", element: guard(["contracts.view", "contracts.edit"], <RateCalculator />) },
       { path: "field-ops", element: <Navigate to="/app/daily-reports" replace /> },
       // Field app logins and site coverage. Role, not permission: admin_field_* refuse anyone but a super admin.
