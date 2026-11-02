@@ -25,6 +25,7 @@ import {
   CreditCard,
   FileText,
   PhoneCall,
+  Calculator,
   Gauge,
   Package,
   Bell,
@@ -160,6 +161,7 @@ export default function SuperAdminLayout() {
   const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   // 0632: the finance report, and the CEO dashboard (its own key).
   const FINANCE_REPORT: LinkDef = { to: "/app/finance-report", label: "Finance Report", icon: FileText, perms: ["reports.view", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit", "dashboard.ceo"] };
+  const RATE_CALCULATOR: LinkDef = { to: "/app/rate-calculator", label: "Rate Calculator", icon: Calculator, perms: ["contracts.view", "contracts.edit"] };
   const CEO_DASHBOARD: LinkDef = { to: "/app/ceo", label: "CEO Dashboard", icon: Gauge, perms: ["dashboard.ceo"] };
   const PAYMENT_FOLLOW_UP: LinkDef = { to: "/app/payment-follow-up", label: "Payment Follow-up", icon: PhoneCall, perms: ["receivables.follow_up", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/app/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
@@ -251,6 +253,7 @@ export default function SuperAdminLayout() {
   const contractsClients = buildGroup("Clients & Contracts", "/app/billing", [
     CLIENTS,
     CONTRACTS,
+    RATE_CALCULATOR,
   ]);
   if (contractsClients) links.push(contractsClients);
 

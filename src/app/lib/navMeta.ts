@@ -13,6 +13,7 @@ const SECTION_OF: Record<string, string> = {
 
   clients: "Clients & Contracts",
   contracts: "Clients & Contracts",
+  "rate-calculator": "Clients & Contracts",
   invoices: "Finance",
   "sites-strength": "Clients & Contracts",
   "client-relationships": "Clients & Contracts",
