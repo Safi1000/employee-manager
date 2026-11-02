@@ -531,11 +531,17 @@ begin
     end if;
     v_ran := v_ran + 1;
 
-    -- 6. The certificate table refuses a hand-written row.
+    -- 6. The certificate table refuses a hand-written row from a login (run as
+    --    the authenticated role: the migration's own role bypasses RLS).
     v_msg := null;
-    begin insert into public.wht_certificates (company_id, client_id, certificate_no, certificate_date, amount) values (v_co, v_client, 'X', current_date, 1);
+    begin
+      execute 'set local role authenticated';
+      insert into public.wht_certificates (company_id, client_id, certificate_no, certificate_date, amount) values (v_co, v_client, 'X', current_date, 1);
+      execute 'reset role';
     exception when others then get stacked diagnostics v_msg = message_text; end;
-    if v_msg not like 'new row violates row-level security policy%' then raise exception '0626 REFUSED: a direct insert got "%".', v_msg; end if;
+    if v_msg is null or not (v_msg like 'new row violates row-level security policy%' or v_msg like 'permission denied for table wht_certificates%') then
+      raise exception '0626 REFUSED: a direct insert got "%".', v_msg;
+    end if;
     v_ran := v_ran + 1;
 
     if v_ran <> 7 then raise exception '0626 REFUSED: % of 7 assertions ran.', v_ran; end if;
