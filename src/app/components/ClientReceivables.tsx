@@ -357,6 +357,8 @@ export default function ClientReceivables() {
           )}
         </table>
       </div>
+
+      <FormerClients />
     </div>
   );
 }
@@ -527,6 +529,8 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
           )}
         </table>
       </div>
+
+      <SheetHistory clientId={row.client_id} />
 
       <div className="rounded-xl border border-border bg-card">
         <div className="px-4 py-2 border-b border-border text-sm font-semibold">Follow-up history</div>
@@ -935,6 +939,124 @@ function WriteOffsView({ companyId, regionId, onChanged }: { companyId: string |
           <label className="block text-sm"><span className="lbl">Why?</span>
             <textarea rows={3} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={note} onChange={(e) => setNote(e.target.value)} /></label>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────── Before Bastion (0631) ─────────────────────────────
+
+type SheetRow = {
+  id: number; source_name: string; sheet_month: string; p_balance: number | null; invoice: number | null;
+  deduction: number | null; received: number | null; balance: number | null; received_date: string | null;
+  received_date_text: string | null; note: string | null;
+};
+const fmtCell = (v: number | null) => (v == null ? "" : Math.round(v).toLocaleString());
+
+/**
+ * The client's month-by-month history from the monthly invoice sheets before
+ * Bastion (0631) — FOR REFERENCE. Shown exactly as the sheets typed it (blank
+ * stays blank) and never added to anything: the before-Bastion position is the
+ * brought-forward line at the top of the ledger.
+ */
+function SheetHistory({ clientId }: { clientId: string }) {
+  const [rows, setRows] = useState<SheetRow[] | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    void supabase.from("client_sheet_history")
+      .select("id, source_name, sheet_month, p_balance, invoice, deduction, received, balance, received_date, received_date_text, note")
+      .eq("client_id", clientId).order("sheet_month").order("source_row")
+      .then(({ data }) => setRows(((data ?? []) as any[]).map((r) => ({ ...r, p_balance: n(r.p_balance), invoice: n(r.invoice), deduction: n(r.deduction), received: n(r.received), balance: r.balance == null ? null : n(r.balance) }))));
+  }, [clientId]);
+  if (!rows || rows.length === 0) return null;
+  const multi = new Set(rows.map((r) => r.source_name)).size > 1;
+  const first = rows[0].sheet_month, last = rows[rows.length - 1].sheet_month;
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <button className="w-full flex items-center justify-between px-4 py-2 border-b border-border text-sm" onClick={() => setOpen(!open)}>
+        <span className="font-semibold">Before Bastion — from the monthly invoice sheets</span>
+        <span className="text-xs text-muted-foreground">{fmtMonth(first)} – {fmtMonth(last)} · {rows.length} rows · {open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="overflow-x-auto">
+          <p className="px-4 pt-2 text-xs text-muted-foreground">
+            For reference: copied as the sheets were kept (WHT taken at invoice; blank cells left blank). It is not added to the balance above — the balance brought into Bastion is the "Brought forward" line.
+          </p>
+          <table className="w-full text-sm">
+            <thead className="text-left">
+              <tr className="text-xs text-muted-foreground">
+                <th className="px-3 py-2">Month</th>
+                {multi && <th className="px-3 py-2">Row on sheet</th>}
+                <th className="px-3 py-2 text-right">Previous balance</th>
+                <th className="px-3 py-2 text-right">Invoiced</th>
+                <th className="px-3 py-2 text-right">Deducted</th>
+                <th className="px-3 py-2 text-right">Received</th>
+                <th className="px-3 py-2">Received on</th>
+                <th className="px-3 py-2 text-right">Balance</th>
+                <th className="px-3 py-2">Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t border-border">
+                  <td className="px-3 py-1.5 whitespace-nowrap">{fmtMonth(r.sheet_month)}</td>
+                  {multi && <td className="px-3 py-1.5 text-xs">{r.source_name}</td>}
+                  <td className="px-3 py-1.5 text-right font-ledger">{fmtCell(r.p_balance)}</td>
+                  <td className="px-3 py-1.5 text-right font-ledger">{fmtCell(r.invoice)}</td>
+                  <td className="px-3 py-1.5 text-right font-ledger">{fmtCell(r.deduction)}</td>
+                  <td className="px-3 py-1.5 text-right font-ledger">{fmtCell(r.received)}</td>
+                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.received_date ? fmtDate(r.received_date) : r.received_date_text ?? ""}</td>
+                  <td className="px-3 py-1.5 text-right font-ledger">{fmtCell(r.balance)}</td>
+                  <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.note ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Clients on the pre-Bastion sheets who are not Bastion clients (0631), for reference. */
+export function FormerClients() {
+  const [rows, setRows] = useState<{ sheet_client: string; sheet_month: string; invoice: number | null; received: number | null; balance: number | null; note: string | null }[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    void supabase.from("client_sheet_history").select("sheet_client, sheet_month, invoice, received, balance, note")
+      .is("client_id", null).order("sheet_client").order("sheet_month")
+      .then(({ data }) => setRows((data ?? []) as any[]));
+  }, []);
+  // One line per former client: the months they appear in and their LAST sheet row, as typed.
+  const byClient = new Map<string, typeof rows>();
+  for (const r of rows) byClient.set(r.sheet_client, [...(byClient.get(r.sheet_client) ?? []), r]);
+  if (byClient.size === 0) return null;
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <button className="w-full flex items-center justify-between px-4 py-2 text-sm" onClick={() => setOpen(!open)}>
+        <span className="font-semibold">Former clients (before Bastion)</span>
+        <span className="text-xs text-muted-foreground">{byClient.size} clients on the monthly invoice sheets who are not in Bastion · {open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <table className="w-full text-sm border-t border-border">
+          <thead className="text-left"><tr className="text-xs text-muted-foreground">
+            <th className="px-3 py-2">Client (as on the sheets)</th><th className="px-3 py-2">On the sheets</th>
+            <th className="px-3 py-2 text-right">Last balance on the sheets</th><th className="px-3 py-2">Last note</th>
+          </tr></thead>
+          <tbody>
+            {[...byClient.entries()].map(([name, list]) => {
+              const lastRow = list[list.length - 1];
+              return (
+                <tr key={name} className="border-t border-border">
+                  <td className="px-3 py-1.5">{name}</td>
+                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{fmtMonth(list[0].sheet_month)} – {fmtMonth(lastRow.sheet_month)}</td>
+                  <td className="px-3 py-1.5 text-right font-ledger">{lastRow.balance == null ? "" : Math.round(Number(lastRow.balance)).toLocaleString()}</td>
+                  <td className="px-3 py-1.5 text-xs text-muted-foreground">{[...list].reverse().find((x) => x.note)?.note ?? ""}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
     </div>
   );

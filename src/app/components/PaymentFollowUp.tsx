@@ -93,6 +93,8 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
 
   const [rows, setRows] = useState<FollowRow[]>([]);
   const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
+  /** 0631: the usual day each client paid on the pre-Bastion sheets — a suggestion (finance only). */
+  const [usualDay, setUsualDay] = useState<Map<string, { day: number; n: number }>>(new Map());
   const [lateAfter, setLateAfter] = useState(7);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -104,11 +106,14 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [l, p, fs] = await Promise.all([
+    const [l, p, fs, pt] = await Promise.all([
       supabase.rpc("client_followup_list"),
       supabase.rpc("followup_assignees"),
       company?.id ? supabase.from("finance_settings").select("followup_after_days").eq("company_id", company.id).maybeSingle() : Promise.resolve({ data: null } as any),
+      // Finance keys only (the view is invoker over a finance-read table); empty for ops.
+      supabase.from("client_sheet_pay_timing").select("client_id, usual_day, dated_receipts"),
     ]);
+    setUsualDay(new Map(((pt.data ?? []) as any[]).map((x) => [x.client_id, { day: Number(x.usual_day), n: Number(x.dated_receipts) }])));
     if (l.error) setErr(friendlyDbError(l.error));
     else {
       setErr(null);
@@ -264,6 +269,14 @@ export default function PaymentFollowUp({ onOpenClient }: { onOpenClient?: (clie
                         {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{ordinal(d)}</option>)}
                       </ThemedSelect>
                     ) : <span className="text-xs">{r.usual_pay_day ? ordinal(r.usual_pay_day) : "—"}</span>}
+                    {(() => {
+                      const u = usualDay.get(r.client_id);
+                      if (!u || u.day === r.usual_pay_day) return null;
+                      const label = `Usually ~${ordinal(u.day)} (${u.n} payments before Bastion)`;
+                      return canAct
+                        ? <button className="block text-[11px] text-brand-600 hover:underline mt-0.5" title="From the dated receipts on the monthly invoice sheets" onClick={() => void setPayDay(r, String(u.day))}>{label}</button>
+                        : <div className="text-[11px] text-muted-foreground mt-0.5">{label}</div>;
+                    })()}
                   </td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">
                     {r.last_paid_on ? <>{fmtShort(r.last_paid_on)}<div className="text-muted-foreground">{r.last_paid_mode}{canSeeAmounts && r.last_paid_amount != null ? ` · ${fmt(r.last_paid_amount)}` : ""}</div></> : <span className="text-muted-foreground">Never</span>}
