@@ -4,6 +4,7 @@ import { formatDate } from "./date";
 import type { Company } from "./supabase";
 import { describeUnconfirmed, type AttendanceSummary } from "./attendanceSummary";
 import { brandingFromCompany, imageFormat, type PdfBranding } from "./pdfBranding";
+import { STATE_LABEL, staffChangeCount, type StaffChanges } from "./staffChanges";
 
 /**
  * DAILY OPERATIONS REPORT — formal letter style (DECIDED 2026-10-28, Shayan:
@@ -347,7 +348,7 @@ export function signOff(p: Page, label: string, names: string[]) {
  * "Unmarked" = deployed guards with no mark at all — counted as present by the
  * figures, so shown so nobody mistakes a blank register for a full one.
  */
-function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>, markedBy: string[], explanations: Record<string, string>) {
+function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Record<string, string>, markedBy: string[], explanations: Record<string, string>, staff?: StaffChanges) {
   const doc = p.doc;
   const t = s.totals;
   const unmarked = (c: AttendanceSummary["clients"][number]) => Math.max(0, c.deployed - c.marked);
@@ -481,7 +482,45 @@ function drawAttendanceSection(p: Page, s: AttendanceSummary, regionNames: Recor
     p.y += 1.2;
   });
 
+  if (staff) drawStaffChanges(p, staff);
   signOff(p, "Attendance marked by", markedBy);
+}
+
+/**
+ * 4. Staff changes (0632): everything ENTERED since the last attendance report
+ * was exported — hired, left, re-hired, moved, pay changed — and documents
+ * running out in the next 30 days. Read from hr_changes(); nothing typed.
+ */
+function drawStaffChanges(p: Page, s: StaffChanges) {
+  const doc = p.doc;
+  const d = (iso: string | null) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
+  const since = new Date(s.from).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  heading(p, "4.  Staff changes");
+  p.font("italic", 10); p.color(SOFT); p.need(LH);
+  doc.text(`Entered since ${since}, including anything dated earlier.`, M + 4, p.y); p.y += LH + 1.5;
+  const code = (c: string | null) => (c ? ` (${c})` : "");
+  const groups: [string, string[]][] = [
+    ["Hired", s.hired.map((h) => `${h.name}${code(h.code)}${h.category ? `, ${h.category}` : ""}${h.client ? ` at ${h.client}` : ""}${h.join_date ? ` — joins ${d(h.join_date)}` : ""}`)],
+    ["Left", s.separated.map((x) => `${x.name}${code(x.code)} — ${STATE_LABEL[x.to_state] ?? x.to_state}${x.last_day ? `, last day ${d(x.last_day)}` : ""}${x.reason ? `. ${x.reason}` : ""}`)],
+    ["Re-hired", s.rehired.map((x) => `${x.name}${code(x.code)}${x.join_date ? ` — joins ${d(x.join_date)}` : ""}`)],
+    ["Transferred", s.transferred.map((x) => `${x.name}${code(x.code)} to ${x.to_client} from ${d(x.from)}`)],
+    ["Pay changed", s.salary_changes.map((x) => `${x.name}${code(x.code)} — ${Math.round(Number(x.base)).toLocaleString("en-US")} from ${d(x.from_date)}${x.reason ? ` (${x.reason})` : ""}`)],
+    ["Documents expiring in 30 days", s.expiring.map((x) => `${x.name}${code(x.code)} — ${x.document}, ${d(x.date)}`)],
+  ];
+  if (!staffChangeCount(s) && !s.expiring.length) { p.font("italic", 10.5); p.color(SOFT); doc.text("Nil.", M + 4, p.y); p.y += LH + 3; return; }
+  let sub = 0;
+  for (const [label, lines] of groups) {
+    if (!lines.length) continue;
+    sub += 1;
+    p.need(LH * 2); p.y += 1;
+    p.font("bold", 10.5); p.color(INK);
+    doc.text(`4.${sub}`, M + 4, p.y); doc.text(`${label} (${lines.length})`, M + 14, p.y); p.y += LH;
+    lines.forEach((t, i) => {
+      p.font("normal", 10.5); p.color(INK);
+      p.wrap(t, W - 24).forEach((ln, j) => { p.need(LH); if (j === 0) doc.text(`${i + 1}.`, M + 14, p.y); doc.text(ln, M + 22, p.y); p.y += LH; });
+    });
+  }
+  p.y += 3;
 }
 
 export function footer(doc: jsPDF, b: PdfBranding, ref: string) {
@@ -497,7 +536,7 @@ export function footer(doc: jsPDF, b: PdfBranding, ref: string) {
 
 export const refOf = (prefix: string, iso: string) => `${prefix}/${iso.replace(/-/g, "/")}`;
 
-type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string>; markedBy?: string[]; explanations?: Record<string, string> } };
+type Part = { daily?: DailyBrief; attendance?: { summary: AttendanceSummary; regionLabel: string | null; regionNames?: Record<string, string>; markedBy?: string[]; explanations?: Record<string, string>; staff?: StaffChanges } };
 
 /**
  * One PDF of one or more parts — a part is one region's daily report and/or
@@ -524,7 +563,7 @@ export function generateOperationsPdf(company: Company | null | undefined, parts
       if (!first) doc.addPage();
       letterhead(p, "Attendance Report", a.summary.date, a.regionLabel, refOf("ATR", a.summary.date));
       first = false;
-      drawAttendanceSection(p, a.summary, a.regionNames ?? {}, a.markedBy ?? [], a.explanations ?? {});
+      drawAttendanceSection(p, a.summary, a.regionNames ?? {}, a.markedBy ?? [], a.explanations ?? {}, a.staff);
     }
   }
   const anyDaily = parts.some((pt) => pt.daily), anyAtt = parts.some((pt) => pt.attendance);

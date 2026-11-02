@@ -6,6 +6,7 @@
  */
 const SECTION_OF: Record<string, string> = {
   "": "Overview",
+  ceo: "Overview",
   tasks: "Overview",
   alerts: "Overview",
   "my-profile": "Me",
@@ -36,6 +37,7 @@ const SECTION_OF: Record<string, string> = {
   accounting: "Finance",
   "accounting-core": "Finance",
   expenses: "Finance",
+  "finance-report": "Finance",
   reports: "Finance",
   accountant: "Finance",
   "partnership": "Finance",

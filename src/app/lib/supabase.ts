@@ -585,6 +585,8 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     label: "Reports & Finance",
     items: [
       { key: "reports.view", label: "View financial reports & partnership" },
+      // 0632: every report live and what each person did. Mirrored in public.permission_keys by 0632.
+      { key: "dashboard.ceo", label: "View the CEO dashboard (every report, live, and what each person did)" },
       // 2026-10-20 (0526): the Accountant page — every account from the ledger,
       // the checks, ledgers and scenarios. Granted person by person. Mirrored
       // in public.permission_keys by 0526.

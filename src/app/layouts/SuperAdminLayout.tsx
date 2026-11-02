@@ -25,6 +25,7 @@ import {
   CreditCard,
   FileText,
   PhoneCall,
+  Gauge,
   Package,
   Bell,
   Folder,
@@ -157,6 +158,9 @@ export default function SuperAdminLayout() {
   const FIELD_REVIEW: LinkDef = { to: "/app/field-review", label: "Field Review", icon: ClipboardCheck, perms: ["attendance.field_review", "warnings.approve", "field.money_approve", "employees.edit"] };
   const FIELD_SUPERVISORS: LinkDef = { to: "/app/field-supervisors", label: "Field Supervisors", icon: Smartphone, roles: ["super_admin"] };
   const DAILY_REPORTS: LinkDef = { to: "/app/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
+  // 0632: the finance report, and the CEO dashboard (its own key).
+  const FINANCE_REPORT: LinkDef = { to: "/app/finance-report", label: "Finance Report", icon: FileText, perms: ["reports.view", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit", "dashboard.ceo"] };
+  const CEO_DASHBOARD: LinkDef = { to: "/app/ceo", label: "CEO Dashboard", icon: Gauge, perms: ["dashboard.ceo"] };
   const PAYMENT_FOLLOW_UP: LinkDef = { to: "/app/payment-follow-up", label: "Payment Follow-up", icon: PhoneCall, perms: ["receivables.follow_up", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/app/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "banks.view"] };
   const ACCOUNTING_CORE: LinkDef = { to: "/app/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
@@ -232,6 +236,8 @@ export default function SuperAdminLayout() {
   // its own icon — two one-tap destinations rather than a flyout of two.
   const dashLink = linkOrNull(profile, DASHBOARD);
   if (dashLink) links.push(dashLink);
+  const ceoLink = linkOrNull(profile, CEO_DASHBOARD);
+  if (ceoLink) links.push(ceoLink);
   const tasksLink = linkOrNull(profile, TASKS);
   if (tasksLink) links.push(tasksLink);
   const commentsLink = linkOrNull(profile, COMMENTS);
@@ -287,6 +293,7 @@ export default function SuperAdminLayout() {
     // is the wrong way round.
     ACCOUNTING_CORE,
     EXPENSES,
+    FINANCE_REPORT,
     // Cash Flow is now merged into Financial Reports as a top-level tab, so its
     // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
     REPORTS,

@@ -58,6 +58,7 @@ import { canReadBankBalances, loadBankOptions } from "../../lib/bankOptions";
 import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
 import WhtCertificates from "../../components/WhtCertificates";
+import { DeliveryCell, MissingInvoices, OriginBadge, PaymentBadge, loadDeliveries, type Delivery } from "../../components/InvoiceDelivery";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
@@ -185,6 +186,9 @@ export default function Invoices() {
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  // 0632: whether each invoice was delivered — its own fact, not a "status" option.
+  const [deliveries, setDeliveries] = useState<Map<string, Delivery>>(new Map());
+  const refreshDeliveries = () => { void loadDeliveries().then(setDeliveries); };
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -289,6 +293,7 @@ export default function Invoices() {
         },
       );
       setInvoices(invRows);
+      refreshDeliveries();
     } catch (err: any) {
       setError(err.message ?? String(err));
     }
@@ -1072,6 +1077,7 @@ export default function Invoices() {
           </div>
         )}
 
+        <MissingInvoices onGenerate={canEditInvoices ? () => setTab("generate") : undefined} />
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="p-4 border-b border-border flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
@@ -1111,25 +1117,13 @@ export default function Invoices() {
             empty='No invoices yet. Tap "New Invoice" to create one.'
             rowKey={(inv) => inv.id}
             title={(inv) => inv.client?.name ?? "—"}
-            subtitle={(inv) => `${inv.invoice_number} · ${monthLabel(billingMonth(inv))}`}
+            subtitle={(inv) => `${inv.invoice_number} · ${monthLabel(billingMonth(inv))}${inv.generated ? " · Auto" : " · Manual"}`}
             badge={(inv) => (
-              <ThemedSelect
-                value={inv.status}
-                onChange={(e) => handleStatusChange(inv, e.target.value as InvoiceStatus)}
-                className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
-                  inv.status === "Delivered" || inv.status === "Paid"
-                    ? "bg-success-50 text-success-700 border-success-200"
-                    : inv.status === "Partly-Paid"
-                      ? "bg-brand-50 text-brand-700 border-brand-200"
-                      : "bg-warning-50 text-warning-700 border-warning-200"
-                }`}
-              >
-                <option value="Pending">Pending</option>
-                <option value="Delivered">Delivered</option>
-                <option value="Unpaid">Unpaid</option>
-                <option value="Partly-Paid">Partly-Paid</option>
-                <option value="Paid">Paid</option>
-              </ThemedSelect>
+              // 0632: payment is read from the figures; delivery is a tick of its own.
+              <div className="flex flex-col items-end gap-1">
+                <PaymentBadge amount={Number(inv.invoice_amount)} received={Number(inv.amount_received)} />
+                <DeliveryCell invoiceId={inv.id} delivery={deliveries.get(inv.id)} canEdit={canEditInvoices} onChanged={refreshDeliveries} />
+              </div>
             )}
             fields={[
               {
@@ -1202,7 +1196,7 @@ export default function Invoices() {
                   <th className="text-right px-6 py-3 text-sm text-muted-foreground">Invoice Amount</th>
                   <th className="text-right px-6 py-3 text-sm text-muted-foreground">Received</th>
                   <th className="text-right px-6 py-3 text-sm text-muted-foreground">Outstanding</th>
-                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Status</th>
+                  <th className="text-left px-6 py-3 text-sm text-muted-foreground">Payment · Delivery</th>
                   <th className="text-left px-6 py-3 text-sm text-muted-foreground">Attachment</th>
                   <th className="text-left px-6 py-3 text-sm text-muted-foreground">Actions</th>
                 </tr>
@@ -1236,6 +1230,7 @@ export default function Invoices() {
                       >
                         <td className="px-6 py-4 text-sm text-foreground font-mono">
                           {inv.invoice_number}
+                          <OriginBadge generated={inv.generated} />
                         </td>
                         <td className="px-6 py-4 text-sm text-foreground">
                           <div className="flex items-center gap-2">
@@ -1259,29 +1254,11 @@ export default function Invoices() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm">
-                          {canEditInvoices ? (
-                          <ThemedSelect
-                            value={inv.status}
-                            onChange={(e) =>
-                              handleStatusChange(inv, e.target.value as InvoiceStatus)
-                            }
-                            className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
-                              inv.status === "Delivered" || inv.status === "Paid"
-                                ? "bg-success-50 text-success-700 border-success-200"
-                                : inv.status === "Partly-Paid"
-                                ? "bg-brand-50 text-brand-700 border-brand-200"
-                                : "bg-warning-50 text-warning-700 border-warning-200"
-                            }`}
-                          >
-                            <option value="Pending">Pending</option>
-                            <option value="Delivered">Delivered</option>
-                            <option value="Unpaid">Unpaid</option>
-                            <option value="Partly-Paid">Partly-Paid</option>
-                            <option value="Paid">Paid</option>
-                          </ThemedSelect>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">{inv.status}</span>
-                          )}
+                          {/* 0632: payment from the figures (cannot disagree with the ledger); delivery its own tick. */}
+                          <div className="flex flex-col items-start gap-1">
+                            <PaymentBadge amount={Number(inv.invoice_amount)} received={Number(inv.amount_received)} />
+                            <DeliveryCell invoiceId={inv.id} delivery={deliveries.get(inv.id)} canEdit={canEditInvoices} onChanged={refreshDeliveries} />
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-sm">
                           {(inv.drive_view_url || inv.attachment_path) ? (

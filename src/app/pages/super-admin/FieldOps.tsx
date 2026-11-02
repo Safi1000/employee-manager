@@ -12,6 +12,8 @@ import { formatDate } from "../../lib/date";
 import { generateOperationsPdf } from "../../lib/dailyBriefPdf";
 import { describeUnconfirmed, loadAttendanceSummary, type AttendanceSummary } from "../../lib/attendanceSummary";
 import { usePageState } from "../../lib/pageState";
+import { loadStaffChanges, logStaffReport, staffForRegion, type StaffChanges } from "../../lib/staffChanges";
+import StaffChangesPanel from "../../components/StaffChangesPanel";
 
 // Operations ▸ Daily Reports. One row per ACTIVE CLIENT for a chosen day, each
 // with a free-text Details box; the branded PDF is built straight from those two
@@ -220,6 +222,10 @@ export default function FieldOps() {
   const attendanceDate = useMemo(() => shiftDay(date, -1), [date]);
   const [attendance, setAttendance] = useState<AttendanceSummary | null>(null);
   const [attLoading, setAttLoading] = useState(true);
+  /** 0632: staff changes entered since the last attendance report was exported. */
+  const [staffChanges, setStaffChanges] = useState<StaffChanges | null>(null);
+  const reloadStaff = useCallback(async () => { setStaffChanges(await loadStaffChanges()); }, []);
+  useEffect(() => { if (tab === "attendance") void reloadStaff(); }, [tab, reloadStaff]);
 
   const isToday = date === todayIso();
   // A day that has ended is a record, not a draft. Future days cannot be typed
@@ -612,6 +618,9 @@ export default function FieldOps() {
     // notes, updates and tasks and who marked the attendance — read off the
     // records — and the person exporting only as "Extracted by".
     setBusy(true);
+    // 0632: staff changes since the last attendance report, fetched fresh so
+    // the period ends at the moment of export.
+    const staffNow = which !== "daily" ? await loadStaffChanges() : null;
     const [noteBy, dayBy, taskBy] = await Promise.all([
       supabase.from("daily_client_reports").select("client_id, updated_by, details, no_report").eq("company_id", companyId).eq("report_date", date),
       supabase.from("daily_report_day_notes").select("branch_id, updated_by, other_updates").eq("company_id", companyId).eq("report_date", date),
@@ -678,7 +687,7 @@ export default function FieldOps() {
         attendanceNotes: Object.fromEntries(gapNotes),
         preparedBy,
       } : undefined;
-      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames, markedBy, explanations: Object.fromEntries(gapNotes) } : undefined;
+      const attendancePart = which !== "daily" && att && att.clients.length ? { summary: att, regionLabel: label, regionNames, markedBy, explanations: Object.fromEntries(gapNotes), staff: staffNow ? staffForRegion(staffNow, orphans ? "__none__" : regionId) : undefined } : undefined;
       return { daily, attendance: attendancePart };
     };
     let parts;
@@ -695,6 +704,10 @@ export default function FieldOps() {
     }
     const daily = parts.some((pt) => pt.daily);
     generateOperationsPdf(company, parts, regionLabel, profile?.full_name ?? "");
+    // The next attendance report starts where this one ended — but only a
+    // company-wide export moves it: report_runs is per company, so a one-region
+    // export would hide the other regions' changes from their next report.
+    if (staffNow && !regionFilter && parts.some((pt) => pt.attendance)) { await logStaffReport(staffNow); void reloadStaff(); }
     if (!daily) { setBusy(false); return; }
     const { data: userData } = await supabase.auth.getUser();
     // The export record keeps its original column names; here total_posts counts
@@ -983,6 +996,9 @@ export default function FieldOps() {
               canExplain={canExplainAttendance}
               onExplain={(cid, v) => void saveGapNote(cid, v)}
             />
+          )}
+          {tab === "attendance" && staffChanges && (
+            <div className="mt-6"><StaffChangesPanel data={staffForRegion(staffChanges, regionFilter)} /></div>
           )}
 
           <Modal isOpen={!!blocked} onClose={() => setBlocked(null)} title="Not ready to export" size="md"

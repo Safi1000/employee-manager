@@ -73,6 +73,8 @@ const AccessGovernance = lazyPage(() => import("./pages/super-admin/AccessGovern
 const MyProfile = lazyPage(() => import("./pages/super-admin/MyProfile"));
 const DailyReports = lazyPage(() => import("./pages/super-admin/DailyReports"));
 const PaymentFollowUpPage = lazyPage(() => import("./pages/super-admin/PaymentFollowUpPage"));
+const FinanceReportPage = lazyPage(() => import("./pages/super-admin/FinanceReportPage"));
+const CeoDashboard = lazyPage(() => import("./pages/super-admin/CeoDashboard"));
 const FieldSupervisors = lazyPage(() => import("./pages/super-admin/FieldSupervisors"));
 const FieldReview = lazyPage(() => import("./pages/super-admin/FieldReview"));
 const FieldAppPrivacy = lazyPage(() => import("./pages/FieldAppPrivacy"));
@@ -276,6 +278,9 @@ export const router = createBrowserRouter([
       { path: "daily-reports", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <DailyReports />) },
       // 0628: the ops team may hold receivables.follow_up alone.
       { path: "payment-follow-up", element: guard(["receivables.follow_up", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit"], <PaymentFollowUpPage />) },
+      // 0632: the finance report (read gate = finance_report()'s) and the CEO dashboard.
+      { path: "finance-report", element: guard(["reports.view", "invoices.view", "invoices.edit", "receivables.view", "accounting.edit", "dashboard.ceo"], <FinanceReportPage />) },
+      { path: "ceo", element: guard(["dashboard.ceo"], <CeoDashboard />) },
       { path: "field-ops", element: <Navigate to="/app/daily-reports" replace /> },
       // Field app logins and site coverage. Role, not permission: admin_field_* refuse anyone but a super admin.
       { path: "field-supervisors", element: <RequireAuth roles={["super_admin"]}><FieldSupervisors /></RequireAuth> },
