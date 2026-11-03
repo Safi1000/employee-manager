@@ -1,4 +1,6 @@
 import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
+import { APPROVAL_KEYS, nearestPreset } from "../../lib/permissionPresets";
+import PermissionPicker from "../../components/PermissionPicker";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -40,45 +42,6 @@ const displayLabel = (u: Profile) => u.title?.trim() || ROLE_LABEL[u.role];
 const ASSIGNABLE_ROLES: UserRole[] = [
   "super_admin", "ops_director", "finance_director", "ops_manager", "accounting", "hr",
 ];
-
-function PermissionCheckboxes({
-  selected,
-  onToggle,
-  disabled,
-}: {
-  selected: Set<string>;
-  onToggle: (key: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="space-y-4">
-      {PERMISSION_GROUPS.map((group) => (
-        <div key={group.label}>
-          <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">{group.label}</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {group.items.map((item) => (
-              <label
-                key={item.key}
-                className={`flex items-start gap-2 text-sm text-foreground ${
-                  disabled ? "opacity-50" : "cursor-pointer"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(item.key)}
-                  onChange={() => onToggle(item.key)}
-                  disabled={disabled}
-                  className="mt-0.5 rounded border-border"
-                />
-                <span>{item.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function UserManagement() {
   const codeIndex = useEmployeeCodeIndex();
@@ -521,13 +484,6 @@ export default function UserManagement() {
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
-        {(profile?.role === "super_admin" || profile?.role === "super_super_admin") && (<><SecurityDigestCard companyId={company?.id ?? profile?.company_id ?? null} /><BackupCard /><DrivePrivacyCard /></>)}
-        {profile?.role === "super_admin" && (
-          <Link to="/app/field-supervisors" className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card p-4 text-sm hover:bg-muted/30 md:p-5">
-            <span><span className="font-semibold text-foreground">Field accounts</span> <span className="text-muted-foreground">— supervisor logins, phones and their sites now live on Operations ▸ Field Supervisors.</span></span>
-            <span className="whitespace-nowrap text-brand-700 dark:text-brand-500">Open →</span>
-          </Link>
-        )}
 
         <div className="bg-card rounded-2xl border border-border">
           <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center gap-3">
@@ -662,7 +618,10 @@ export default function UserManagement() {
                           ) : (u.permissions?.length ?? 0) === 0 ? (
                             <span className="text-xs text-muted-foreground/70">None</span>
                           ) : (
-                            <span className="text-xs text-foreground">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}</span>
+                            <span className="text-xs text-foreground">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}
+                              {(() => { const n = nearestPreset(new Set(u.permissions)); return n ? <span className="block text-muted-foreground">{n.preset.label}{n.added || n.removed ? ` +${n.added}/−${n.removed}` : ""}</span> : null; })()}
+                              {(() => { const a = u.permissions.filter((k) => APPROVAL_KEYS.has(k)).length; return a ? <span className="block text-warning-700 dark:text-warning-500">{a} approval{a === 1 ? "" : "s"}</span> : null; })()}
+                            </span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-xs">
@@ -730,6 +689,18 @@ export default function UserManagement() {
               </>
             )}
           </div>
+        </div>
+        {/* 3 Nov 2026: the people first, then who can sign what off, then the
+            security, backup and Drive housekeeping that used to sit above them. */}
+        <ApprovalMatrix users={users} />
+        <div className="mt-6 space-y-4">
+        {(profile?.role === "super_admin" || profile?.role === "super_super_admin") && (<><SecurityDigestCard companyId={company?.id ?? profile?.company_id ?? null} /><BackupCard /><DrivePrivacyCard /></>)}
+        {profile?.role === "super_admin" && (
+          <Link to="/app/field-supervisors" className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card p-4 text-sm hover:bg-muted/30 md:p-5">
+            <span><span className="font-semibold text-foreground">Field accounts</span> <span className="text-muted-foreground">— supervisor logins, phones and their sites now live on Field App ▸ Field Supervisors.</span></span>
+            <span className="whitespace-nowrap text-brand-700 dark:text-brand-500">Open →</span>
+          </Link>
+        )}
         </div>
       </div>
 
@@ -799,29 +770,8 @@ export default function UserManagement() {
           </div>
 
           <div className="pt-4 border-t border-border">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm text-foreground">Permissions</h3>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCreatePerms(new Set(PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))))}
-                  className="text-xs text-brand-600 hover:underline"
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCreatePerms(new Set())}
-                  className="text-xs text-muted-foreground hover:underline"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-            <PermissionCheckboxes
-              selected={createPerms}
-              onToggle={(key) => togglePerm(createPerms, setCreatePerms, key)}
-            />
+            <h3 className="text-sm text-foreground mb-2">Permissions</h3>
+            <PermissionPicker selected={createPerms} onChange={setCreatePerms} />
           </div>
 
           {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>}
@@ -905,29 +855,8 @@ export default function UserManagement() {
 
             {editRole !== "super_admin" && (
               <div className="pt-4 border-t border-border">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm text-foreground">Permissions</h3>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditPerms(new Set(PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))))}
-                      className="text-xs text-brand-600 hover:underline"
-                    >
-                      Select all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditPerms(new Set())}
-                      className="text-xs text-muted-foreground hover:underline"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-                <PermissionCheckboxes
-                  selected={editPerms}
-                  onToggle={(key) => togglePerm(editPerms, setEditPerms, key)}
-                />
+                <h3 className="text-sm text-foreground mb-2">Permissions</h3>
+                <PermissionPicker selected={editPerms} onChange={setEditPerms} />
               </div>
             )}
 
@@ -1046,5 +975,45 @@ export default function UserManagement() {
         />
       )}
     </>
+  );
+}
+
+
+/**
+ * Who can approve what (3 Nov 2026): every approval permission against every
+ * user, so a second pair of eyes is visibly a second person. Super admins hold
+ * every key implicitly.
+ */
+function ApprovalMatrix({ users }: { users: Profile[] }) {
+  const keys = PERMISSION_GROUPS.flatMap((g) => g.items).filter((i) => APPROVAL_KEYS.has(i.key));
+  const isSuper = (u: Profile) => u.role === "super_admin" || u.role === "super_super_admin";
+  const holders = (k: string) => users.filter((u) => isSuper(u) || (u.permissions ?? []).includes(k));
+  return (
+    <div className="mt-6 bg-card rounded-2xl border border-border overflow-x-auto">
+      <div className="px-4 md:px-6 py-3 border-b border-border">
+        <h3 className="font-semibold text-foreground">Who can approve what</h3>
+        <p className="text-xs text-muted-foreground">Each approval and everyone who holds it. A super admin holds every one implicitly. An approval held by nobody but the super admin is flagged — the second pair of eyes is the same person.</p>
+      </div>
+      <table className="w-full text-sm min-w-[640px]">
+        <thead><tr className="text-left text-xs text-muted-foreground"><th className="px-4 md:px-6 py-2">Approval</th><th className="px-3 py-2">Held by</th></tr></thead>
+        <tbody>
+          {keys.map((k) => {
+            const h = holders(k.key);
+            const explicit = h.filter((u) => !isSuper(u));
+            return (
+              <tr key={k.key} className="border-t border-border align-top">
+                <td className="px-4 md:px-6 py-2 text-foreground">{k.label}</td>
+                <td className="px-3 py-2">
+                  <span className="flex flex-wrap gap-1">
+                    {h.map((u) => <span key={u.id} className={`text-xs px-2 py-0.5 rounded-md border ${isSuper(u) ? "border-border text-muted-foreground" : "border-brand-500/50 text-foreground"}`}>{u.full_name ?? u.email}{isSuper(u) ? " (super admin)" : ""}</span>)}
+                    {explicit.length === 0 && <span className="text-xs text-warning-700 dark:text-warning-500">only the super admin</span>}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
