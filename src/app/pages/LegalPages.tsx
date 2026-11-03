@@ -1,7 +1,7 @@
 /**
  * Public: Bastion's legal and company pages — the ones the landing footer
  * names. /privacy, /terms, /data-processing, /security, /contact (also /about).
- * The GGS Field app keeps its own policy at /privacy/field-app, linked from here.
+ * The Bastion Field app keeps its own policy at /privacy/field-app, linked from here.
  *
  * Written 2 Nov 2026 from how Bastion is actually built: the processors listed
  * are the services the code calls (Supabase, Vercel, Stripe, Resend, Google
@@ -91,7 +91,7 @@ export function Privacy() {
         signs up, who signs in, and how the subscription is paid — are ours to look after, and are covered here.
       </P>
       <P>
-        The GGS Field mobile app has its own policy: <a className="underline" href="/privacy/field-app">GGS Field privacy policy</a>.
+        The Bastion Field mobile app has its own policy: <a className="underline" href="/privacy/field-app">Bastion Field privacy policy</a>.
       </P>
 
       <H>What we collect</H>
@@ -288,7 +288,7 @@ export function Contact() {
       <H>About Bastion</H>
       <P>
         Bastion is the command system for security-services companies: staff, deployments, attendance, payroll, invoicing
-        and accounts in one place, on one ledger. It is built and run by {PUBLISHER}, which also publishes the GGS Field
+        and accounts in one place, on one ledger. It is built and run by {PUBLISHER}, which also publishes the Bastion Field
         mobile app.
       </P>
 
@@ -302,7 +302,7 @@ export function Contact() {
       <H>Policies</H>
       <UL>
         <li><a className="underline" href="/privacy">Privacy policy</a></li>
-        <li><a className="underline" href="/privacy/field-app">GGS Field app privacy policy</a></li>
+        <li><a className="underline" href="/privacy/field-app">Bastion Field app privacy policy</a></li>
         <li><a className="underline" href="/terms">Terms of service</a></li>
         <li><a className="underline" href="/data-processing">Data processing</a></li>
         <li><a className="underline" href="/security">Security</a></li>
