@@ -24,9 +24,13 @@
 --     table, so the HR-verified half, the OPS-verified month, the cleared-guard
 --     lock, the service window, one-status-per-day and the double-duty rules
 --     all refuse exactly as they would by hand. The one lock it passes is the
---     late-entry lock, the same way the Monthly Board's Override does: the row
---     is written with supervisor_override and the import's reason, because a
---     month imported after it ended is late entry by definition.
+--     confirmed-and-month-ended lock, and only the way the Monthly Board passes
+--     it: a replaced or removed mark is cleared the way clear_attendance_day
+--     clears one (app.attendance_clear, transaction-local, switched on around
+--     that one delete and off again, with an attendance_overrides row saying
+--     before → after and why), and the new mark is written with
+--     supervisor_override and the import's reason, as the board's Override
+--     writes one. A month imported after it ended is late entry by definition.
 --   * A guard who already has a payslip for the month is refused. Attendance
 --     under a computed payslip would leave the payslip saying one thing and the
 --     days another.
@@ -136,9 +140,19 @@ begin
         from public.attendance_records a
        where a.employee_id = p_emp and a.attendance_date = d
          and (a.worked_for_client_id = p_client or a.worked_for_client_id is null);
+      -- Cleared the way clear_attendance_day clears a mark: logged, then the
+      -- confirmed-month lock switched off for this one delete only.
+      insert into public.attendance_overrides
+        (company_id, client_id, category, employee_id, attendance_date, reason, before_value, after_value, created_by)
+      select e.company_id, p_client, null, p_emp, d, 'Imported: ' || p_note, a.status, coalesce(v_new, 'cleared'), auth.uid()
+        from public.attendance_records a
+       where a.employee_id = p_emp and a.attendance_date = d
+         and (a.worked_for_client_id = p_client or a.worked_for_client_id is null);
+      perform set_config('app.attendance_clear', 'on', true);
       delete from public.attendance_records a
        where a.employee_id = p_emp and a.attendance_date = d
          and (a.worked_for_client_id = p_client or a.worked_for_client_id is null);
+      perform set_config('app.attendance_clear', '', true);
       if o.app then v_app := v_app + 1; end if;
     end if;
 
@@ -377,13 +391,25 @@ begin
     raise exception 'A later import for the same client and month is still in place. Undo that one first.';
   end if;
 
+  -- Logged in attendance_overrides like any cleared mark, with the confirmed-
+  -- month lock off for these writes only. Every other lock still applies.
+  insert into public.attendance_overrides
+    (company_id, client_id, category, employee_id, attendance_date, reason, before_value, after_value, created_by)
+  select a.company_id, imp.client_id, null, a.employee_id, a.attendance_date, 'Import undone: ' || btrim(p_reason), a.status, 'cleared', auth.uid()
+    from public.attendance_records a where a.import_id = p_import_id;
+  perform set_config('app.attendance_clear', 'on', true);
   delete from public.attendance_records where import_id = p_import_id;
   get diagnostics v_del = row_count;
 
   for r in select value from jsonb_array_elements(imp.replaced_snapshot) loop
     insert into public.attendance_records select * from jsonb_populate_record(null::public.attendance_records, r);
+    insert into public.attendance_overrides
+      (company_id, client_id, category, employee_id, attendance_date, reason, before_value, after_value, created_by)
+    values ((r ->> 'company_id')::uuid, imp.client_id, null, (r ->> 'employee_id')::uuid, (r ->> 'attendance_date')::date,
+            'Import undone: ' || btrim(p_reason), 'cleared', r ->> 'status', auth.uid());
     v_ins := v_ins + 1;
   end loop;
+  perform set_config('app.attendance_clear', '', true);
 
   update public.attendance_imports
      set undone_at = now(), undone_by = auth.uid(), undo_reason = btrim(p_reason)
@@ -399,7 +425,8 @@ comment on function public.undo_attendance_import(uuid, text) is
 
 -- ───────────────────────── Tests (rolled back) ─────────────────────────
 -- On 68 HS-PCI-PFM, October 2026, guard Khuda Yar (GGS-00635): present 1–20 in
--- Bastion, first half HR-verified, no payslip for October.
+-- Bastion (WhatsApp, confirmed, the month ended), no payslip for October. The
+-- first half's verification row exists but is unsigned; test 2 signs it.
 do $test$
 declare
   v_boss   constant uuid := 'd2f4c9c0-7e33-4d5f-80aa-3d04cf657f12';
@@ -435,11 +462,17 @@ begin
     if v_n <> 20 then raise exception '0638 REFUSED: the dry run wrote (% marks, expected 20).', v_n; end if;
     v_ran := v_ran + 1;
 
-    -- 2. A day in the HR-verified first half that differs is refused with the half lock's own words.
+    -- 2. Once HR signs the first half, a day there that differs is refused with the half lock's own words.
+    update public.attendance_half_verifications set hr_verified_at = now(), hr_verified_by = v_boss
+     where client_id = v_client and period_month = '2026-10-01' and half = 1;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then raise exception '0638 REFUSED: expected one first-half verification row to sign, found %.', v_n; end if;
     v_res := public.import_attendance_month(v_client, '2026-10-01', jsonb_build_array(jsonb_build_object('employee_id', v_guard, 'marks', v_marks || '{"2":"L"}'::jsonb)));
     if (v_res #>> '{totals,refused}')::int <> 1 or (v_res #>> '{guards,0,error}') not like '%HR has verified%' then
       raise exception '0638 REFUSED: a change inside a verified half was not refused by the half lock (%).', v_res #>> '{guards,0,error}';
     end if;
+    update public.attendance_half_verifications set hr_verified_at = null, hr_verified_by = null
+     where client_id = v_client and period_month = '2026-10-01' and half = 1;
     v_ran := v_ran + 1;
 
     -- 3. The real run needs a reason.
@@ -449,14 +482,27 @@ begin
     if v_msg is null or v_msg not like 'Say why this month is being imported%' then raise exception '0638 REFUSED: an import with no reason ran (%).', coalesce(v_msg, 'no error'); end if;
     v_ran := v_ran + 1;
 
-    -- 4. The real run writes the 11, tagged, and keeps the record.
+    -- 4. The real run adds the 11 and changes the 17th (a confirmed day, month
+    --    ended) to leave: tagged, logged in attendance_overrides, and recorded.
+    v_marks := v_marks || '{"17":"L"}'::jsonb;
     v_res := public.import_attendance_month(v_client, '2026-10-01', jsonb_build_array(jsonb_build_object('employee_id', v_guard, 'marks', v_marks)), 'test.xlsx', 'abc', 'HRO confirmed sheet', false);
     v_imp := (v_res ->> 'import_id')::uuid;
-    select count(*) into v_n from public.attendance_records where import_id = v_imp and status = 'present' and supervisor_override and worked_for_client_id = v_client;
-    if v_n <> 11 then raise exception '0638 REFUSED: the import wrote % tagged marks, expected 11.', v_n; end if;
+    select count(*) into v_n from public.attendance_records where import_id = v_imp and supervisor_override and worked_for_client_id = v_client;
+    if v_n <> 12 then raise exception '0638 REFUSED: the import wrote % tagged marks, expected 12.', v_n; end if;
+    if (select status from public.attendance_records where employee_id = v_guard and attendance_date = '2026-10-17') is distinct from 'leave' then
+      raise exception '0638 REFUSED: the 17th was not changed to leave.';
+    end if;
+    if not exists (select 1 from public.attendance_overrides where employee_id = v_guard and attendance_date = '2026-10-17'
+                    and before_value = 'present' and after_value = 'leave' and reason = 'Imported: HRO confirmed sheet') then
+      raise exception '0638 REFUSED: the changed day was not logged in attendance_overrides.';
+    end if;
+    if coalesce(current_setting('app.attendance_clear', true), '') = 'on' then
+      raise exception '0638 REFUSED: the confirmed-month switch was left on after the import.';
+    end if;
     select count(*) into v_n from public.attendance_records where employee_id = v_guard and attendance_date between '2026-10-01' and '2026-10-31';
     if v_n <> 31 then raise exception '0638 REFUSED: the guard has % marks after the import, expected 31.', v_n; end if;
-    if not exists (select 1 from public.attendance_imports where id = v_imp and marks_added = 11 and guards = 1 and file_sha256 = 'abc') then
+    if not exists (select 1 from public.attendance_imports where id = v_imp and marks_added = 11 and marks_changed = 1 and guards = 1
+                    and file_sha256 = 'abc' and jsonb_array_length(replaced_snapshot) = 1) then
       raise exception '0638 REFUSED: the import record is missing or wrong.';
     end if;
     v_ran := v_ran + 1;
@@ -481,10 +527,15 @@ begin
     update public.attendance_records set source = 'manual' where employee_id = v_guard and attendance_date = '2026-10-25';
     v_ran := v_ran + 1;
 
-    -- 7. Undo puts the month back to the 20 it had.
+    -- 7. Undo puts the month back to the 20 it had, the 17th present again.
     v_res := public.undo_attendance_import(v_imp, 'test');
     select count(*) into v_n from public.attendance_records where employee_id = v_guard and attendance_date between '2026-10-01' and '2026-10-31';
-    if v_n <> 20 or (v_res ->> 'removed')::int <> 11 then raise exception '0638 REFUSED: undo left % marks (expected 20), removed %.', v_n, v_res ->> 'removed'; end if;
+    if v_n <> 20 or (v_res ->> 'removed')::int <> 12 or (v_res ->> 'restored')::int <> 1 then
+      raise exception '0638 REFUSED: undo left % marks (expected 20), removed % (12), restored % (1).', v_n, v_res ->> 'removed', v_res ->> 'restored';
+    end if;
+    if (select status from public.attendance_records where employee_id = v_guard and attendance_date = '2026-10-17') is distinct from 'present' then
+      raise exception '0638 REFUSED: undo did not restore the 17th to present.';
+    end if;
     v_msg := null;
     begin perform public.undo_attendance_import(v_imp, 'again'); exception when others then get stacked diagnostics v_msg = message_text; end;
     if v_msg is null or v_msg not like 'That import was already undone%' then raise exception '0638 REFUSED: an import could be undone twice (%).', coalesce(v_msg, 'no error'); end if;
@@ -535,7 +586,7 @@ begin
   perform set_config('request.jwt.claims', '{}', true);
   if exists (select 1 from public.security_gaps()) then raise exception '0638 REFUSED: security_gaps() reports a gap.'; end if;
   if exists (select 1 from public.tenant_guard_gaps()) then raise exception '0638 REFUSED: tenant_guard_gaps() reports a gap.'; end if;
-  if exists (select 1 from public.branch_guard_gaps() g where g.fname in ('import_attendance_month', 'undo_attendance_import', '_attendance_import_guard')) then
+  if exists (select 1 from public.branch_guard_gaps() g where g.function_name in ('import_attendance_month', 'undo_attendance_import', '_attendance_import_guard')) then
     raise exception '0638 REFUSED: branch_guard_gaps() reports the import functions.';
   end if;
   if exists (select 1 from public.permission_key_gaps()) then raise exception '0638 REFUSED: permission_key_gaps() reports a demanded key the grant screen cannot offer.'; end if;
