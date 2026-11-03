@@ -29,7 +29,12 @@ take, so the iPhone build runs from a copy at `~/Developer/ggs-field-ios`
 
 1. `rsync -a --delete --exclude /ios --exclude /android --exclude /.expo --exclude /.env mobile/ ~/Developer/ggs-field-ios/`
 2. In the copy: `CI=1 npx expo prebuild -p ios --clean`, then rewrite `ios/.xcode.env.local`.
-3. Archive with automatic signing for the team, raise `IOS_BUILD_NUMBER`, upload to App Store Connect.
+3. Archive with automatic signing for the team, raise `IOS_BUILD_NUMBER`, upload to App Store Connect:
+   - Team **TECHXSERVE Enterprise LLC**, ID `N98K65Q4N4` (signed in to Xcode → Settings → Accounts).
+   - `xcodebuild -workspace Bastion.xcworkspace -scheme Bastion -configuration Release -destination 'generic/platform=iOS' -archivePath build/Bastion.xcarchive DEVELOPMENT_TEAM=N98K65Q4N4 CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates archive`
+   - then `xcodebuild -exportArchive … -exportOptionsPlist ~/Developer/ggs-field-ios-export/ExportOptions-upload.plist -allowProvisioningUpdates` (method `app-store-connect`, destination `upload`).
+   - Automatic signing needs at least ONE device registered to the team, even for an App Store build — Shayan's iPhone (`00008160-000C193A28E14036`) was added on developer.apple.com → Devices on 3 Nov 2026.
+   - Build 1 (1.0.0) uploaded 3 Nov 2026 23:51. The next upload needs `IOS_BUILD_NUMBER=2` before `prebuild`.
 
 iOS 27 refuses to launch an app that has not adopted the scene life cycle;
 `expo-build-properties` → `ios.enableSceneSupport: true` in `app.json` does it
