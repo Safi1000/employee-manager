@@ -19,6 +19,14 @@ export const APPROVAL_KEYS = new Set([
   "field.money_approve", "warnings.approve", "performance.approve", "clearance.finance",
 ]);
 
+/**
+ * RESTRICTED keys are not approvals but rewrite records in bulk (0638's
+ * attendance import). Like approvals they are in no preset and "All" skips
+ * them; they are tagged so nobody ticks one without noticing.
+ */
+export const RESTRICTED_KEYS = new Set(["attendance.import"]);
+export const isHeldBack = (k: string) => APPROVAL_KEYS.has(k) || RESTRICTED_KEYS.has(k);
+
 const ALL = PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key));
 const viewOnly = ALL.filter((k) => /\.(view|run_view)$/.test(k));
 

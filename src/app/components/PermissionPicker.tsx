@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Search, ShieldCheck } from "lucide-react";
 import { PERMISSION_GROUPS } from "../lib/supabase";
-import { APPROVAL_KEYS, PRESETS, nearestPreset } from "../lib/permissionPresets";
+import { APPROVAL_KEYS, RESTRICTED_KEYS, PRESETS, isHeldBack, nearestPreset } from "../lib/permissionPresets";
 
 /**
  * The permission grant (3 Nov 2026). Start from a preset — it only fills the
@@ -61,7 +61,7 @@ export default function PermissionPicker({ selected, onChange, disabled }: {
                 </button>
                 {!disabled && (
                   <span className="flex gap-2 text-[11px]">
-                    <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline" onClick={() => setGroup(g.items.filter((i) => !APPROVAL_KEYS.has(i.key)).map((i) => i.key), true)} title="Everything here except approvals">All</button>
+                    <button type="button" className="text-brand-700 dark:text-brand-500 hover:underline" onClick={() => setGroup(g.items.filter((i) => !isHeldBack(i.key)).map((i) => i.key), true)} title="Everything here except approvals and restricted keys">All</button>
                     <button type="button" className="text-muted-foreground hover:underline" onClick={() => setGroup(g.items.map((i) => i.key), false)}>None</button>
                   </span>
                 )}
@@ -74,6 +74,7 @@ export default function PermissionPicker({ selected, onChange, disabled }: {
                       <span className="text-foreground">
                         {i.label}
                         {APPROVAL_KEYS.has(i.key) && <span className="ml-1.5 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-semibold bg-warning-50 text-warning-700 dark:text-warning-500 align-middle"><ShieldCheck className="w-2.5 h-2.5" />Approval</span>}
+                        {RESTRICTED_KEYS.has(i.key) && <span className="ml-1.5 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-semibold bg-danger-50 text-danger-700 align-middle"><ShieldCheck className="w-2.5 h-2.5" />Restricted</span>}
                       </span>
                     </label>
                   ))}

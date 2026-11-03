@@ -441,6 +441,9 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       // 0618: the office reviews what a site supervisor confirmed on the field
       // app — accept, or return with a note. Anyone holding it, never a named person.
       { key: "attendance.field_review", label: "Review site supervisors' attendance from the field app — accept or return it" },
+      // 0638: bring a client's month in from the Excel template. Replaces the
+      // differing days for every guard in the file, so it is held back from presets.
+      { key: "attendance.import", label: "Import a month of attendance from the Excel sheet (replaces the differing days for the guards in the file)" },
     ],
   },
   {

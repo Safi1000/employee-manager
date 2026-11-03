@@ -1,7 +1,7 @@
 import { isIsoDate } from "../../lib/date";
 import { useEffect, useMemo, useState, Suspense } from "react";
 import { lazyPage } from "../../lib/lazyPage";
-import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
+import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader, Upload } from "lucide-react";
 import Header from "../../components/Header";
 import DetailSheet, { type DetailContent } from "../../components/DetailSheet";
 import RouteLoading from "../../components/RouteLoading";
@@ -13,6 +13,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
+import AttendanceImportModal from "../../components/AttendanceImportModal";
 // Lazy: ShiftManagement imports a modal out of EmployeeManagement, which
 // dragged that entire 160 KB page into the board's chunk for one tab.
 const ShiftManagement = lazyPage(() => import("./ShiftManagement"));
@@ -213,6 +214,8 @@ export default function AttendanceBoard() {
   const branding = brandingFromCompany(company);
   const [date, setDate] = usePageState("AttendanceBoard.date", yesterdayLocal());
   const [tab, setTab] = usePageState<"board" | "monthly" | "vacancies" | "shifts">("AttendanceBoard.tab", "board");
+  const canImport = hasPermission(profile, "attendance.import");
+  const [importOpen, setImportOpen] = useState(false);
   // Each band figure opens the registers behind it (2026-10-22: "every figure clickable").
   const [bandSheet, setBandSheet] = useState<DetailContent | null>(null);
   // Monthly tab: the client/group whose Monthly board is shown on the page, the
@@ -882,11 +885,19 @@ export default function AttendanceBoard() {
         title="Attendance"
         subtitle="Daily board by client/site — presume present, enter only exceptions, confirm per site"
         actions={
-          // The day picker drives the Daily board only; the Monthly board has its own month.
-          tab === "monthly" ? undefined : (
-            <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
-              className="px-3 py-2 border border-border bg-card rounded-xl text-sm text-foreground min-h-10" />
-          )
+          <>
+            {/* 0638: a client's month from the Excel template — its own key, held back from presets. */}
+            {canImport && (
+              <Button variant="secondary" size="md" onClick={() => setImportOpen(true)}>
+                <Upload className="w-4 h-4 mr-2" strokeWidth={1.5} />Import month
+              </Button>
+            )}
+            {/* The day picker drives the Daily board only; the Monthly board has its own month. */}
+            {tab !== "monthly" && (
+              <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
+                className="px-3 py-2 border border-border bg-card rounded-xl text-sm text-foreground min-h-10" />
+            )}
+          </>
         }
       >
         <div className="flex flex-col gap-3">
@@ -1381,6 +1392,7 @@ export default function AttendanceBoard() {
           onClose={() => setSheetView(null)}
         />
       )}
+      {canImport && <AttendanceImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} />}
     </>
   );
 }
