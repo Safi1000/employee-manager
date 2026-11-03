@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, NotesBox, ScreenHeader } from "../components/field";
 import { T } from "../components/Text";
 import { Badge, Banner, Button, Card, Input } from "../components/ui";
-import { useField } from "../lib/field";
+import { useField, errText } from "../lib/field";
 import { useLang } from "../lib/i18n";
 import { position, takePhoto } from "../lib/media";
 import { useTheme } from "../theme/ThemeProvider";
@@ -36,14 +36,14 @@ export default function Trip() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setS(await call<TripState>("field_trip_state", {})); setErr(null); } catch (e) { setErr((e as Error).message); }
+    try { setS(await call<TripState>("field_trip_state", {})); setErr(null); } catch (e) { setErr(errText(e)); }
   }, [call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
 
   const snap = async () => {
     setErr(null);
-    try { const p = await takePhoto(800); if (p) setPhoto(p); } catch (e) { setErr((e as Error).message); }
+    try { const p = await takePhoto(800); if (p) setPhoto(p); } catch (e) { setErr(errText(e)); }
   };
   const reset = () => { setReading(""); setPhoto(null); setPurpose(""); setClient(null); };
 
@@ -52,7 +52,7 @@ export default function Trip() {
     try {
       await call("field_trip_start", { p_odometer: Number(reading), p_client_id: client, p_purpose: purpose, p_photo: photo, p_geo: await position() });
       reset(); await load();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
   const end = async () => {
@@ -61,14 +61,14 @@ export default function Trip() {
     try {
       const r = await call<{ km: number }>("field_trip_end", { p_trip_id: s.open.id, p_odometer: Number(reading), p_photo: photo, p_geo: await position() });
       setDone(tr("Trip ended · {km} km", { km: r.km })); reset(); await load();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
   const cancel = () => {
     if (!s?.open) return;
     Alert.alert(tr("Cancel this trip?"), tr("Only if you started it by mistake."), [
       { text: tr("Keep it"), style: "cancel" },
-      { text: tr("Cancel trip"), style: "destructive", onPress: async () => { try { await call("field_trip_cancel", { p_trip_id: s.open!.id }); await load(); } catch (e) { setErr((e as Error).message); } } },
+      { text: tr("Cancel trip"), style: "destructive", onPress: async () => { try { await call("field_trip_cancel", { p_trip_id: s.open!.id }); await load(); } catch (e) { setErr(errText(e)); } } },
     ]);
   };
 

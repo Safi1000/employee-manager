@@ -12,7 +12,7 @@ import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../../components/Text";
 import { Badge, Banner, Button, Card, Empty } from "../../components/ui";
-import { ConfirmResult, Mark, Sheet, Shift, useField } from "../../lib/field";
+import { ConfirmResult, Mark, Sheet, Shift, useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -57,7 +57,7 @@ export default function Attendance() {
         return m && m !== "present" ? [[g.employee_id, { status: m, other: g.other_shift ?? undefined }]] : [];
       })));
       setArrived(new Map(got.relievers.map((r) => [r.record_id, r.arrived ?? true])));
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
   }, [id, sheet]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(null); }, [load]);
@@ -88,7 +88,7 @@ export default function Attendance() {
         data.relievers.map((r) => ({ record_id: r.record_id, arrived: arrived.get(r.record_id) ?? true })), await position());
       setDone(res);
       await load(shift);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

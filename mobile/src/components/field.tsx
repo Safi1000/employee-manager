@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { ArrowLeft, Camera, X } from "lucide-react-native";
 import React, { useState } from "react";
 import { Image, Pressable, ScrollView, TextInput, View } from "react-native";
+import { errText } from "../lib/field";
 import { useLang } from "../lib/i18n";
 import { takePhoto } from "../lib/media";
 import { useTheme } from "../theme/ThemeProvider";
@@ -75,7 +76,7 @@ export function PhotoStrip({ photos, onChange, max = 6, label }: { photos: strin
   const add = async () => {
     setBusy(true); setErr(null);
     try { const p = await takePhoto(); if (p) onChange([...photos, p]); }
-    catch (e) { setErr(tr((e as Error).message)); }
+    catch (e) { setErr(tr(errText(e))); }
     setBusy(false);
   };
   return (

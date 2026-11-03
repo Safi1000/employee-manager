@@ -101,6 +101,35 @@ function sessionEnd(s: Session | null, hours: number): number | null {
   }
 }
 
+// The server's own refusals are sentences written for the person holding the
+// phone and pass through as they are. Anything else is the machinery talking —
+// PostgREST, Postgres, the auth service ("…schema cache…", "relation …",
+// "Database error …") — and is never shown (Shayan, 3 Nov 2026: a supervisor saw
+// a "schema" error). Those while the server reloads after an update are tried
+// once more before anything is shown.
+const TRANSIENT = /schema cache|retrying|PGRST00[0-3]|service unavailable|bad gateway|gateway time-?out|timed out|\b50[234]\b/i;
+const TECHNICAL = /schema|PGRST|SQLSTATE|relation "|column "|function [a-z_.]+\(|syntax error|violates|null value in|permission denied for|duplicate key|invalid input syntax|database error|internal server error|unexpected token|JSON|JWT|fetch failed|undefined|null is not/i;
+export const SOMETHING_WRONG = "Something went wrong on our side. Try again in a moment — if it keeps happening, tell your office.";
+export const isTransient = (message: string) => TRANSIENT.test(message);
+
+/** What a screen shows for a caught error: the server's own sentence, or the plain fallback — never machinery. */
+export function errText(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e ?? "");
+  if (!m || TRANSIENT.test(m) || TECHNICAL.test(m)) {
+    if (m) console.warn("[field] error hidden from the user:", m);
+    return SOMETHING_WRONG;
+  }
+  return m;
+}
+
+/** One more try, a moment later, when the server was only reloading or busy. */
+export async function retryOnce<T extends { error: { message: string } | null }>(run: () => PromiseLike<T>): Promise<T> {
+  const first = await run();
+  if (!first.error || !isTransient(first.error.message)) return first;
+  await new Promise((r) => setTimeout(r, 1500));
+  return run();
+}
+
 /** Turn the gate's refusals into what the supervisor should do. */
 function readError(message: string): { phase?: Phase; signOut?: string; text: string } {
   if (/session expired/i.test(message)) return { signOut: "Your session ended. Sign in again.", text: message };
@@ -110,6 +139,10 @@ function readError(message: string): { phase?: Phase; signOut?: string; text: st
   if (/only field logins/i.test(message)) return { signOut: NO_ACCESS, text: message };
   if (/can only be used in the bastion field app/i.test(message)) return { signOut: "This login works in the field app only.", text: message };
   if (/network request failed|failed to fetch/i.test(message)) return { text: "No internet connection. Check your signal and try again." };
+  if (TRANSIENT.test(message) || TECHNICAL.test(message)) {
+    console.warn("[field] server error hidden from the user:", message);
+    return { text: SOMETHING_WRONG };
+  }
   return { text: message };
 }
 
@@ -139,7 +172,8 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aal.data?.nextLevel === "aal2" && aal.data.currentLevel !== "aal2") { setPhase("mfa"); return; }
 
-    const reg = await supabase.rpc("field_register_device", { p_device_id: await deviceId, p_label: deviceLabel() });
+    const did = await deviceId;
+    const reg = await retryOnce(() => supabase.rpc("field_register_device", { p_device_id: did, p_label: deviceLabel() }));
     if (reg.error) {
       const r = readError(reg.error.message);
       if (r.signOut) { await signOut(r.signOut); return; }
@@ -148,7 +182,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     if (reg.data === "pending") { setPhase("pending"); return; }
     if (reg.data === "revoked") { setPhase("revoked"); return; }
 
-    const res = await supabase.rpc("field_me");
+    const res = await retryOnce(() => supabase.rpc("field_me"));
     if (res.error) {
       const r = readError(res.error.message);
       if (r.signOut) { await signOut(r.signOut); return; }
@@ -179,7 +213,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (code: string, pin: string) => {
     if (!code.trim()) return "Enter your employee code.";
     if (!/^\d{6}$/.test(pin)) return "Your PIN is 6 digits.";
-    const { error: e } = await supabase.auth.signInWithPassword({ email: fieldEmail(code), password: fieldPassword(code, pin) });
+    const { error: e } = await retryOnce(() => supabase.auth.signInWithPassword({ email: fieldEmail(code), password: fieldPassword(code, pin) }));
     if (e) return /invalid login|invalid credentials/i.test(e.message) ? "That code and PIN don't match. Check both and try again." : readError(e.message).text;
     setNotice(null);
     setPhase("loading");
@@ -191,7 +225,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   const signInOffice = useCallback(async (email: string, password: string) => {
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) return "Enter your Bastion email address.";
     if (!password) return "Enter your password.";
-    const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const { error: e } = await retryOnce(() => supabase.auth.signInWithPassword({ email: email.trim(), password }));
     if (e) return /invalid login|invalid credentials/i.test(e.message) ? "That email and password don't match." : readError(e.message).text;
     setNotice(null);
     setPhase("loading");
@@ -213,7 +247,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
   }, [recheck]);
 
   const roster = useCallback(async (siteId: string) => {
-    const { data, error: e } = await supabase.rpc("field_site_roster", { p_site_id: siteId });
+    const { data, error: e } = await retryOnce(() => supabase.rpc("field_site_roster", { p_site_id: siteId }));
     if (e) {
       const r = readError(e.message);
       if (r.signOut) { await signOut(r.signOut); return []; }
@@ -225,7 +259,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
 
   /** Any field_* call: the gate's refusals sign out or change the phase, the rest come back as an Error. */
   const call = useCallback(async <R,>(fn: string, args: Record<string, unknown>): Promise<R> => {
-    const { data, error: e } = await supabase.rpc(fn, args);
+    const { data, error: e } = await retryOnce(() => supabase.rpc(fn, args));
     if (e) {
       const r = readError(e.message);
       if (r.signOut) { await signOut(r.signOut); throw new Error(r.signOut); }

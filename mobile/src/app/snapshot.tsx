@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenHeader } from "../components/field";
 import { T } from "../components/Text";
 import { Banner, Card } from "../components/ui";
-import { useField } from "../lib/field";
+import { useField, errText } from "../lib/field";
 import { useLang } from "../lib/i18n";
 import { useTheme } from "../theme/ThemeProvider";
 
@@ -31,7 +31,7 @@ export default function Snapshot() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setS(await call<Snap>("field_snapshot", {})); setErr(null); } catch (e) { setErr((e as Error).message); }
+    try { setS(await call<Snap>("field_snapshot", {})); setErr(null); } catch (e) { setErr(errText(e)); }
   }, [call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);

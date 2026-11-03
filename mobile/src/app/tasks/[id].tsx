@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NotesBox, PhotoStrip, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Badge, Banner, Button, Card, Empty } from "../../components/ui";
-import { TaskRow, useField } from "../../lib/field";
+import { TaskRow, useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -29,7 +29,7 @@ export default function Tasks() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setRows((await call<TaskRow[]>("field_site_tasks", { p_site_id: id })) ?? []); } catch (e) { setErr((e as Error).message); }
+    try { setRows((await call<TaskRow[]>("field_site_tasks", { p_site_id: id })) ?? []); } catch (e) { setErr(errText(e)); }
   }, [id, call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
@@ -40,7 +40,7 @@ export default function Tasks() {
       await call("field_task_update", { p_task_id: taskId, p_done: done, p_note: note, p_photos: photos, p_geo: await position() });
       setOpenId(null); setNote(""); setPhotos([]);
       await load();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

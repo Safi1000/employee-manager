@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, NotesBox, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Avatar, Badge, Banner, Button, Card, Empty, SearchBar } from "../../components/ui";
-import { Ability, Guard, useField, Warnings } from "../../lib/field";
+import { Ability, Guard, useField, Warnings, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position, takePhoto } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -40,7 +40,7 @@ export default function SiteHub() {
 
   const load = useCallback(async () => {
     try { const got = await roster(id); setErr(null); setRows(got); }
-    catch (e) { setErr((e as Error).message); setRows((r) => r ?? []); }
+    catch (e) { setErr(errText(e)); setRows((r) => r ?? []); }
   }, [id, roster]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
@@ -59,7 +59,7 @@ export default function SiteHub() {
       { text: tr("Send SOS"), style: "destructive", onPress: async () => {
         setSos("sending");
         try { await call("field_sos", { p_site_id: id, p_note: null, p_geo: await position() }); setSos("sent"); }
-        catch (e) { setSos("idle"); setErr((e as Error).message); }
+        catch (e) { setSos("idle"); setErr(errText(e)); }
       } },
     ]);
   };
@@ -163,7 +163,7 @@ function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn, canPhoto }: {
 
   const loadWarnings = useCallback(async () => {
     try { setW(await call<Warnings>("field_guard_warnings", { p_site_id: siteId, p_employee_id: guard.employee_id })); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(errText(e)); }
   }, [call, siteId, guard.employee_id]);
   useEffect(() => {
     let live = true;
@@ -182,7 +182,7 @@ function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn, canPhoto }: {
       await call("field_set_guard_photo", { p_site_id: siteId, p_employee_id: guard.employee_id, p_data: p });
       forgetPhoto(guard.employee_id);
       onPhotoSet();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 
@@ -194,7 +194,7 @@ function GuardCard({ siteId, guard, onClose, onPhotoSet, canWarn, canPhoto }: {
       setSaved(kind === "soft" ? tr("Soft warning recorded.") : tr("Formal warning sent to the office for approval."));
       setKind(null); setReason("");
       await loadWarnings();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

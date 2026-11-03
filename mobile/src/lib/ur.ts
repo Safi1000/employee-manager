@@ -245,9 +245,10 @@ export const UR: Record<string, string> = {
   "This login has been switched off. Ask your office.": "یہ لاگ اِن بند کر دیا گیا ہے۔ دفتر سے بات کریں۔",
   "This login works in the field app only.": "یہ لاگ اِن صرف فیلڈ ایپ میں چلتا ہے۔",
   "No internet connection. Check your signal and try again.": "انٹرنیٹ نہیں ہے۔ سگنل چیک کر کے دوبارہ کوشش کریں۔",
+  "Something went wrong on our side. Try again in a moment — if it keeps happening, tell your office.": "ہماری طرف سے کوئی خرابی ہوئی۔ تھوڑی دیر بعد دوبارہ کوشش کریں — اگر بار بار ہو تو دفتر کو بتائیں۔",
   "Your login doesn't have field app access. Ask a super admin to tick Field app on your permissions.":
     "آپ کے لاگ اِن کو فیلڈ ایپ کی اجازت نہیں۔ سپر ایڈمن سے کہیں کہ آپ کی اجازتوں میں Field app لگائیں۔",
-  "Allow the camera for GGS Field in your phone's settings to take photos.": "تصویر لینے کے لیے فون کی سیٹنگز میں GGS Field کو کیمرے کی اجازت دیں۔",
+  "Allow the camera for Bastion in your phone's settings to take photos.": "تصویر لینے کے لیے فون کی سیٹنگز میں Bastion کو کیمرے کی اجازت دیں۔",
   "A photo did not come through. Take it again.": "تصویر نہیں آئی۔ دوبارہ لیں۔",
 
   // ── the server's refusals (field_* functions, 0613–0619)

@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Badge, Banner, Button, Card } from "../../components/ui";
-import { useField } from "../../lib/field";
+import { useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { takePhoto } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -54,7 +54,7 @@ export default function EmployeeFile() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try { setC(await call<CardData>("field_employee_card", { p_employee_id: id })); setErr(null); } catch (e) { setErr((e as Error).message); }
+    try { setC(await call<CardData>("field_employee_card", { p_employee_id: id })); setErr(null); } catch (e) { setErr(errText(e)); }
   }, [call, id]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
@@ -63,18 +63,18 @@ export default function EmployeeFile() {
   const propose = async () => {
     setBusy(true); setErr(null); setMsg(null);
     try { await call("field_propose_employee_change", { p_employee_id: id, p_changes: changed, p_note: null }); setEdits({}); setMsg(tr("Sent to HR. The file changes once HR applies it.")); await load(); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
   const addPage = async () => {
     setErr(null);
-    try { const p = await takePhoto(1400, true); if (p) setPages((x) => [...x, p]); } catch (e) { setErr((e as Error).message); }
+    try { const p = await takePhoto(1400, true); if (p) setPages((x) => [...x, p]); } catch (e) { setErr(errText(e)); }
   };
   const upload = async () => {
     if (!docType) return;
     setBusy(true); setErr(null); setMsg(null);
     try { await call("field_upload_document", { p_employee_id: id, p_doc_type: docType, p_photos: pages }); setPages([]); setDocType(null); setMsg(tr("Document filed. HR checks it on the web.")); await load(); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

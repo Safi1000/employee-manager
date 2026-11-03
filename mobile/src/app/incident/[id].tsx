@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, NotesBox, PhotoStrip, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Badge, Banner, Button, Card } from "../../components/ui";
-import { Guard, IncidentRow, useField } from "../../lib/field";
+import { Guard, IncidentRow, useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -44,7 +44,7 @@ export default function Incident() {
     try {
       const [g, i] = await Promise.all([roster(id), call<IncidentRow[]>("field_site_incidents", { p_site_id: id })]);
       setGuards(g); setRecent(i ?? []);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
   }, [id, roster, call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
@@ -58,7 +58,7 @@ export default function Incident() {
       });
       setSent(res.code ?? ""); setCategory(null); setSeverity("medium"); setText(""); setInvolved([]); setPhotos([]);
       await load();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

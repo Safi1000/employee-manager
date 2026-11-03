@@ -18,7 +18,7 @@ export type Geo = { lat: number; lng: number; accuracy: number | null };
  *  document's edges. Throws a sentence the screen can show. */
 export async function takePhoto(width = 1024, crop = false): Promise<string | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) throw new Error("Allow the camera for GGS Field in your phone's settings to take photos.");
+  if (!perm.granted) throw new Error("Allow the camera for Bastion in your phone's settings to take photos.");
   const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: crop, exif: false });
   if (shot.canceled || !shot.assets?.[0]?.uri) return null;
   const img = await ImageManipulator.manipulate(shot.assets[0].uri).resize({ width }).renderAsync();

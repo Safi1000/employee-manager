@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Badge, Banner, Button, Card, Empty } from "../../components/ui";
-import { useField } from "../../lib/field";
+import { useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { useTheme } from "../../theme/ThemeProvider";
 
@@ -31,7 +31,7 @@ export default function MyRequests() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setRows((await call<MoneyRow[]>("field_my_requests", {})) ?? []); setErr(null); } catch (e) { setErr((e as Error).message); }
+    try { setRows((await call<MoneyRow[]>("field_my_requests", {})) ?? []); setErr(null); } catch (e) { setErr(errText(e)); }
   }, [call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);

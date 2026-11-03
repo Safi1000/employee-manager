@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenHeader } from "../components/field";
 import { T } from "../components/Text";
 import { Banner, Button, Card } from "../components/ui";
-import { useField } from "../lib/field";
+import { useField, errText } from "../lib/field";
 import { useLang } from "../lib/i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { fonts, radius } from "../theme/tokens";
@@ -34,7 +34,7 @@ export default function DailyReportOffice() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setDay(await call<Day>("field_daily_clients", {})); setErr(null); } catch (e) { setErr((e as Error).message); }
+    try { setDay(await call<Day>("field_daily_clients", {})); setErr(null); } catch (e) { setErr(errText(e)); }
   }, [call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
@@ -45,7 +45,7 @@ export default function DailyReportOffice() {
     try {
       await call("field_save_client_report", { p_client_id: r.id, p_details: next.details ?? "", p_no_report: next.no_report, p_urgent: next.urgent });
       setDay((d) => (d ? { ...d, clients: d.clients.map((x) => (x.id === r.id ? next : x)) } : d));
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setSaving(null);
   };
 
@@ -65,7 +65,7 @@ export default function DailyReportOffice() {
         </table></body></html>`;
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: tr("Share the Daily Report"), UTI: "com.adobe.pdf" });
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

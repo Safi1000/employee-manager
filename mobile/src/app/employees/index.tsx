@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Banner, Card, Empty, SearchBar } from "../../components/ui";
-import { useField } from "../../lib/field";
+import { useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { useTheme } from "../../theme/ThemeProvider";
 
@@ -27,7 +27,7 @@ export default function Employees() {
   useEffect(() => {
     if (q.trim().length < 2) return;
     const id = setTimeout(() => {
-      void call<Hit[]>("field_employee_search", { p_q: q }).then((h) => { setHits(h ?? []); setErr(null); }).catch((e: Error) => setErr(e.message));
+      void call<Hit[]>("field_employee_search", { p_q: q }).then((h) => { setHits(h ?? []); setErr(null); }).catch((e: Error) => setErr(errText(e)));
     }, 300);
     return () => clearTimeout(id);
   }, [q, call]);

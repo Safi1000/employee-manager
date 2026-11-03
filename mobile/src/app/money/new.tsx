@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, NotesBox, PhotoStrip, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Banner, Button, Input } from "../../components/ui";
-import { useField } from "../../lib/field";
+import { useField, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -34,7 +34,7 @@ export default function NewRequest() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { void call<{ id: string; name: string }[]>("field_expense_categories", {}).then((c) => setCats(c ?? [])).catch((e: Error) => setErr(e.message)); }, [call]);
+  useEffect(() => { void call<{ id: string; name: string }[]>("field_expense_categories", {}).then((c) => setCats(c ?? [])).catch((e: Error) => setErr(errText(e))); }, [call]);
 
   const send = async () => {
     setBusy(true); setErr(null);
@@ -42,7 +42,7 @@ export default function NewRequest() {
       await call("field_request_money", { p_kind: kind, p_amount: Number(amount), p_category_id: kind === "expense" ? cat : null,
         p_description: what, p_expense_date: day, p_site_id: null, p_photos: photos, p_geo: await position() });
       router.back();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 

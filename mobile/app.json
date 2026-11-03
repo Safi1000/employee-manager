@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "GGS Field",
+    "name": "Bastion",
     "slug": "ggs-field",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -43,7 +43,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "GGS Field records where you are when you confirm attendance, visit a site or report an incident.",
+          "locationWhenInUsePermission": "Bastion records where you are when you confirm attendance, visit a site or report an incident.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "isAndroidBackgroundLocationEnabled": false
@@ -52,7 +52,7 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "GGS Field uses the camera for visit, incident and guard photos.",
+          "cameraPermission": "Bastion uses the camera for visit, incident and guard photos.",
           "photosPermission": false,
           "microphonePermission": false
         }

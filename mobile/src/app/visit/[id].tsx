@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chips, NotesBox, PhotoStrip, ScreenHeader } from "../../components/field";
 import { T } from "../../components/Text";
 import { Badge, Banner, Button, Card } from "../../components/ui";
-import { Guard, useField, VisitRow } from "../../lib/field";
+import { Guard, useField, VisitRow, errText } from "../../lib/field";
 import { useLang } from "../../lib/i18n";
 import { position } from "../../lib/media";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -49,7 +49,7 @@ export default function Visit() {
       const [g, v] = await Promise.all([roster(id), call<VisitRow[]>("field_site_visits", { p_site_id: id })]);
       setGuards(g); setRecent(v ?? []);
       setShift((s) => s ?? ([...new Set(g.map((x) => x.shift ?? "day"))][0] ?? null));
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
   }, [id, roster, call]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; state is set only after the request returns
   useEffect(() => { void load(); }, [load]);
@@ -75,7 +75,7 @@ export default function Visit() {
       });
       setDone(res); setChecks(new Map()); setNotes(new Map()); setFindings(""); setActions(""); setPhotos([]); setRegister(true);
       await load();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errText(e)); }
     setBusy(false);
   };
 
