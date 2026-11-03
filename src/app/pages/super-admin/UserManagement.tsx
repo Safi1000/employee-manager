@@ -89,6 +89,7 @@ export default function UserManagement() {
   // Partners in the company, for the Partner-scope multi-select (0314).
   const [partnersList, setPartnersList] = useState<{ id: string; name: string }[]>([]);
   // Employees in the company, for the single-employee link (0424).
+  const [empSearch, setEmpSearch] = useState("");
   const [employeesList, setEmployeesList] = useState<
     { id: string; full_name: string; employee_code: string | null }[]
   >([]);
@@ -121,11 +122,14 @@ export default function UserManagement() {
         .order("is_head_office", { ascending: false })
         .order("name"),
       supabase.from("partners").select("id, name").order("name"),
-      // Serving staff only: a login belongs to somebody who still works here.
+      // Serving office staff only (3 Nov 2026): a login belongs to somebody who
+      // still works here, and guards and supervisors get field-app logins on
+      // Field App › Field Supervisors, not an office account.
       supabase
         .from("employees")
         .select("id, full_name, employee_code")
         .eq("lifecycle_state", "active")
+        .eq("category", "office_staff")
         .order("full_name")
         .range(0, 9999),
     ]);
@@ -190,14 +194,17 @@ export default function UserManagement() {
           and a check constraint refuses the pair. */}
       {userType !== "partner" && (
         <div className="mt-3">
-          <label className="block text-sm text-foreground mb-1">Linked employee (optional)</label>
+          <label className="block text-sm text-foreground mb-1">Linked employee (optional) — office staff</label>
+          <input value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} placeholder="Search by name or code…"
+            className="w-full mb-1.5 px-4 py-2 border border-border rounded-md text-sm bg-card" />
           <ThemedSelect
             value={employeeId}
             onChange={(e) => setEmployeeId(e.target.value)}
             className="w-full px-4 py-2 border border-border rounded-md text-sm"
           >
             <option value="">Not linked — an ordinary admin account</option>
-            {employeesList.map((emp) => {
+            {employeesList.filter((emp) => emp.id === employeeId || !empSearch.trim()
+              || `${emp.full_name} ${codeIndex.byId.get(emp.id) ?? emp.employee_code ?? ""}`.toLowerCase().includes(empSearch.trim().toLowerCase())).map((emp) => {
               const takenBy = linkedEmployeeIds.get(emp.id);
               const taken = !!takenBy && emp.id !== (selfId ?? "__none__");
               return (

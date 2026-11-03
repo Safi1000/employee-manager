@@ -243,8 +243,10 @@ export default function FieldSupervisors() {
 
   const loadEmps = useCallback(async () => {
     if (emps.length) return;
+    // 3 Nov 2026: field logins are for supervisors and guards; office staff get
+    // an office account on Access & Governance.
     const { data } = await supabase.from("employees").select("id, full_name, employee_code, designation")
-      .in("status", ["Active", "On Leave"]).order("full_name");
+      .in("status", ["Active", "On Leave"]).neq("category", "office_staff").order("full_name");
     setEmps((data ?? []) as Emp[]);
   }, [emps.length]);
 
