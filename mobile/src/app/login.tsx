@@ -92,7 +92,7 @@ export default function Login() {
         {mode === "supervisor" ? (
           <>
             <Input label={tr("Employee code")} value={code} onChangeText={setCode} autoCapitalize="characters" autoCorrect={false}
-              placeholder="GGS-00123" returnKeyType="next" />
+              placeholder="EMP-0123" returnKeyType="next" />
             <Input label={tr("PIN")} value={pin} onChangeText={(v) => setPin(v.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad"
               secureTextEntry maxLength={6} mono placeholder="••••••" helper={tr("The 6-digit PIN your office gave you.")} onSubmitEditing={() => void submit()} />
             <Button label={tr("Sign in")} onPress={() => void submit()} loading={busy} disabled={!code.trim() || pin.length !== 6} />
@@ -116,7 +116,7 @@ export default function Login() {
         keyboardShouldPersistTaps="handled">
         <View style={{ marginBottom: 28 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <T v="eyebrow" color={t.brand[600]}>GGS · Bastion</T>
+            <T v="eyebrow" color={t.brand[600]}>Bastion</T>
             <LangSwitch />
           </View>
           <T v="display" style={{ marginTop: 6 }}>{tr("Field")}</T>
