@@ -312,7 +312,6 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // saved unless this equals selectedPeriod.
   const [loadedPeriod, setLoadedPeriod] = useState<string | null>(null);
   const loadSeqRef = useRef(0);
-  const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
   const { profile } = useAuth();
   const canAdjust = hasPermission(profile, "payroll.adjust");
@@ -511,26 +510,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setLoadedPeriod(null);
     const start = period;
     const end = endOfMonthStr(period);
-    const [yStr, mStr] = period.split("-");
-    const py = Number(yStr);
-    const pm = Number(mStr);
-    const carryWindowStart = new Date(py, pm - 1 - 12, 1);
-    const carryWindowStartIso = `${carryWindowStart.getFullYear()}-${String(
-      carryWindowStart.getMonth() + 1
-    ).padStart(2, "0")}-01`;
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, attHistRes, apRes, lvRes, carRes, adjRes, lsRes] = await Promise.all([
+    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       // Outstanding advance balance (Σ advances − Σ recovered on prior payslips),
       // so a partly-recovered advance carries forward instead of vanishing.
       supabase.rpc("employee_advance_outstanding", { p_period_start: start }),
-      supabase.rpc("attendance_leave_history", {
-        p_window_start: carryWindowStartIso,
-        p_until: start,
-      }),
       // Phase 9 §10: earnings from verified attendance × salary-history rate per date.
       supabase.rpc("attendance_payroll", { p_start: start, p_end: end }),
       // One-month, one-employee leave allowance overrides for THIS period only.
@@ -627,16 +615,6 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       advMap.set(a.employee_id, Number(a.outstanding) || 0);
     });
     setAdvancesByEmployee(advMap);
-    // attendance_leave_history returns one row per (employee, month) with cnt.
-    const histMap = new Map<string, Map<string, number>>();
-    (attHistRes.data ?? []).forEach((r: any) => {
-      const monthKey: string = String(r.month_key ?? "").slice(0, 7);
-      if (!monthKey) return;
-      if (!histMap.has(r.employee_id)) histMap.set(r.employee_id, new Map());
-      const empMap = histMap.get(r.employee_id)!;
-      empMap.set(monthKey, (empMap.get(monthKey) ?? 0) + Number(r.cnt));
-    });
-    setPriorLeavesByMonth(histMap);
     setRowEdits(new Map());
     setLoadedPeriod(period);
     // Selection is intentionally preserved here (item 1) so switching away and
@@ -854,71 +832,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     return m;
   }, [employees, clientById, statutoryRates, selectedPeriod]);
 
-  // Carry-forward has no contract-level equivalent, so it stays anchored to the client.
-  const clientCarryEnabled = useMemo(() => {
-    const m = new Map<string, boolean>();
-    for (const c of clients) {
-      m.set(c.id, !!(c as any).leave_carry_forward);
-    }
-    return m;
-  }, [clients]);
-
-  // Item 9: carry accrual is anchored to each client's leave_carry_start month
-  // (chosen when the feature is enabled), not a blanket 12-month lookback.
-  const clientCarryStart = useMemo(() => {
-    const m = new Map<string, string | null>();
-    for (const c of clients as Array<{ id: string; leave_carry_start?: string | null }>) {
-      m.set(c.id, c.leave_carry_start ?? null);
-    }
-    return m;
-  }, [clients]);
-
-  const carriedAllowance = useMemo(() => {
-    const out = new Map<string, number>();
-    if (!selectedPeriod) return out;
-    const [pyStr, pmStr] = selectedPeriod.split("-");
-    const py = Number(pyStr);
-    const pm = Number(pmStr);
-    for (const emp of employees) {
-      if (!emp.client_id) continue;
-      if (!clientCarryEnabled.get(emp.client_id)) continue;
-      const base = allowedLeavesByEmployee.get(emp.id) ?? 0;
-      // Opening leaves OVERRIDE the accumulated balance from their effective
-      // month forward: once active, the accrual restarts at `base + opening` and
-      // anchors at opening_leaves_month instead of the client's carry start, so
-      // any accrual recorded before it is discarded. Earlier periods keep the
-      // client's original carry-start accrual (no opening).
-      const selKey = `${py}-${String(pm).padStart(2, "0")}`;
-      const openingMonth = emp.opening_leaves_month;
-      const openingActive =
-        emp.opening_leaves != null &&
-        !!openingMonth &&
-        openingMonth.slice(0, 7) <= selKey;
-      const startStr = openingActive ? openingMonth : clientCarryStart.get(emp.client_id);
-      // Months from the anchor up to (but excluding) the selected period.
-      // No anchor → no backlog (this period simply gets the seed), which avoids
-      // the old "compounds out of nowhere" bug (item 8).
-      const monthKeys: string[] = [];
-      if (startStr) {
-        let y = Number(startStr.slice(0, 4));
-        let mo = Number(startStr.slice(5, 7));
-        while (y < py || (y === py && mo < pm)) {
-          monthKeys.push(`${y}-${String(mo).padStart(2, "0")}`);
-          mo += 1;
-          if (mo > 12) { mo = 1; y += 1; }
-        }
-      }
-      const empLeaves = priorLeavesByMonth.get(emp.id) ?? new Map<string, number>();
-      let allowed = openingActive ? base + Number(emp.opening_leaves ?? 0) : base;
-      for (const k of monthKeys) {
-        const used = empLeaves.get(k) ?? 0;
-        const unused = Math.max(0, allowed - used);
-        allowed = base + unused;
-      }
-      out.set(emp.id, allowed);
-    }
-    return out;
-  }, [employees, clientCarryEnabled, allowedLeavesByEmployee, clientCarryStart, priorLeavesByMonth, selectedPeriod]);
+  // 0639: CARRY IS THE LEDGER'S ANSWER, NOT THIS SCREEN'S.
+  //
+  // clientCarryEnabled / clientCarryStart / carriedAllowance used to re-derive
+  // a carried allowance here, from clients.leave_carry_forward and a 12-month
+  // attendance_leave_history fetch. They were DEAD from 0438 onward — the line
+  // below prefers leave_period_summary whenever the guard has attendance in the
+  // month, which for a guard is always — and dead code that reads a flag is a
+  // trap rather than a leftover: 0639 makes that flag MEAN something again, so
+  // the first client switched on would have woken a second, contradictory carry
+  // for anyone this screen had no ledger row for (office staff of that client).
+  // They are gone. leave_periods_all() gates the carry, dates it from the
+  // client's leave_carry_start and applies the named opening balance; a screen
+  // that recomputed any of it could only disagree.
 
   const rows = useMemo<RowState[]>(() => {
     // EOBI comes from the dated rate (0551): no roster until it has loaded.
@@ -940,16 +866,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
       const baseAllowed = allowedLeavesByEmployee.get(emp.id) ?? 0;
-      const carryAllowed = carriedAllowance.get(emp.id);
       // A manual override for THIS employee in THIS month beats everything —
-      // that is the whole point of it. Contract, client default and any
-      // carry-forward balance are all policy that applies to a group; this is
-      // the one place a single person's month can differ.
+      // that is the whole point of it. Contract and client default are policy
+      // that applies to a group; this is the one place a single person's month
+      // can differ.
       const overrideAllowed = leaveOverrides.get(emp.id)?.allowed;
       // 0438: from September 2026 the balance is derived — opening + earned
       // this period — and the month override still beats it.
       const ls = leaveSummary.get(emp.id);
-      const allowed = overrideAllowed ?? (ls ? ls.available : carryAllowed ?? baseAllowed);
+      // 0639: no ledger row means no attendance this period (office staff), so
+      // the contract figure stands. Carry never happens off the ledger.
+      const allowed = overrideAllowed ?? (ls ? ls.available : baseAllowed);
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -1081,7 +1008,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       merged.net_salary = Math.max(0, deductible - merged.advance + merged.adjustment_carried);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary, statutoryRates]);
+  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary, statutoryRates]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
