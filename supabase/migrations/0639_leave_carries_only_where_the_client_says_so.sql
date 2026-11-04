@@ -87,6 +87,31 @@
 -- authorisation. Marked rather than left silent, because a function nothing
 -- calls reads six months on as a feature somebody forgot to wire up.
 --
+-- THE LOCK WINDOW IS THE RISK, NOT THE ARITHMETIC. The first attempt at this
+-- file TIMED OUT on production after ~115s and rolled back whole, leaving
+-- nothing applied. Two things were wrong, and only the second was the real one:
+--
+--   * The Management API submits this whole file as ONE statement, so
+--     statement_timeout (2min on this project) is the budget for the ENTIRE
+--     migration, not for each statement in it. Reasoning about per-statement
+--     cost was reasoning about the wrong number.
+--   * The section that verifies the change called leave_periods_all() NINE
+--     times — once per assertion — while already holding ACCESS EXCLUSIVE on
+--     employees and clients from the DDL above it. Each sweep measures at
+--     ~1-2s on an idle database, which is nowhere near 115s; what closes the
+--     gap is that every app query touching those two tables was blocked behind
+--     the lock, so the contention grew with the time held and fed back into
+--     the migration's own speed. A lock window is not a constant.
+--
+-- So the work is ordered by WHEN IT NEEDS A LOCK, which is the general lesson:
+-- the before picture is captured FIRST, before any DDL, and the after picture
+-- is captured ONCE; every assertion then compares two temp tables and calls
+-- nothing. Two sweeps happen under the lock instead of nine, and the comparison
+-- got SHARPER as a side effect — both pictures are now single consistent
+-- snapshots rather than nine separate re-derivations that could disagree.
+-- lock_timeout is set so the DDL fails fast rather than queueing behind live
+-- traffic and then holding everything it was waiting for.
+--
 -- NO NEW PERMISSION KEY, deliberately — a key absent from PERMISSION_GROUPS is
 -- a gate nobody can reach (0361, 0384). An opening balance is a write to
 -- employees from the Leave screen, so set_leave_opening() asks payroll.edit,
@@ -96,7 +121,43 @@
 -- without the key.
 
 -- ---------------------------------------------------------------------------
--- 1. CARRY IS DATED. A client that carries must say from when.
+-- 1. THE BEFORE PICTURE, captured FIRST — before a single lock is taken — so
+-- that the slowest read in this file happens while nothing is blocked. Per ROW,
+-- so every assertion in section 5 is exact rather than aggregate and the
+-- disbursed payslips can be checked one at a time.
+-- ---------------------------------------------------------------------------
+create temporary table _before_0639 (
+  company_id uuid, employee_id uuid, period_start date,
+  leave_days int, earned int, lost int, opening numeric,
+  taken int, unpaid int, closing numeric
+);
+-- Deliberately NOT `on commit drop`: apply_migration runs this file in one
+-- transaction, but psql and the SQL editor commit each statement, and both
+-- pictures have to outlive the sections between them. Dropped explicitly at the
+-- foot of the file.
+
+do $capture$
+declare c record;
+begin
+  for c in select id from public.companies loop
+    insert into _before_0639
+    select c.id, l.employee_id, l.period_start, l.leave_days, l.earned, l.lost,
+           l.opening, l.taken, l.unpaid, l.closing
+      from public.leave_periods_all(c.id, date '2026-11-30') l;
+  end loop;
+  if not exists (select 1 from _before_0639) then
+    raise exception '0639 REFUSED: the before picture is empty — leave_periods_all returned nothing, so nothing below can be verified.';
+  end if;
+end
+$capture$;
+
+-- Everything from here takes locks. Fail fast rather than queue behind live
+-- traffic: a DDL statement that waits is a DDL statement that will then hold
+-- what it was waiting for while the queue behind it grows.
+set local lock_timeout = '5s';
+
+-- ---------------------------------------------------------------------------
+-- 2. CARRY IS DATED. A client that carries must say from when.
 -- ---------------------------------------------------------------------------
 comment on column public.clients.leave_carry_forward is
   '0639: does this client carry unused leave past the period end? Chosen per client; false = use-it-or-lose-it within the period. Read by leave_periods_all() together with leave_carry_start; a guard forfeits his bank the period he stands on a client where this is false (DECIDED 2026-11-04). Written from the Leave screen under clients.edit.';
@@ -110,7 +171,7 @@ alter table public.clients add constraint carry_on_needs_a_start check (
 );
 
 -- ---------------------------------------------------------------------------
--- 2. THE OPENING BALANCE. A named human decision, never a setting.
+-- 3. THE OPENING BALANCE. A named human decision, never a setting.
 -- ---------------------------------------------------------------------------
 alter table public.employees
   add column if not exists leave_opening_balance integer,
@@ -211,39 +272,7 @@ revoke execute on function public.set_leave_opening(uuid, integer, date, text) f
 grant  execute on function public.set_leave_opening(uuid, integer, date, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 3a. THE BEFORE PICTURE, captured before the surgery so section 4 can compare
--- against a measurement rather than against a number written into this file.
--- ---------------------------------------------------------------------------
--- Per ROW, so every assertion below is exact rather than aggregate, and the
--- disbursed payslips can be checked one by one.
-create temporary table _before_0639 (
-  company_id uuid, employee_id uuid, period_start date,
-  leave_days int, earned int, lost int, opening numeric,
-  taken int, unpaid int, closing numeric
-);
--- Deliberately NOT `on commit drop`: apply_migration runs this file in one
--- transaction, but psql and the SQL editor commit each statement, and the
--- before picture has to outlive section 3b either way. Dropped explicitly at
--- the foot of the file.
-
-
-do $capture$
-declare c record;
-begin
-  for c in select id from public.companies loop
-    insert into _before_0639
-    select c.id, l.employee_id, l.period_start, l.leave_days, l.earned, l.lost,
-           l.opening, l.taken, l.unpaid, l.closing
-      from public.leave_periods_all(c.id, date '2026-11-30') l;
-  end loop;
-  if not exists (select 1 from _before_0639) then
-    raise exception '0639 REFUSED: the before picture is empty — leave_periods_all returned nothing, so nothing below can be verified.';
-  end if;
-end
-$capture$;
-
--- ---------------------------------------------------------------------------
--- 3b. THE GATE. Surgery against the live definition of leave_periods_all,
+-- 4. THE GATE. Surgery against the live definition of leave_periods_all,
 -- which has FOUR authors (0438, 0540, 0558, 0564) and therefore no canonical
 -- file. Every anchor is asserted to appear EXACTLY ONCE; a missing or doubled
 -- anchor refuses rather than widens.
@@ -350,7 +379,45 @@ comment on function public.leave_periods_all(uuid, date) is
   '0438/0540/0558/0564/0639: the leave ledger for every guard, derived from attendance from 1 Sep 2026 (the gate is INSIDE this function): tier, quota, earned, lost at the cap, taken by leave marks, unpaid, closing. 0639: carry across the period boundary happens ONLY where the guard stood entirely on clients with leave_carry_forward and period >= leave_carry_start — otherwise the period opens AND closes at zero and unused earned leave lapses; a named employees.leave_opening_balance replaces the derived opening for the one period it names. DEFERRED: walks calendar months until contract_periods(...,''payroll'') is consumed.';
 
 -- ---------------------------------------------------------------------------
--- 4. VERIFICATION. Each assertion names the failure it can distinguish. A
+-- 4b. THE AFTER PICTURE, captured ONCE. Section 5 calls nothing: every
+-- assertion below compares two temp tables, so the verification costs one
+-- sweep rather than one per assertion, and both sides are single consistent
+-- snapshots that cannot disagree with themselves.
+-- ---------------------------------------------------------------------------
+create temporary table _after_0639 (like _before_0639);
+
+do $capture_after$
+declare c record;
+begin
+  for c in select id from public.companies loop
+    insert into _after_0639
+    select c.id, l.employee_id, l.period_start, l.leave_days, l.earned, l.lost,
+           l.opening, l.taken, l.unpaid, l.closing
+      from public.leave_periods_all(c.id, date '2026-11-30') l;
+  end loop;
+end
+$capture_after$;
+
+-- Every before row must have exactly one after row. Without this the
+-- comparisons below are satisfied by an after picture that simply lost rows —
+-- an inner join over nothing passes every test ever written against it.
+do $pairing$
+declare v_b int; v_a int; v_paired int;
+begin
+  select count(*) into v_b from _before_0639;
+  select count(*) into v_a from _after_0639;
+  select count(*) into v_paired
+    from _before_0639 b join _after_0639 a
+      on a.company_id = b.company_id and a.employee_id = b.employee_id
+     and a.period_start = b.period_start;
+  if v_b <> v_a or v_paired <> v_b then
+    raise exception '0639 REFUSED: before/after do not pair row for row (before %, after %, paired %) — the comparisons in section 5 would be vacuous.', v_b, v_a, v_paired;
+  end if;
+end
+$pairing$;
+
+-- ---------------------------------------------------------------------------
+-- 5. VERIFICATION. Each assertion names the failure it can distinguish. A
 -- control that reports its own input is not a control, so nothing here counts
 -- rows to prove a row was added.
 -- ---------------------------------------------------------------------------
@@ -366,34 +433,30 @@ declare
 begin
   -- (1) THE GATE FIRED. No client carries, so nothing may open above zero.
   --     Distinguishes: the gate was not reached at all.
-  select count(*) into v_n from public.companies c,
-       lateral public.leave_periods_all(c.id, date '2026-11-30') l
-   where l.opening > 0;
+  select count(*) into v_n from _after_0639 where opening > 0;
   if v_n <> 0 then
     raise exception '0639 FAILED (1): % period rows still open above zero while no client carries.', v_n;
   end if;
   v_checked := v_checked + 1;
 
-  -- (2) OCTOBER IS OFF BY NAME, because that is what was asked for. Carried
-  --     138 days into October before this file.
-  select count(*) into v_n from public.companies c,
-       lateral public.leave_periods_all(c.id, date '2026-11-30') l
-   where l.period_start = date '2026-10-01' and l.opening > 0;
+  -- (2) OCTOBER IS OFF BY NAME, because that is what was asked for. 138 days
+  --     carried into October before this file; 67 guards.
+  select count(*) into v_n from _after_0639
+   where period_start = date '2026-10-01' and opening > 0;
   if v_n <> 0 then
     raise exception '0639 FAILED (2): % guards still carry into October payroll.', v_n;
   end if;
   v_checked := v_checked + 1;
 
   -- (3) EARNING IS UNTOUCHED. The gate removes the carry, not the accrual.
-  --     earned + lost is what the period WOULD earn before the cap, and the
-  --     cap can only bite through the opening — so with the opening gone,
-  --     earned must equal the old earned plus whatever the cap took.
+  --     earned + lost is what the period WOULD earn before the cap, and the cap
+  --     can only bite through the opening — so with the opening gone, earned
+  --     must equal the old earned plus whatever the cap had taken.
   --     Distinguishes: the gate was written as a kill switch on leave itself.
   select count(*) into v_n
-    from _before_0639 b
-    join public.companies c on c.id = b.company_id
-    join public.leave_periods_all(c.id, date '2026-11-30') a
-      on a.employee_id = b.employee_id and a.period_start = b.period_start
+    from _before_0639 b join _after_0639 a
+      on a.company_id = b.company_id and a.employee_id = b.employee_id
+     and a.period_start = b.period_start
    where a.earned <> b.earned + b.lost;
   if v_n <> 0 then
     raise exception '0639 FAILED (3): % rows changed what they EARN; the gate must remove carry only.', v_n;
@@ -402,9 +465,7 @@ begin
 
   -- (4) THE CONSUMPTION IDENTITY still holds: every leave mark is either paid
   --     from the balance or unpaid, and never both or neither.
-  select count(*) into v_n from public.companies c,
-       lateral public.leave_periods_all(c.id, date '2026-11-30') l
-   where l.taken + l.unpaid <> l.leave_days;
+  select count(*) into v_n from _after_0639 where taken + unpaid <> leave_days;
   if v_n <> 0 then
     raise exception '0639 FAILED (4): % rows where taken + unpaid <> leave marks.', v_n;
   end if;
@@ -413,26 +474,24 @@ begin
   -- (5) REMOVING CARRY CAN ONLY PAY FEWER LEAVE DAYS, never more. A row where
   --     more is now paid from the balance means the arithmetic inverted.
   select count(*) into v_n
-    from _before_0639 b
-    join public.companies c on c.id = b.company_id
-    join public.leave_periods_all(c.id, date '2026-11-30') a
-      on a.employee_id = b.employee_id and a.period_start = b.period_start
+    from _before_0639 b join _after_0639 a
+      on a.company_id = b.company_id and a.employee_id = b.employee_id
+     and a.period_start = b.period_start
    where a.taken > b.taken;
   if v_n <> 0 then
     raise exception '0639 FAILED (5): % rows now pay MORE leave from the balance than before.', v_n;
   end if;
   v_checked := v_checked + 1;
 
-  -- (6) SEPTEMBER DOES NOT MOVE. It is the walk first month, so it carried
+  -- (6) SEPTEMBER DOES NOT MOVE. It is the walk's first month, so it carried
   --     nothing and 331 disbursed payslips hang off it. `closing` is excluded
   --     deliberately: with carry off a September bank no longer survives the
   --     boundary and must read zero. Nothing a payslip was priced from — the
   --     opening, the earning, what was paid and what was unpaid — may differ.
   select count(*) into v_n
-    from _before_0639 b
-    join public.companies c on c.id = b.company_id
-    join public.leave_periods_all(c.id, date '2026-11-30') a
-      on a.employee_id = b.employee_id and a.period_start = b.period_start
+    from _before_0639 b join _after_0639 a
+      on a.company_id = b.company_id and a.employee_id = b.employee_id
+     and a.period_start = b.period_start
    where b.period_start = date '2026-09-01'
      and (a.opening <> b.opening or a.earned <> b.earned
           or a.taken <> b.taken or a.unpaid <> b.unpaid);
@@ -447,9 +506,8 @@ begin
   select count(*) into v_n
     from public.payslips p
     join _before_0639 b on b.employee_id = p.employee_id and b.period_start = p.period_month
-    join public.companies c on c.id = b.company_id
-    join public.leave_periods_all(c.id, date '2026-11-30') a
-      on a.employee_id = b.employee_id and a.period_start = b.period_start
+    join _after_0639  a on a.company_id = b.company_id and a.employee_id = b.employee_id
+                       and a.period_start = b.period_start
    where p.disbursed
      and (a.opening <> b.opening or a.earned <> b.earned
           or a.taken <> b.taken or a.unpaid <> b.unpaid);
@@ -463,13 +521,13 @@ begin
   end if;
 
   -- ---------------------------------------------------------------------
-  -- THE POSITIVE DIRECTION. Everything above is satisfied by a gate welded
-  -- shut, which is the one failure none of it can see. So switch a client on
-  -- inside a subtransaction, read the ledger, and roll that back: the write
-  -- never commits, and plpgsql variables survive the rollback so the reading
-  -- does. Only a client whose guards demonstrably accrued is any use as a
-  -- probe — on one whose guards earn nothing, carry returning looks like
-  -- carry staying off.
+  -- THE POSITIVE DIRECTION, and it runs LAST so the lock is held for the
+  -- shortest time. Everything above is satisfied by a gate welded shut, which
+  -- is the one failure none of it can see. So switch a client on inside a
+  -- subtransaction, read the ledger, and roll that back: the write never
+  -- commits, and plpgsql variables survive the rollback so the reading does.
+  -- Only a client whose guards demonstrably accrued is any use as a probe — on
+  -- one whose guards earn nothing, carry returning looks like carry staying off.
   -- ---------------------------------------------------------------------
   select b.company_id, e.client_id, count(*) into v_co, v_cid, v_guards
     from _before_0639 b
@@ -506,3 +564,4 @@ end
 $verify$;
 
 drop table if exists _before_0639;
+drop table if exists _after_0639;
