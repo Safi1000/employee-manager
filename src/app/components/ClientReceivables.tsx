@@ -156,7 +156,10 @@ export default function ClientReceivables() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = usePageState("ClientReceivables.search", "");
-  const [showSettled, setShowSettled] = usePageState("ClientReceivables.showSettled", false);
+  // Every client is listed by default — a client who owes nothing, or is in credit,
+  // still needs its ledger to show how it was cleared (Shayan, 4 Nov 2026: a client
+  // netted to zero vanished and its ledger with it). Hiding them is the opt-in.
+  const [hideSettled, setHideSettled] = usePageState("ClientReceivables.hideSettled", false);
   const [selected, setSelected] = useState<Row | null>(null);
   const [view, setView] = usePageState<"balances" | "followup" | "writeoffs">("ClientReceivables.view", "balances");
   const [regions, setRegions] = useState<RegionTotal[]>([]);
@@ -190,10 +193,10 @@ export default function ClientReceivables() {
     const q = search.trim().toLowerCase();
     return rows
       .filter((r) => !regionId || r.branch_id === regionId)
-      .filter((r) => showSettled || Math.abs(r.balance) > 0.5)
+      .filter((r) => !hideSettled || Math.abs(r.balance) > 0.5)
       .filter((r) => !q || r.client_name.toLowerCase().includes(q))
       .sort((a, b) => b.balance - a.balance);
-  }, [rows, regionId, search, showSettled]);
+  }, [rows, regionId, search, hideSettled]);
 
   // Footer: the sum of the rows shown above it, and nothing else (CLAUDE.md).
   const foot = useMemo(() => visible.reduce(
@@ -290,7 +293,7 @@ export default function ClientReceivables() {
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input type="checkbox" checked={showSettled} onChange={(e) => setShowSettled(e.target.checked)} /> Show clients who owe nothing
+          <input type="checkbox" checked={hideSettled} onChange={(e) => setHideSettled(e.target.checked)} /> Hide clients who owe nothing
         </label>
         <div className="flex-1" />
         <Button variant="secondary" size="sm" onClick={() => void exportList()}><Download className="w-4 h-4 mr-1" /> Excel</Button>
