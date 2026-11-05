@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { downloadReceiptPdf, receiptWhatsAppText, type ReceiptLine } from "../lib/receiptPdf";
+import { brandingFromCompany } from "../lib/pdfBranding";
 import { ArrowLeft, Ban, Download, FileText, Loader2, MessageSquare, Plus, Search } from "lucide-react";
 import Tabs from "./Tabs";
 import PaymentFollowUp, { ContactModal, channelLabel } from "./PaymentFollowUp";
@@ -445,7 +446,7 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
           headers: ["Date", "Details", "Invoice", "How paid / where it went", "Invoiced", "Received", "Tax deducted", "Balance"],
           rows: exportRows.map((r) => [r.date, r.details, r.reference, r.how, r.invoiced || "", r.received || "", r.wht || "", Math.round(r.balance)]),
         })}><Download className="w-4 h-4 mr-1" /> Excel</Button>
-        <Button variant="secondary" size="sm" onClick={() => void downloadClientLedgerPdf({ companyName, clientName: row.client_name, scope: scopeLabel, lines: exportRows, closing })}>
+        <Button variant="secondary" size="sm" onClick={() => void downloadClientLedgerPdf({ companyName, branding: brandingFromCompany(company), clientName: row.client_name, scope: scopeLabel, lines: exportRows, closing })}>
           <FileText className="w-4 h-4 mr-1" /> PDF
         </Button>
         {canEdit && <Button variant="secondary" size="sm" onClick={() => setContactOpen(true)}><MessageSquare className="w-4 h-4 mr-1" /> Log contact</Button>}

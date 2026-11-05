@@ -1,9 +1,11 @@
 import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
-import type { Company } from "./supabase";
+import { amountInWords, type Company } from "./supabase";
+import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb, DARK } from "./pdfBranding";
 
-// Cash deposit slip PDF. Mirrors the layout conventions of generateInvoicePdf
-// (same jsPDF setup, margins, key/value writer) so slips look consistent.
+// Cash deposit slip PDF — house style (6 Nov 2026): the shared letterhead, the
+// slip's particulars in a panel, the amount in figures and words, and the two
+// signatures a deposit needs (deposited by / received by the bank).
 export type DepositSlipData = {
   slipNumber: number;
   date: string;
@@ -14,84 +16,48 @@ export type DepositSlipData = {
   reference?: string | null;
 };
 
-const fmtPkr = (n: number) => `PKR ${Number(n ?? 0).toLocaleString()}`;
-
 export function generateDepositSlipPdf(data: DepositSlipData, company: Company | null) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 40;
-  let y = margin;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const b = brandingFromCompany(company);
+  const [br, bg, bb] = hexToRgb(b.brandColor);
+  const L = 14, R = 196, W = R - L;
+  const day = /^\d{4}-\d{2}-\d{2}/.test(data.date)
+    ? new Date(`${data.date.slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    : data.date;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(company?.name ?? "Cash Deposit Slip", margin, y);
-  y += 22;
+  let y = drawBrandedHeader(doc, b, "Cash deposit slip", `Slip #${data.slipNumber}  ·  ${day}`) + 4;
 
-  if (company?.contact_email || company?.contact_phone) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(110);
-    doc.text(
-      [company?.contact_email, company?.contact_phone].filter(Boolean).join("  ·  "),
-      margin,
-      y,
-    );
-    y += 14;
-  }
+  doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240);
+  const rows: [string, string][] = [
+    ["Bank", data.bankName], ["Account number", data.accountNumber], ["Deposited by", data.depositedBy || "—"],
+    ...(data.reference ? [["Reference / notes", data.reference] as [string, string]] : []),
+  ];
+  const panelH = 8 + rows.length * 11;
+  doc.roundedRect(L, y, W, panelH, 2, 2, "FD");
+  rows.forEach(([k, v], i) => {
+    const yy = y + 7 + i * 11;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(100, 116, 139); doc.text(k.toUpperCase(), L + 5, yy);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(15, 23, 42); doc.text(v || "—", L + 5, yy + 5, { maxWidth: W - 10 });
+  });
+  y += panelH + 8;
 
-  doc.setDrawColor(220);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 18;
+  doc.setFillColor(...DARK); doc.roundedRect(L, y, W, 22, 2, 2, "F");
+  doc.setFillColor(br, bg, bb); doc.rect(L, y + 3, 1.6, 16, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("AMOUNT DEPOSITED", L + 6, y + 7);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+  doc.text(`Rs ${Math.round(Number(data.amount ?? 0)).toLocaleString("en-PK")}`, R - 6, y + 10, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  doc.text(amountInWords(Number(data.amount ?? 0)), L + 6, y + 16.5, { maxWidth: W - 12 });
+  y += 40;
 
-  doc.setTextColor(0);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("CASH DEPOSIT SLIP", margin, y);
-  const slipLabel = `Slip #${data.slipNumber}`;
-  doc.setFontSize(11);
-  doc.setTextColor(110);
-  doc.text(slipLabel, pageWidth - margin - doc.getTextWidth(slipLabel), y);
-  y += 20;
+  const sigW = (W - 12) / 2;
+  (["Deposited by (name & signature)", "Received by bank (stamp & signature)"] as const).forEach((label, i) => {
+    const x = L + i * (sigW + 12);
+    doc.setDrawColor(148, 163, 184); doc.line(x, y + 14, x + sigW, y + 14);
+    doc.setFontSize(7.5); doc.setTextColor(100, 116, 139); doc.text(label, x, y + 18.5);
+  });
 
-  const writeKv = (title: string, value: string) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(110);
-    doc.text(title.toUpperCase(), margin, y);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-    doc.setTextColor(0);
-    const lines = doc.splitTextToSize(value || "—", pageWidth - margin * 2);
-    doc.text(lines, margin, y + 14);
-    y += 14 + 14 * lines.length;
-  };
-
-  writeKv("Date", data.date);
-  writeKv("Bank", data.bankName);
-  writeKv("Account Number", data.accountNumber);
-  writeKv("Deposited By", data.depositedBy || "—");
-  if (data.reference) writeKv("Reference / Notes", data.reference);
-
-  y += 8;
-  doc.setDrawColor(220);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 18;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(0);
-  doc.text("Amount Deposited", margin, y);
-  const amt = fmtPkr(data.amount);
-  doc.text(amt, pageWidth - margin - doc.getTextWidth(amt), y);
-
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.setTextColor(140);
-  doc.text(
-    `Generated ${new Date().toLocaleString()}`,
-    margin,
-    doc.internal.pageSize.getHeight() - 30,
-  );
-
+  drawBrandedFooter(doc, b, `Cash deposit slip #${data.slipNumber}`);
   void savePdf(doc, `deposit_slip_${data.slipNumber}.pdf`);
 }

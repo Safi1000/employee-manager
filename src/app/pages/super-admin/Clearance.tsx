@@ -32,6 +32,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
 import { brandingFromCompany } from "../../lib/pdfBranding";
 import { generateClearanceCertificatePdf } from "../../lib/clearanceCertificatePdf";
+import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
 
 import {
   ChoiceCards, FormField, Hint, ModalFooter, Notice, PageBody, Panel, SubjectCard, inputCls, money,
@@ -180,6 +181,29 @@ export default function Clearance() {
         covers_to: r.covers_to,
         cumulative_paid: r.cumulative_paid,
       },
+    });
+  };
+
+  // The discharge sheet (6 Nov 2026). Written in Phase 7 and never reachable
+  // from any screen — the same gap as the certificate before 0435. Every line is
+  // the employee record's own.
+  const printDischarge = async (r: any) => {
+    setErr(null);
+    const { data: e, error } = await supabase.from("employees")
+      .select("cnic_number, join_date, service_join_date, termination_date, separation_reason, eligible_for_rehire")
+      .eq("id", r.employee_id).maybeSingle();
+    if (error || !e) { setErr(error ? friendlyDbError(error) : "That employee's record could not be read."); return; }
+    generateDischargeSheet({
+      branding,
+      full_name: r.full_name,
+      guard_code: r.guard_code ?? null,
+      display_code: r.display_number != null ? String(r.display_number) : null,
+      cnic_number: e.cnic_number ?? null,
+      join_date: e.service_join_date ?? e.join_date ? formatDate((e.service_join_date ?? e.join_date) as string) : null,
+      last_working_day: r.last_working_day ? formatDate(r.last_working_day) : "—",
+      termination_date: e.termination_date ? formatDate(e.termination_date) : null,
+      separation_reason: r.separation_reason ?? e.separation_reason ?? "—",
+      rehire_eligible: e.eligible_for_rehire !== false,
     });
   };
 
@@ -332,6 +356,9 @@ export default function Clearance() {
                   <div className="inline-flex flex-wrap justify-end gap-1">
                     <Button variant="ghost" size="sm" onClick={() => printCertificate(r)}>
                       <Printer className="w-3.5 h-3.5" /> Certificate
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => void printDischarge(r)}>
+                      <Printer className="w-3.5 h-3.5" /> Discharge sheet
                     </Button>
                     {canFin && !r.signed_at && (
                       <Button variant="secondary" size="sm" disabled={busy}

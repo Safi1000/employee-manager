@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
-import { drawBrandedHeader, drawBrandedFooter, hexToRgb, type PdfBranding } from "./pdfBranding";
+import { drawBrandedHeader, drawBrandedFooter, DARK, type PdfBranding } from "./pdfBranding";
 
 // §8.9 / §11.2 — branded attendance PDF templates (not raw data dumps):
 // (a) per-client attendance sheet, (b) per-guard sheet for payroll.
@@ -16,11 +16,10 @@ export type GuardAttRow = {
 };
 
 function table(doc: jsPDF, b: PdfBranding, cols: { title: string; w: number }[], rows: string[][], startY: number) {
-  const [r, g, bl] = hexToRgb(b.brandColor);
   const margin = 14;
   let y = startY;
   const header = () => {
-    doc.setFillColor(r, g, bl);
+    doc.setFillColor(...DARK);
     doc.rect(margin, y, cols.reduce((a, c) => a + c.w, 0), 7, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
@@ -34,7 +33,7 @@ function table(doc: jsPDF, b: PdfBranding, cols: { title: string; w: number }[],
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(8);
   for (const row of rows) {
-    if (y > 280) { doc.addPage(); y = 14; header(); doc.setFont("helvetica", "normal"); doc.setTextColor(15, 23, 42); doc.setFontSize(8); }
+    if (y > 278) { doc.addPage(); y = 14; header(); doc.setFont("helvetica", "normal"); doc.setTextColor(15, 23, 42); doc.setFontSize(8); }
     let x = margin;
     doc.setDrawColor(226, 232, 240);
     doc.line(margin, y + 5.5, margin + cols.reduce((a, c) => a + c.w, 0), y + 5.5);

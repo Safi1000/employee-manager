@@ -10,7 +10,13 @@ export type PdfBranding = {
   legalName: string;
   logoUrl: string | null;
   brandColor: string; // hex
+  /** Letterhead contact lines (6 Nov 2026). Never the registration line or NTN. */
+  address?: string | null;
+  phones?: string | null;
 };
+
+/** The second colour of the house style: near-black, for table headers and heavy blocks (like the GGS logo's black). */
+export const DARK: [number, number, number] = [17, 17, 17];
 
 export function brandingFromCompany(company: Company | null | undefined): PdfBranding {
   return {
@@ -23,6 +29,8 @@ export function brandingFromCompany(company: Company | null | undefined): PdfBra
     brandColor: ((company as { brand_color?: string } | null)?.brand_color?.trim())
       || ((company?.invoice_settings as { brand_color?: string } | null | undefined)?.brand_color?.trim())
       || "#1e40af",
+    address: company?.legal_address?.trim() || null,
+    phones: ((company?.contact_phones ?? []).filter(Boolean).join(", ") || company?.contact_phone || "").trim() || null,
   };
 }
 
@@ -43,51 +51,67 @@ export function imageFormat(url: string): "PNG" | "JPEG" | null {
 }
 
 const MARGIN = 14;
-const PAGE_W = 210;
 
-// Branded header: accent bar + aspect-preserved logo + legal name + doc title.
-// Returns the y position to continue content from.
+/**
+ * THE LETTERHEAD (redesigned 6 Nov 2026, house style): brand bar, logo, legal
+ * name with address and phones, a brand rule, then the document's title in the
+ * brand colour and its subtitle. Returns the y to continue from (~44 mm).
+ */
 export function drawBrandedHeader(doc: jsPDF, b: PdfBranding, title: string, subtitle?: string): number {
   const [r, g, bl] = hexToRgb(b.brandColor);
-  let y = MARGIN;
-  // accent bar
+  const pageW = doc.internal.pageSize.getWidth();
+  const R = pageW - MARGIN;
   doc.setFillColor(r, g, bl);
-  doc.rect(0, 0, PAGE_W, 3, "F");
+  doc.rect(0, 0, pageW, 3, "F");
 
-  let logoW = 0;
+  let textX = MARGIN;
   const fmt = b.logoUrl ? imageFormat(b.logoUrl) : null;
   if (b.logoUrl && fmt) {
     try {
-      const boxH = 16;
       const props = (doc as any).getImageProperties(b.logoUrl);
-      const ratio = props.width / props.height;
-      const drawH = boxH;
-      const drawW = Math.min(40, drawH * ratio);
-      doc.addImage(b.logoUrl, fmt, MARGIN, y, drawW, drawH, undefined, "FAST");
-      logoW = drawW + 6;
+      const h = 15, w = Math.min(30, h * (props.width / props.height));
+      doc.addImage(b.logoUrl, fmt, MARGIN, 7.5, w, h, undefined, "FAST");
+      textX = MARGIN + w + 4;
     } catch {
-      logoW = 0;
+      textX = MARGIN;
     }
   }
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
+  doc.setFontSize(12.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(b.legalName, MARGIN + logoW, y + 6);
+  doc.text(b.legalName, textX, 13, { maxWidth: R - textX });
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  [b.address, b.phones].filter((x): x is string => !!x).forEach((line, i) => doc.text(line, textX, 17.5 + i * 3.6, { maxWidth: R - textX }));
+
+  doc.setDrawColor(r, g, bl);
+  doc.setLineWidth(0.5);
+  doc.line(MARGIN, 26.5, R, 26.5);
+  doc.setLineWidth(0.2);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
   doc.setTextColor(r, g, bl);
-  doc.text(title, MARGIN + logoW, y + 13);
+  doc.text(title, MARGIN, 34);
   if (subtitle) {
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
-    doc.text(subtitle, MARGIN + logoW, y + 18);
+    doc.text(subtitle, MARGIN, 39, { maxWidth: R - MARGIN });
   }
-  return y + 22;
+  doc.setTextColor(15, 23, 42);
+  return subtitle ? 43 : 38;
 }
 
 export function drawBrandedFooter(doc: jsPDF, b: PdfBranding, extra?: string) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const y = doc.internal.pageSize.getHeight() - 8;
+  doc.setDrawColor(226, 232, 240);
+  doc.line(MARGIN, y - 3.5, pageW - MARGIN, y - 3.5);
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  const gen = `Generated ${new Date().toISOString().slice(0, 10)}`;
-  doc.text(`${b.legalName}${extra ? "  ·  " + extra : ""}  ·  ${gen}`, MARGIN, 290);
+  doc.text(`${b.legalName}${extra ? "  ·  " + extra : ""}`, MARGIN, y, { maxWidth: pageW - 2 * MARGIN - 32 });
+  doc.text(`Generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`, pageW - MARGIN, y, { align: "right" });
 }

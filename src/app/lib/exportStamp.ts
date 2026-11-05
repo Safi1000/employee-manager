@@ -21,3 +21,13 @@ export function exportStamp(): string {
 export function exporterName(): string {
   return exporter ?? "Bastion user";
 }
+
+/**
+ * Which company the exports belong to (6 Nov 2026) — set beside the exporter
+ * when the company loads, so a workbook built outside React (the generic table
+ * export) still carries the right legal name, colour and logo, never a
+ * hard-coded one.
+ */
+let exportCompany: unknown = null;
+export function setExportCompany(company: unknown): void { exportCompany = company ?? null; }
+export function currentExportCompany<T>(): T | null { return (exportCompany as T) ?? null; }

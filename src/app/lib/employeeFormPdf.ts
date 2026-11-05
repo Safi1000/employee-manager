@@ -93,13 +93,14 @@ export function generateEmployeeFormPdf(data: FormData): jsPDF {
   // ---- Branded header (per-company, never hardcoded) ----
   y = drawBrandedHeader(doc, branding, "Employee Data Form",
     `${dash(e.employee_code)}  ·  Serial ${dash(e.form_serial_no)}  ·  Interview ${e.interview_date ? formatDate(e.interview_date) : "—"}`);
-  // Photo box (top-right)
+  // Photo box (top-right, under the letterhead's rule — 6 Nov 2026 house header)
+  const PHOTO_Y = 30;
   doc.setDrawColor(203, 213, 225);
-  doc.rect(PAGE_W - MARGIN - 28, MARGIN, 28, 34);
+  doc.rect(PAGE_W - MARGIN - 28, PHOTO_Y, 28, 34);
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text("PHOTO", PAGE_W - MARGIN - 20, MARGIN + 18);
-  y = Math.max(y, MARGIN + 38);
+  doc.text("PHOTO", PAGE_W - MARGIN - 20, PHOTO_Y + 18);
+  y = Math.max(y, PHOTO_Y + 38);
 
   // ---- Personal ----
   sectionTitle("Personal");

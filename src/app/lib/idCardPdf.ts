@@ -29,18 +29,24 @@ export function generateIdCardPdf(opts: {
   doc.roundedRect(x, y, w, h, 3, 3, "S");
   doc.setLineWidth(0.2);
 
-  // Brand bar with legal name (+ logo when present)
-  doc.setFillColor(r, g, b);
-  doc.rect(x, y, w, 11, "F");
+  // House style (6 Nov 2026): logo + legal name on white — a red-and-black logo
+  // disappears on a brand-coloured bar — with the brand stripe beneath.
   let tx = x + 3;
   const fmt = opts.branding.logoUrl ? imageFormat(opts.branding.logoUrl) : null;
   if (opts.branding.logoUrl && fmt) {
-    try { doc.addImage(opts.branding.logoUrl, fmt, x + 2, y + 1.5, 8, 8, undefined, "FAST"); tx = x + 12; } catch { /* ignore */ }
+    try {
+      const props = (doc as unknown as { getImageProperties: (u: string) => { width: number; height: number } }).getImageProperties(opts.branding.logoUrl);
+      const lh = 8, lw = Math.min(12, lh * (props.width / props.height));
+      doc.addImage(opts.branding.logoUrl, fmt, x + 2.5, y + 1.5, lw, lh, undefined, "FAST");
+      tx = x + 4 + lw;
+    } catch { /* ignore */ }
   }
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(17, 17, 17);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text(opts.branding.legalName.slice(0, 30), tx, y + 7);
+  doc.setFontSize(8.5);
+  doc.text(opts.branding.legalName, tx, y + 6.8, { maxWidth: x + w - tx - 2 });
+  doc.setFillColor(r, g, b);
+  doc.rect(x, y + 10.2, w, 1.2, "F");
 
   // Photo
   doc.setDrawColor(203, 213, 225);

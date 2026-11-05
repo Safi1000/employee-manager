@@ -10,7 +10,9 @@ async function ensureXlsx() {
 }
 
 import { saveBlob, mimeFor } from "./saveFile";
-import { exportStamp, exporterName } from "./exportStamp";
+import { currentExportCompany } from "./exportStamp";
+import { saveAoaWorkbook } from "./xlsxKit";
+import type { Company } from "./supabase";
 
 const DEFAULT_COMPANY = "Guards & Guides Security Services (Pvt.) Limited";
 
@@ -35,13 +37,19 @@ function mergeCell(
 // share sheet on a phone. Fire-and-forget: every caller is a click handler that
 // has never awaited this, and the failure mode (no file) is self-evident.
 function downloadWorkbook(wb: XLSXNS.WorkBook, fileName: string) {
-  // 0595: the workbook names who took it — an "Exported" sheet and the author.
-  if (!wb.SheetNames.includes("Exported")) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[exportStamp()], [`File: ${fileName}`]]), "Exported");
-  }
-  wb.Props = { ...(wb.Props ?? {}), Author: exporterName(), Company: "Bastion" };
-  const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
-  void saveBlob(new Blob([bytes], { type: mimeFor(fileName) }), fileName);
+  // 6 Nov 2026: restyled to the house standard as it is saved (xlsxKit) — the
+  // rows pass through unchanged; the hard-coded company line becomes the
+  // signed-in company's legal name; the "Exported" sheet and author are added there.
+  const sheets = wb.SheetNames.filter((n) => n !== "Exported").map((n) => {
+    const ws = wb.Sheets[n];
+    return {
+      name: n,
+      rows: XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: true }) as unknown[][],
+      merges: ws["!merges"],
+      widths: (ws["!cols"] ?? []).map((c) => c?.wch ?? 0),
+    };
+  });
+  void saveAoaWorkbook({ fileName, sheets, replaceCompanyText: DEFAULT_COMPANY });
 }
 
 function safeSheetName(name: string) {
@@ -104,7 +112,7 @@ export type AdvanceExportRow = {
 function exportAdvancesImpl(rows: AdvanceExportRow[], fileName = "Advances.xlsx") {
   const headers = ["Date", "Employee Name", "Client", "Amount", "Mode", "Remarks"];
   const data: any[][] = [];
-  data.push(["Advances Format"]);
+  data.push(["Advances"]);
   data.push([]);
   data.push(headers);
   for (const r of rows) {
@@ -140,7 +148,7 @@ export type ExpenseExportRow = {
 function exportExpensesImpl(rows: ExpenseExportRow[], fileName = "Expenses.xlsx") {
   const headers = ["Date", "Particulars", "Category", "Client", "Amount", "Mode"];
   const data: any[][] = [];
-  data.push(["Expenses Format"]);
+  data.push(["Expenses"]);
   data.push([]);
   data.push(headers);
   for (const r of rows) {
@@ -551,145 +559,6 @@ export type PayrollExportRow = {
 
 export type PayrollExportSheet = { name: string; rows: PayrollExportRow[] };
 
-function exportPayrollSheetsImpl(
-  sheets: PayrollExportSheet[],
-  periodLabel: string,
-  fileName?: string,
-) {
-  const headers = [
-    "Sr #", "Emp Code", "Guard Code", "Name",
-    "Present", "Absent", "Leave",
-    "Base Salary", "Allowance", "Bonus", "Final Salary",
-    "Advance", "EOBI", "Income Tax", "Other Deductions",
-    "Net Salary", "Amount Paid", "Balance",
-    "Mode", "Status",
-  ];
-  const widths = [6, 14, 14, 28, 9, 9, 9, 14, 12, 12, 14, 12, 10, 12, 16, 14, 14, 12, 10, 12];
-
-  const wb = XLSX.utils.book_new();
-
-  // A workbook with no sheets is a corrupt file, not an empty one — Excel
-  // refuses to open it. So an empty selection still produces a readable sheet
-  // that says why it is empty.
-  if (sheets.length === 0) {
-    const ws = XLSX.utils.aoa_to_sheet([
-      [DEFAULT_COMPANY],
-      [`Payroll — ${periodLabel}`],
-      [],
-      ["No clients selected."],
-    ]);
-    mergeCell(ws, 0, 0, 0, headers.length - 1);
-    XLSX.utils.book_append_sheet(wb, ws, "Payroll");
-    downloadWorkbook(wb, fileName ?? `Payroll ${periodLabel}.xlsx`);
-    return;
-  }
-
-  // Excel refuses duplicate sheet names, and two clients CAN share a truncated
-  // 31-character name. Numbering the collisions keeps every client's sheet
-  // rather than silently dropping the second one.
-  const used = new Set<string>();
-  const uniqueSheetName = (name: string) => {
-    const base = safeSheetName(name);
-    if (!used.has(base)) { used.add(base); return base; }
-    for (let i = 2; i < 100; i += 1) {
-      const candidate = safeSheetName(`${base.slice(0, 27)} (${i})`);
-      if (!used.has(candidate)) { used.add(candidate); return candidate; }
-    }
-    return base;
-  };
-
-  for (const sheet of sheets) {
-    const data: any[][] = [];
-    const unprocessed = sheet.rows.filter((r) => !r.hasPayslip).length;
-    data.push([DEFAULT_COMPANY]);
-    data.push([`Payroll — ${sheet.name} — ${periodLabel}`]);
-    // Says so ON THE SHEET, because the file outlives the screen that explained
-    // it: somebody opening this in a week has no other way to know the blanks
-    // are "not run yet" rather than "nothing owed".
-    data.push([
-      unprocessed === 0
-        ? ""
-        : unprocessed === sheet.rows.length
-          ? "Payroll has not been processed for this client yet — salary columns are blank by design, not zero."
-          : `Payroll is part-processed: ${unprocessed} of ${sheet.rows.length} employees have no payslip yet. Their salary columns are blank, not zero.`,
-    ]);
-    data.push(headers);
-
-    const t = {
-      base: 0, allow: 0, bonus: 0, final: 0, adv: 0,
-      eobi: 0, tax: 0, ded: 0, net: 0, paid: 0, bal: 0,
-    };
-    const processed = sheet.rows.filter((r) => r.hasPayslip).length;
-
-    sheet.rows.forEach((r, i) => {
-      // Base and allowance are contractual and known before payroll runs, so
-      // they are filled in for everybody — which is what makes a pre-payroll
-      // sheet worth exporting at all rather than a list of names.
-      t.base += r.baseSalary;
-      t.allow += r.allowance;
-      if (!r.hasPayslip) {
-        data.push([
-          i + 1, r.employeeCode, r.guardCode, r.name,
-          "", "", "",
-          r.baseSalary, r.allowance, "", "",
-          "", "", "", "",
-          "", "", "",
-          "", r.status,
-        ]);
-        return;
-      }
-      const balance = Math.round(r.netSalary) - Math.round(r.amountPaid);
-      t.bonus += r.bonus; t.final += r.finalSalary; t.adv += r.advance;
-      t.eobi += r.eobi; t.tax += r.incomeTax; t.ded += r.deductions;
-      t.net += r.netSalary; t.paid += r.amountPaid; t.bal += balance;
-      data.push([
-        i + 1, r.employeeCode, r.guardCode, r.name,
-        r.presentDays, r.absentDays, r.leaveDays,
-        r.baseSalary, r.allowance, r.bonus, r.finalSalary,
-        r.advance, r.eobi, r.incomeTax, r.deductions,
-        r.netSalary, r.amountPaid, balance,
-        r.paymentMode, r.status,
-      ]);
-    });
-
-    data.push([]);
-    // Folded from the rows above, never fetched separately — a total that can
-    // disagree with the column over it is worse than no total.
-    //
-    // The LABEL says what the total covers. Without it, a sheet of 109 people
-    // where 1 has been processed shows a Net of one guard's salary under a list
-    // of 109 names, and reads as the payroll for all of them.
-    data.push([
-      "", "", "",
-      processed === sheet.rows.length
-        ? `Total — ${sheet.rows.length} employee${sheet.rows.length === 1 ? "" : "s"}`
-        : `Total — ${processed} of ${sheet.rows.length} with a payslip`,
-      "", "", "",
-      t.base, t.allow,
-      processed ? t.bonus : "", processed ? t.final : "",
-      processed ? t.adv : "", processed ? t.eobi : "",
-      processed ? t.tax : "", processed ? t.ded : "",
-      processed ? t.net : "", processed ? t.paid : "", processed ? t.bal : "",
-      "", "",
-    ]);
-
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    mergeCell(ws, 0, 0, 0, headers.length - 1);
-    mergeCell(ws, 1, 0, 1, headers.length - 1);
-    mergeCell(ws, 2, 0, 2, headers.length - 1);
-    setColWidths(ws, widths);
-    XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name));
-  }
-
-  downloadWorkbook(
-    wb,
-    fileName ??
-      (sheets.length === 1
-        ? `Payroll - ${sheets[0].name} - ${periodLabel}.xlsx`
-        : `Payroll - ${sheets.length} clients - ${periodLabel}.xlsx`),
-  );
-}
-
 // ---------- Bank Statement Format ----------
 export type BankStatementRow = {
   date: string;
@@ -1022,9 +891,10 @@ export async function exportClientStatementLedger(...args: Parameters<typeof exp
   return exportClientStatementLedgerImpl(...args);
 }
 
-export async function exportPayrollSheets(...args: Parameters<typeof exportPayrollSheetsImpl>): Promise<ReturnType<typeof exportPayrollSheetsImpl>> {
-  await ensureXlsx();
-  return exportPayrollSheetsImpl(...args);
+export async function exportPayrollSheets(sheets: PayrollExportSheet[], periodLabel: string, fileName?: string): Promise<void> {
+  // One payroll workbook format: the house-standard one in payrollExcel.ts.
+  const { exportPayrollWorkbook } = await import("./payrollExcel");
+  return exportPayrollWorkbook({ company: currentExportCompany<Company>(), sheets, periodLabel, fileName });
 }
 
 export async function exportBankStatement(...args: Parameters<typeof exportBankStatementImpl>): Promise<ReturnType<typeof exportBankStatementImpl>> {

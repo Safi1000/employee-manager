@@ -21,7 +21,7 @@ import type ExcelJSNS from "exceljs";
 import type { Company } from "./supabase";
 import { brandingFromCompany } from "./pdfBranding";
 import { saveBlob, mimeFor } from "./saveFile";
-import { exportStamp, exporterName } from "./exportStamp";
+import { exportStamp, exporterName, currentExportCompany } from "./exportStamp";
 
 let ExcelJS: typeof ExcelJSNS | null = null;
 async function load(): Promise<typeof ExcelJSNS> {
@@ -62,7 +62,7 @@ const HEAD_ROW = 5;
 const MONEY = '#,##0;[Red]-#,##0';
 const INT = '#,##0';
 const DATE = 'dd mmm yyyy';
-const INK = "FF0F172A", SOFT = "FF64748B", RULE = "FFE2E8F0", BAND = "FFF8FAFC", TOTAL_FILL = "FFF1F5F9", NOTE = "FFB45309";
+const HEAD = "FF111111", INK = "FF0F172A", SOFT = "FF64748B", RULE = "FFE2E8F0", BAND = "FFF8FAFC", TOTAL_FILL = "FFF1F5F9", NOTE = "FFB45309";
 
 const argb = (hex: string) => "FF" + hex.replace("#", "").toUpperCase().padStart(6, "0");
 const colLetter = (n: number) => { let s = ""; for (let i = n; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s; return s; };
@@ -116,9 +116,9 @@ function addSheet(wb: ExcelJSNS.Workbook, s: XSheet, legalName: string, brand: s
     const cell = head.getCell(i + 1);
     cell.value = c.header;
     cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: brand } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD } };
     cell.alignment = { vertical: "middle", wrapText: true, horizontal: c.kind === "money" || c.kind === "int" ? "right" : c.kind === "center" ? "center" : "left" };
-    cell.border = { bottom: { style: "thin", color: { argb: brand } } };
+    cell.border = { bottom: { style: "medium", color: { argb: brand } } };
   });
   head.height = 30;
 
@@ -170,7 +170,7 @@ function addSheet(wb: ExcelJSNS.Workbook, s: XSheet, legalName: string, brand: s
 /** Build and download one workbook in the Bastion standard. */
 export async function saveWorkbook(o: { company: Company | null | undefined; fileName: string; sheets: XSheet[]; emptyMessage?: string }) {
   const X = await load();
-  const b = brandingFromCompany(o.company);
+  const b = brandingFromCompany(o.company ?? currentExportCompany<Company>());
   const brand = argb(b.brandColor);
   const wb = new X.Workbook();
   wb.creator = exporterName();
@@ -183,6 +183,7 @@ export async function saveWorkbook(o: { company: Company | null | undefined; fil
     columns: [{ header: "", key: "x", width: 60 }], rows: [],
   }];
   for (const s of sheets) addSheet(wb, s, b.legalName, brand, nameOf);
+  addExportedSheet(wb, o.fileName, nameOf);
   const bytes = await wb.xlsx.writeBuffer();
   await saveBlob(new Blob([bytes], { type: mimeFor(o.fileName) }), o.fileName);
 }
@@ -198,3 +199,156 @@ export function xRef(columns: XCol[], key: string, sheetRow: number): string {
 }
 /** Sheet row number of data row `i` (0-based). */
 export const xRow = (i: number) => HEAD_ROW + 1 + i;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Older layouts (6 Nov 2026). The ten workbook formats in excel.ts and the
+// generic table export were written as arrays of rows for the free SheetJS
+// build, which can store no styling. Rather than rewrite each layout, they are
+// restyled here as they are saved: the company's legal name replaces any
+// hard-coded one, the heading row gets the house header, numbers get Rs
+// formats, totals rows are ruled and bold, and the sheet prints like the rest.
+// The rows themselves — every figure and label — pass through unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+export type AoaSheet = {
+  name: string;
+  rows: unknown[][];
+  merges?: { s: { r: number; c: number }; e: { r: number; c: number } }[];
+  widths?: number[];
+};
+
+const TOTAL_RE = /^(grand\s+)?totals?\b|^closing balance|^net (profit|loss|salary payable)|^balance (due|c\/f)/i;
+const isBlank = (v: unknown) => v === null || v === undefined || v === "";
+
+export async function saveAoaWorkbook(o: { company?: Company | null; fileName: string; sheets: AoaSheet[]; replaceCompanyText?: string }) {
+  const X = await load();
+  const company = o.company ?? currentExportCompany<Company>();
+  const b = brandingFromCompany(company);
+  const brand = argb(b.brandColor);
+  const wb = new X.Workbook();
+  wb.creator = exporterName();
+  wb.company = b.legalName;
+  wb.created = new Date();
+  const nameOf = sheetNamer();
+
+  const src = o.sheets.length ? o.sheets : [{ name: "Export", rows: [["Nothing to export."]] }];
+  for (const s of src) {
+    let rows = s.rows.map((r) => (Array.isArray(r) ? r.map((v) => (o.replaceCompanyText && v === o.replaceCompanyText ? b.legalName : v)) : []));
+    let merges = (s.merges ?? []).map((m) => ({ s: { ...m.s }, e: { ...m.e } }));
+    // Every sheet opens with the company's legal name.
+    const firstText = rows.find((r) => r.some((v) => !isBlank(v)))?.find((v) => !isBlank(v));
+    if (firstText !== b.legalName) {
+      rows = [[b.legalName], ...rows];
+      merges = merges.map((m) => ({ s: { r: m.s.r + 1, c: m.s.c }, e: { r: m.e.r + 1, c: m.e.c } }));
+    }
+    const n = Math.max(1, ...rows.map((r) => r.length));
+
+    // The heading row: the first with ≥3 (or all, if fewer columns) non-empty
+    // cells, mostly text (a day-numbered attendance header carries numbers),
+    // followed by a non-empty row. A row straight after it whose first cell is
+    // blank and whose cells are all text continues it (attendance: shift letters).
+    const need = Math.min(3, n);
+    const texty = (r: unknown[]) => { const c = r.filter((v) => !isBlank(v)); return c.length >= need && c.filter((v) => typeof v === "string").length * 2 >= c.length; };
+    let head = -1;
+    for (let i = 0; i < rows.length - 1 && head < 0; i++) {
+      const strings = rows[i].filter((v) => typeof v === "string" && v !== "").length;
+      if (strings >= need && typeof rows[i].find((v) => !isBlank(v)) === "string" && rows[i + 1].some((v) => !isBlank(v))) head = i;
+    }
+    let headEnd = head;
+    while (head >= 0 && headEnd + 1 < rows.length && isBlank(rows[headEnd + 1][0]) && texty(rows[headEnd + 1])
+      && rows[headEnd + 1].filter((v) => !isBlank(v)).every((v) => typeof v === "string")) headEnd++;
+    const sig = head >= 0 ? JSON.stringify(rows[head]) : null;
+    const headRows = new Set<number>();
+    rows.forEach((r, i) => {
+      if (sig && JSON.stringify(r) === sig) for (let k = i; k <= i + (headEnd - head) && k < rows.length; k++) headRows.add(k);
+    });
+    const headBlocks = rows.filter((r) => sig && JSON.stringify(r) === sig).length;
+
+    const ws = wb.addWorksheet(nameOf(s.name), {
+      views: [{ state: "frozen", ySplit: headBlocks === 1 ? headEnd + 1 : 0, showGridLines: false }],
+      pageSetup: {
+        paperSize: 9, orientation: n > 7 ? "landscape" : "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+        margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.3 },
+        ...(headBlocks === 1 ? { printTitlesRow: `${head + 1}:${headEnd + 1}` } : {}),
+      },
+      headerFooter: { oddFooter: `&L&7${exportStamp().replace(/&/g, "&&")}&R&7Page &P of &N` },
+    });
+
+    // Widths: the layout's own, else from the content.
+    ws.columns = Array.from({ length: n }, (_, c) => {
+      const w = s.widths?.[c];
+      if (w && w > 0) return { width: w };
+      const longest = Math.max(8, ...rows.filter((_, i) => i > Math.max(0, head) - 1 || head < 0).map((r) => String(r[c] ?? "").length + 2));
+      return { width: Math.min(45, longest) };
+    });
+
+    let band = 0;
+    rows.forEach((r, ri) => {
+      const row = ws.getRow(ri + 1);
+      const titleZone = head >= 0 ? ri < head : ri === 0;
+      const isHead = headRows.has(ri);
+      const isTotal = !isHead && r.some((v) => typeof v === "string" && v.trim().length <= 40 && TOTAL_RE.test(v.trim()));
+      if (isHead) band = 0;
+      for (let c = 0; c < n; c++) {
+        const v = r[c];
+        const cell = row.getCell(c + 1);
+        cell.value = isBlank(v) ? null : (v as ExcelJSNS.CellValue);
+        if (titleZone) {
+          cell.font = ri === 0 ? { name: "Calibri", size: 14, bold: true, color: { argb: brand } }
+            : ri === 1 ? { name: "Calibri", size: 12, bold: true, color: { argb: INK } }
+            : { name: "Calibri", size: 10, color: { argb: SOFT } };
+          continue;
+        }
+        if (isHead) {
+          cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD } };
+          cell.border = { bottom: { style: "medium", color: { argb: brand } } };
+          cell.alignment = { vertical: "middle", wrapText: true };
+          continue;
+        }
+        cell.font = { name: "Calibri", size: 10, bold: isTotal, color: { argb: INK } };
+        if (typeof v === "number") {
+          cell.numFmt = Number.isInteger(v) ? MONEY : '#,##0.00;[Red]-#,##0.00';
+          cell.alignment = { horizontal: "right" };
+        }
+        if (isTotal) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_FILL } };
+          cell.border = { top: { style: "thin", color: { argb: INK } }, bottom: { style: "double", color: { argb: INK } } };
+        } else if (r.some((x) => !isBlank(x))) {
+          cell.border = { bottom: { style: "hair", color: { argb: RULE } } };
+          if (band % 2 === 1) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BAND } };
+        }
+      }
+      if (isHead) row.height = headEnd > head ? 18 : 28;
+      else if (ri === 0) row.height = 22;
+      if (!titleZone && !isHead && r.some((x) => !isBlank(x))) band++;
+      else if (!titleZone && !isHead) band = 0;
+    });
+
+    // Title rows with one value span the sheet; the layout's own merges are kept.
+    const merged = new Set(merges.map((m) => m.s.r));
+    if (head > 0 || head < 0) {
+      const last = head > 0 ? head : 1;
+      for (let ri = 0; ri < last; ri++) {
+        if (merged.has(ri) || n < 2) continue;
+        const r = rows[ri] ?? [];
+        if (r.filter((v) => !isBlank(v)).length === 1 && !isBlank(r[0])) merges.push({ s: { r: ri, c: 0 }, e: { r: ri, c: n - 1 } });
+      }
+    }
+    for (const m of merges) {
+      try { ws.mergeCells(m.s.r + 1, m.s.c + 1, m.e.r + 1, m.e.c + 1); } catch { /* overlapping merge in a layout: keep the cells as they are */ }
+    }
+    if (headBlocks === 1 && head >= 0) ws.autoFilter = { from: { row: headEnd + 1, column: 1 }, to: { row: headEnd + 1, column: n } };
+  }
+
+  addExportedSheet(wb, o.fileName, nameOf);
+  const bytes = await wb.xlsx.writeBuffer();
+  await saveBlob(new Blob([bytes], { type: mimeFor(o.fileName) }), o.fileName);
+}
+
+/** 0595: every workbook names who took it — a last "Exported" sheet, besides the print footer and the file's author. */
+function addExportedSheet(wb: ExcelJSNS.Workbook, fileName: string, nameOf: (n: string) => string) {
+  const ws = wb.addWorksheet(nameOf("Exported"));
+  ws.getCell("A1").value = exportStamp();
+  ws.getCell("A2").value = `File: ${fileName}`;
+  ws.getColumn(1).width = 70;
+}

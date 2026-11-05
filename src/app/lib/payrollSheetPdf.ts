@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
-import { drawBrandedHeader, drawBrandedFooter, hexToRgb, type PdfBranding } from "./pdfBranding";
+import { drawBrandedHeader, drawBrandedFooter, hexToRgb, DARK, type PdfBranding } from "./pdfBranding";
 import type { PayrollExportRow } from "./excel";
 
 /**
@@ -62,7 +62,7 @@ export function generatePayrollSheetsPdf(o: {
   };
 
   const header = (c: Col[]) => {
-    doc.setFillColor(br, bg, bb);
+    doc.setFillColor(...DARK);
     doc.rect(L, y, W, 7, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
     let x = L;
@@ -124,9 +124,9 @@ export function generatePayrollSheetsPdf(o: {
       doc.text(v, x, y + 11.5);
     };
     cell(label, `${rows.length} ${rows.length === 1 ? "guard" : "guards"}`, L + 4);
-    cell("Net payable", `PKR ${money(net)}`, L + 44);
-    cell("Paid from office", `PKR ${money(office)}`, L + 94);
-    cell("Cash to hand over", `PKR ${money(net - office)}`, L + 142, true);
+    cell("Net payable", `Rs ${money(net)}`, L + 44);
+    cell("Paid from office", `Rs ${money(office)}`, L + 94);
+    cell("Cash to hand over", `Rs ${money(net - office)}`, L + 142, true);
     y += 19;
   };
 
