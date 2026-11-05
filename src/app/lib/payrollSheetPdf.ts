@@ -48,9 +48,10 @@ export function generatePayrollSheetsPdf(o: {
   const cols = (withSite: boolean): Col[] => [
     { key: "n", title: "#", w: 7, align: "center" },
     { key: "code", title: "Code", w: 19 },
-    { key: "name", title: "Name", w: withSite ? 34 : 50 },
-    ...(withSite ? [{ key: "site", title: "Site", w: 30 } as Col] : []),
+    { key: "name", title: "Name", w: withSite ? 30 : 40 },
+    ...(withSite ? [{ key: "site", title: "Site", w: 26 } as Col] : []),
     { key: "days", title: "P / L / A", w: 17, align: "center" },
+    { key: "pd", title: "Pay days", w: 13, align: "center" },
     { key: "gross", title: "Gross", w: 18, align: "right" },
     { key: "ded", title: "Deduct.", w: 16, align: "right" },
     { key: "net", title: "Net pay", w: 20, align: "right" },
@@ -83,6 +84,7 @@ export function generatePayrollSheetsPdf(o: {
     const vals: Record<string, string> = {
       n: String(i + 1), code: r.employeeCode || r.guardCode, name: r.name, site: r.site || NO_SITE,
       days: r.hasPayslip ? `${r.presentDays} / ${r.leaveDays} / ${r.absentDays}` : "—",
+      pd: r.hasPayslip && r.payDays != null ? String(r.payDays) : "—",
       gross: r.hasPayslip ? money(r.finalSalary) : "—",
       ded: r.hasPayslip && deductionsOf(r) ? money(deductionsOf(r)) : "",
       net: r.hasPayslip ? money(r.netSalary) : "not run",
@@ -97,7 +99,7 @@ export function generatePayrollSheetsPdf(o: {
           doc.setDrawColor(203, 213, 225); doc.rect(x + 1.5, y + 1.3, col.w - 3, h - 2.6);
         }
       } else {
-        const bold = col.key === "net" || col.key === "name";
+        const bold = col.key === "net" || col.key === "name" || col.key === "pd";
         doc.setFont("helvetica", bold ? "bold" : "normal");
         doc.setFontSize(col.key === "name" ? 8.5 : 8);
         doc.setTextColor(col.key === "code" || col.key === "site" ? 100 : 15, col.key === "code" || col.key === "site" ? 116 : 23, col.key === "code" || col.key === "site" ? 139 : 42);

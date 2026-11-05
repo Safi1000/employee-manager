@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
 import { hexToRgb, imageFormat, type PdfBranding } from "./pdfBranding";
 import { amountInWords, type Company } from "./supabase";
+import { payDaysFromSlip } from "./payDays";
 
 /**
  * A guard's payslip for one month — redesigned 6 Nov 2026 to the document
@@ -91,13 +92,11 @@ export function generatePayslipPdf(p: {
   // read off the record's money, and shown only when that is a whole number.
   const gross = p.slip.final_salary != null ? n(p.slip.final_salary) : null;
   const earned = gross != null ? gross - n(p.slip.allowance) - n(p.slip.bonus) : null;
-  const perDay = Number(p.slip.per_day_salary || 0);
-  const paidDaysRaw = earned != null && perDay > 0 ? earned / perDay : null;
-  const paidDays = paidDaysRaw != null && Math.abs(paidDaysRaw - Math.round(paidDaysRaw)) < 0.05 ? Math.round(paidDaysRaw) : null;
+  const paidDays = payDaysFromSlip(p.slip);   // present + double duties + allowed leaves, read off the record
   const boxes: [string, string, boolean][] = [];
   if (p.slip.working_days) boxes.push(["Days in month", String(n(p.slip.working_days)), false]);
   boxes.push(["Present", String(n(p.slip.present_days)), false], ["Leave", String(n(p.slip.leave_days)), false], ["Absent", String(n(p.slip.absent_days)), false]);
-  if (paidDays != null) boxes.push(["Total paid days", String(paidDays), true]);
+  if (paidDays != null) boxes.push(["Total pay days", String(paidDays), true]);
   const boxW = (W - 4 * (boxes.length - 1)) / boxes.length;
   boxes.forEach(([label, v, strong], i) => {
     const x = L + i * (boxW + 4);
@@ -115,7 +114,7 @@ export function generatePayslipPdf(p: {
   // Earnings are the record's: salary for the paid days, allowance, bonus —
   // together the payslip's gross. (Older callers without gross fall back to base.)
   const earnings: [string, number][] = earned != null
-    ? [[paidDays != null ? `Salary for ${paidDays} paid day${paidDays === 1 ? "" : "s"}` : "Salary for the month", earned]]
+    ? [[paidDays != null ? `Salary for ${paidDays} pay day${paidDays === 1 ? "" : "s"}` : "Salary for the month", earned]]
     : [["Base salary for the month", n(p.slip.base_salary)]];
   if (n(p.slip.allowance)) earnings.push(["Allowance", n(p.slip.allowance)]);
   if (n(p.slip.bonus)) earnings.push(["Bonus", n(p.slip.bonus)]);

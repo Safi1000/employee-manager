@@ -9,6 +9,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
 import type { PayrollExportRow } from "../../lib/excel";
 import { exportPayrollWorkbook } from "../../lib/payrollExcel";
+import { payDaysFromSlip } from "../../lib/payDays";
 import { generatePayrollSheetsPdf } from "../../lib/payrollSheetPdf";
 import { brandingFromCompany } from "../../lib/pdfBranding";
 import { guardDisplayCode } from "../../lib/guardCode";
@@ -204,7 +205,7 @@ export default function PayrollRun() {
         supabase
           .from("payslips")
           .select(
-            "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
+            "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, per_day_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
           )
           .eq("period_month", period),
         // Everyone who should appear on a sheet this month, whether or not a
@@ -408,6 +409,7 @@ export default function PayrollRun() {
           presentDays: Number(r?.present_days ?? 0),
           absentDays: Number(r?.absent_days ?? 0),
           leaveDays: Number(r?.leave_days ?? 0),
+          payDays: r ? payDaysFromSlip(r) : null,
           // From the payslip once one exists, else from the employee record —
           // these two are contractual and known before payroll runs, which is
           // what makes a Draft-stage sheet worth having.

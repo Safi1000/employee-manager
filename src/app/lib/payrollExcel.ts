@@ -25,6 +25,9 @@ const COLUMNS: XCol[] = [
   { header: "Present", key: "p", width: 8, kind: "int" },
   { header: "Absent", key: "a", width: 8, kind: "int" },
   { header: "Leave", key: "l", width: 8, kind: "int" },
+  { header: "Double duty", key: "dd", width: 9, kind: "int" },
+  // Present + double duties + leaves up to the allowance — what the salary is earned on.
+  { header: "Pay days", key: "pd", width: 9, kind: "int" },
   { header: "Base salary", key: "base", width: 13, kind: "money", total: true },
   { header: "Allowance", key: "allow", width: 11, kind: "money", total: true },
   { header: "Bonus", key: "bonus", width: 10, kind: "money", total: true },
@@ -56,6 +59,7 @@ export async function exportPayrollWorkbook(o: {
       return {
         ...base,
         p: r.presentDays, a: r.absentDays, l: r.leaveDays,
+        dd: r.doubleDuties ?? null, pd: r.payDays ?? null,
         bonus: r.bonus, gross: r.finalSalary, adv: r.advance, eobi: r.eobi, tax: r.incomeTax, ded: r.deductions,
         net: r.netSalary, paid: r.amountPaid,
         bal: xFormula(`${xRef(COLUMNS, "net", sr)}-${xRef(COLUMNS, "paid", sr)}`, Math.round(r.netSalary) - Math.round(r.amountPaid)),

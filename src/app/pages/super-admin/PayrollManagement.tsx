@@ -1,5 +1,6 @@
 import ReversalDialog from "../../components/ReversalDialog";
 import PayoutTools from "../../components/PayoutTools";
+import { payDaysFromSlip } from "../../lib/payDays";
 import CommentsButton from "../../components/CommentsButton";
 import { bankCovers, loadBankOptions, loadChequeLinkedSums } from "../../lib/bankOptions";
 import ThemedSelect from "../../components/ThemedSelect";
@@ -1407,6 +1408,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         presentDays: Number(r.present_days ?? 0),
         absentDays: Number(r.absent_days ?? 0),
         leaveDays: Number(r.leave_days ?? 0),
+        payDays: Number(r.effective_present_days ?? 0),
+        doubleDuties: Number(r.double_duty_shifts ?? 0),
         baseSalary: Math.round(Number(r.base_salary ?? 0)),
         allowance: Math.round(Number(r.allowance ?? 0)),
         bonus: Math.round(Number(r.bonus ?? 0)),
@@ -2200,12 +2203,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     if (row.override_leaves) line("Leave Override", "Yes (all leaves paid)");
     if (row.extra_leave_absent > 0)
       line("Absent due to extra leaves", String(row.extra_leave_absent));
-    line("Effective Paid Days", `${row.effective_present_days} / ${row.working_days}`);
+    line("Pay days (present + double duties + allowed leaves)", `${row.effective_present_days} / ${row.working_days}`);
     y += 6;
     line("Base Salary", `PKR ${row.base_salary.toLocaleString()}`);
     if (row.per_day_salary != null)
       line("Per Day Salary", `PKR ${Number(row.per_day_salary).toLocaleString()}`);
-    line("Earned (Per Day × Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
+    line("Earned (Per Day × Pay Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
     line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
     {
       const fines = finesFromNotes(row.notes);
@@ -2324,7 +2327,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       const { data: ps } = await supabase
         .from("payslips")
         .select(
-          "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
+          "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, per_day_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
         )
         .eq("period_month", selectedPeriod)
         // Every payslip carries its region; the region bar narrows them, and
@@ -2365,6 +2368,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           presentDays: Number(r.present_days ?? 0),
           absentDays: Number(r.absent_days ?? 0),
           leaveDays: Number(r.leave_days ?? 0),
+          payDays: payDaysFromSlip(r),
           baseSalary: Math.round(Number(r.base_salary ?? 0)),
           allowance: Math.round(Number(r.allowance ?? 0)),
           bonus: Math.round(Number(r.bonus ?? 0)),
@@ -3268,14 +3272,22 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                   row.working_days - row.present_days - row.absent_days - row.leave_days,
                                   0,
                                 );
+                                // Pay days (Shayan, 6 Nov 2026) = present + double duties + leaves up to
+                                // the allowance — effective_present_days, the figure salary is earned on.
+                                const paidLeaves = row.override_leaves ? row.leave_days : Math.min(row.leave_days, row.allowed_leaves);
                                 return (
                                   <>
+                                    <div className="text-sm text-foreground">
+                                      <span className="font-semibold tabular-nums">{row.effective_present_days}</span> pay days
+                                    </div>
                                     <div>
                                       <span className="text-success-700">P {row.present_days}</span>
                                       {" / "}
-                                      <span className="text-danger-700">A {row.absent_days}</span>
+                                      <span className="text-warning-700" title={paidLeaves < row.leave_days ? `${paidLeaves} of ${row.leave_days} leaves are paid (allowance ${row.allowed_leaves})` : undefined}>
+                                        L {row.leave_days}{paidLeaves < row.leave_days ? ` (${paidLeaves} paid)` : ""}
+                                      </span>
                                       {" / "}
-                                      <span className="text-warning-700">L {row.leave_days}</span>
+                                      <span className="text-danger-700">A {row.absent_days}</span>
                                       {row.double_duty_shifts > 0 && (
                                         <>
                                           {" / "}
@@ -3674,7 +3686,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </div>
                     )}
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Effective Paid Days</span>
+                      <span className="text-muted-foreground">Pay days</span>
                       <span className="text-foreground">
                         {selectedRow.effective_present_days} / {selectedRow.working_days}
                       </span>
@@ -4279,7 +4291,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Effective Paid Days</span>
+                  <span className="text-muted-foreground">Pay days</span>
                   <span className="text-foreground">
                     {payslipData.effective_present_days} / {payslipData.working_days}
                   </span>
@@ -4297,7 +4309,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Earned (Per Day × Paid Days)</span>
+                  <span className="text-muted-foreground">Earned (Per Day × Pay Days)</span>
                   <span className="text-foreground">
                     PKR{" "}
                     {Math.round(

@@ -541,6 +541,10 @@ export type PayrollExportRow = {
   presentDays: number;
   absentDays: number;
   leaveDays: number;
+  /** Pay days = present + double duties + leaves up to the allowance (6 Nov 2026). Null when not known. */
+  payDays?: number | null;
+  /** Double-duty extra shifts, when the source knows them (the live payroll row does; a saved payslip does not). */
+  doubleDuties?: number | null;
   baseSalary: number;
   allowance: number;
   bonus: number;

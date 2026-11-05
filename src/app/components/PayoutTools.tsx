@@ -6,6 +6,7 @@ import { supabase, friendlyDbError } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { useRegion } from "../lib/region";
 import { guardDisplayCode } from "../lib/guardCode";
+import { payDaysFromSlip } from "../lib/payDays";
 import { brandingFromCompany } from "../lib/pdfBranding";
 import { generatePayslipPdf } from "../lib/payslipPdf";
 import { saveText } from "../lib/saveFile";
@@ -114,6 +115,9 @@ export default function PayoutTools({ period }: { period: string }) {
                   {shown.map((s) => (
                     <li key={s.id} className="py-1.5 flex items-center gap-2">
                       <span className="flex-1 min-w-0 truncate text-foreground">{s.employees?.full_name}<span className="text-xs text-muted-foreground"> · {codeOf(s)}</span></span>
+                      <span className="text-xs text-muted-foreground tabular-nums" title="Pay days = present + double duties + allowed leaves · present / leave / absent">
+                        {payDaysFromSlip(s) ?? "—"} pay days <span className="text-muted-foreground/70">· P {s.present_days} / L {s.leave_days} / A {s.absent_days}</span>
+                      </span>
                       <span className="font-ledger text-xs">{Math.round(Number(s.net_salary)).toLocaleString()}{s.disbursed ? " ✓" : ""}</span>
                       <button type="button" onClick={() => payslip(s)} className="p-1 rounded hover:bg-muted" title="Payslip PDF"><FileText className="w-4 h-4" /></button>
                       {waNumber(s.employees?.phone ?? null)
