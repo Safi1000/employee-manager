@@ -67,18 +67,29 @@ export function RegionProvider({ children }: { children: ReactNode }) {
         return;
       }
       setLoading(true);
-      const { data } = await supabase
-        .from("branches")
-        .select("id, company_id, name, code, kind, is_head_office, active")
-        .eq("company_id", companyId)
-        .eq("active", true)
-        // Head Office first, then regions alphabetically.
-        .order("is_head_office", { ascending: false })
-        .order("name", { ascending: true });
+      // 5 Nov 2026: a failed read (a token refresh or a network blip at sign-in)
+      // used to land here as an empty list, and an empty list HIDES the region
+      // bar and every report's region filter until the page was reloaded.
+      // Retry a few times, and never replace a known list with nothing.
+      let data: Region[] | null = null;
+      for (let attempt = 0; attempt < 4 && !cancelled; attempt++) {
+        const res = await supabase
+          .from("branches")
+          .select("id, company_id, name, code, kind, is_head_office, active")
+          .eq("company_id", companyId)
+          .eq("active", true)
+          // Head Office first, then regions alphabetically.
+          .order("is_head_office", { ascending: false })
+          .order("name", { ascending: true });
+        if (!res.error && (res.data?.length ?? 0) > 0) { data = res.data as Region[]; break; }
+        if (!res.error && attempt >= 1) { data = (res.data as Region[]) ?? []; break; }
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
 
       if (cancelled) return;
+      if (data === null) { setLoading(false); return; }   // keep whatever was shown
 
-      const rows = (data as Region[]) ?? [];
+      const rows = data;
       setRegions(rows);
 
       if (profile?.branch_id) {
