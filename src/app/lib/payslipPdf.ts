@@ -32,6 +32,8 @@ export function generatePayslipPdf(p: {
 }) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const [br, bg, bb] = hexToRgb(p.branding.brandColor);
+  // Two-colour identity, like the GGS logo: the brand colour for accents, near-black for the heavy blocks.
+  const DARK: [number, number, number] = [17, 17, 17];
   const L = 16, R = 194, W = R - L;
   const INK: [number, number, number] = [15, 23, 42], SOFT: [number, number, number] = [100, 116, 139], RULE: [number, number, number] = [226, 232, 240];
   const n = (v: unknown) => Math.round(Number(v || 0));
@@ -133,7 +135,7 @@ export function generatePayslipPdf(p: {
   }
   const table = (x: number, title: string, lines: [string, number][], totalLabel: string) => {
     let yy = y;
-    doc.setFillColor(br, bg, bb); doc.rect(x, yy, colW, 7, "F");
+    doc.setFillColor(...DARK); doc.rect(x, yy, colW, 7, "F");
     font("bold", 8); doc.setTextColor(255, 255, 255);
     doc.text(title, x + 3, yy + 4.8); doc.text("Rs", x + colW - 3, yy + 4.8, { align: "right" });
     yy += 7;
@@ -157,7 +159,8 @@ export function generatePayslipPdf(p: {
   y = Math.max(endE, endD) + 8;
 
   // ── Net pay ──────────────────────────────────────────────────────────────
-  doc.setFillColor(br, bg, bb); doc.roundedRect(L, y, W, 22, 2, 2, "F");
+  doc.setFillColor(...DARK); doc.roundedRect(L, y, W, 22, 2, 2, "F");
+  doc.setFillColor(br, bg, bb); doc.rect(L, y + 3, 1.6, 16, "F");   // brand tick on the net-pay block
   doc.setTextColor(255, 255, 255);
   font("normal", 8); doc.text("NET PAY", L + 6, y + 7);
   font("bold", 18); doc.text(rs(p.slip.net_salary), R - 6, y + 10, { align: "right" });
