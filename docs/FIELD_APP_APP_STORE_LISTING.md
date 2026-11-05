@@ -162,7 +162,7 @@ Notes**, replacing the earlier notes:
 
 ```
 1. SCREEN RECORDING
-A recording made on a physical iPhone running the latest iOS is attached / linked here: <LINK>.
+A recording made on a physical iPhone running the latest iOS is here: https://drive.google.com/file/d/1McKXcVxiId9ss7VjM_9FFUDRvk3W2A4Z/view
 It starts at launch and shows: signing in with the demo supervisor account, the
 supervisor's sites, a site's guard list, today's attendance sheet, confirming a
 shift, switching the app to Urdu, and signing out.
