@@ -10,6 +10,7 @@ import { useRegion, withRegion } from "../../lib/region";
 import type { PayrollExportRow } from "../../lib/excel";
 import { exportPayrollWorkbook } from "../../lib/payrollExcel";
 import { payDaysFromSlip } from "../../lib/payDays";
+import PayDaysChecks from "../../components/PayDaysChecks";
 import { generatePayrollSheetsPdf } from "../../lib/payrollSheetPdf";
 import { brandingFromCompany } from "../../lib/pdfBranding";
 import { guardDisplayCode } from "../../lib/guardCode";
@@ -969,6 +970,20 @@ export default function PayrollRun() {
                           {/* Site-wise rows inside the client, the same shape the
                               Attendance board and Employee Assignments use. */}
                           {/* Each client's embedded payroll remembers its own filters. */}
+                          {/* Pay days + a second-look check (6 Nov 2026) — for review, not a rule. */}
+                          <div className="px-3 pt-3">
+                            <PayDaysChecks
+                              mode="payroll"
+                              month={period}
+                              daysInMonth={new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()}
+                              clientId={s.clientId ?? null}
+                              rows={(liveRowsByScope.get(s.key) ?? rowsByScope.get(s.key) ?? []).map((r) => ({
+                                name: r.name, payDays: r.payDays, present: r.presentDays, leave: r.leaveDays, absent: r.absentDays,
+                                doubleDuties: r.doubleDuties, gross: r.finalSalary, net: r.netSalary, base: r.baseSalary,
+                                allowance: r.allowance, bonus: r.bonus, hasFigures: r.hasPayslip,
+                              }))}
+                            />
+                          </div>
                           <PageStateScope name={`run-${s.key}`}>
                           <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline siteGrouped periodOverride={period}
                             onTotals={(t) => setLiveTotalsByKey((prev) => { const n = new Map(prev); n.set(s.key, t); return n; })}

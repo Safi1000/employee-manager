@@ -3,6 +3,7 @@
 // by shift, P/A/L/X marks, per-day and grand totals, legend — plus a Download
 // button that hands the identical rows to exportAttendance. View without downloading.
 
+import PayDaysChecks from "./PayDaysChecks";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTriangle, Lock, Search } from "lucide-react";
 import Button from "./Button";
@@ -586,6 +587,21 @@ export default function AttendanceSheetModal({
           ) : rows.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">No employees on this {siteId ? "site" : "client"} for {monthLabel}.</p>
           ) : (
+            <>
+            {/* Pay days at a glance + a second-look check (6 Nov 2026) — for review, not a rule.
+                Capacity is checked against the whole client's contract, so a single site's board skips it. */}
+            <div className="mb-3">
+              <PayDaysChecks
+                mode="attendance"
+                month={month}
+                daysInMonth={daysInMonth}
+                clientId={siteId ? null : realClientId}
+                rows={rows.filter((r) => !r.isReliever).map((r) => ({
+                  name: r.name, payDays: r.payDays, present: r.presents, leave: r.leaves, absent: r.absents,
+                  doubleDuties: r.doubleDuties, allowedLeaves: r.allowedLeaves ?? null,
+                }))}
+              />
+            </div>
             <table className="text-xs border-collapse">
               <thead>
                 <tr ref={dayRowRef} className="bg-secondary">
@@ -739,6 +755,7 @@ export default function AttendanceSheetModal({
                 </tr>
               </tbody>
             </table>
+            </>
           )}
 
           {!loading && !err && rows.length > 0 && (
