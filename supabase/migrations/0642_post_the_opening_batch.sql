@@ -47,6 +47,19 @@
 
 set local lock_timeout = '5s';
 
+-- ───────────────────────── One posted opening per company PER DATE ─────────────────────────
+-- The first apply was refused by idx_ob_one_posted_per_company: one posted
+-- opening batch per company, and 0544 had already posted the bank balances as
+-- their own batch at 1 Aug. The client and cash openings belong at the 31 Aug
+-- cutover, and ledger_cutover_posted() only recognises a batch dated then.
+-- Shayan (named approval, 5 Nov 2026): allow one posted batch per company per
+-- date, so 0544's 1 Aug bank batch and this 31 Aug batch both stand.
+drop index public.idx_ob_one_posted_per_company;
+create unique index idx_ob_one_posted_per_company_date
+  on public.opening_balance_batches (company_id, as_of_date) where status = 'posted';
+comment on index public.idx_ob_one_posted_per_company_date is
+  '0642: at most one posted opening batch per company per date — 0544 posted bank balances at 1 Aug 2026; 0642 posts client receivables and custodian cash at the 31 Aug cutover.';
+
 -- ───────────────────────── Before (no lock held yet) ─────────────────────────
 do $before$
 declare v_co constant uuid := '7f7899a0-edd2-4491-a40d-f81b54c68d1e';
