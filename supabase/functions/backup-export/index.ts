@@ -129,21 +129,23 @@ Deno.serve(async (req) => {
     const stamp = new Date().toISOString();
     await writer.write(enc.encode(JSON.stringify({ bastion_backup: 1, created_at: stamp, tables: (tables ?? []).length }) + "\n"));
 
-    // 0644: the database writes each page as NDJSON text (backup_ndjson), and
-    // it is fetched as text/plain — parsing and re-stringifying every row here
-    // used up the function's CPU allowance ("CPU Time exceeded", 5 Nov 2026).
+    // 0644: the database writes each page as NDJSON text (backup_ndjson) —
+    // parsing and re-stringifying every row here used up the function's CPU
+    // allowance ("CPU Time exceeded", 5 Nov 2026). PostgREST will not serve it
+    // as text/plain (406 PGRST107), so it arrives as ONE JSON string per page;
+    // unescaping a single string is cheap, unlike building 5,000 objects.
     let rows = 0;
     for (const t of (tables ?? []) as { table_name: string; has_id: boolean }[]) {
       for (let from = 0; ; from += PAGE) {
         const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/backup_ndjson`, {
           method: "POST",
-          headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Accept: "text/plain" },
+          headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({ p_table: t.table_name, p_offset: from, p_limit: PAGE }),
         });
         if (!r.ok) throw new Error(`${t.table_name}: ${r.status} ${(await r.text()).slice(0, 300)}`);
-        if (!(r.headers.get("content-type") ?? "").startsWith("text/plain")) throw new Error(`${t.table_name}: expected text/plain, got ${r.headers.get("content-type")}`);
-        const text = await r.text();
-        if (!text || text === "null") break;   // past the end: the function returned null
+        const text = JSON.parse(await r.text()) as string | null;
+        if (typeof text !== "string" && text !== null) throw new Error(`${t.table_name}: backup_ndjson did not return text`);
+        if (!text) break;   // past the end: the function returned null
         const n = text.split("\n").length;
         await writer.write(enc.encode(text + "\n"));
         rows += n;
