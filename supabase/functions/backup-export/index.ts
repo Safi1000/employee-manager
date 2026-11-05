@@ -17,9 +17,11 @@ const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
 const CLIENT_SECRET = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
 const REFRESH_TOKEN = Deno.env.get("GOOGLE_OAUTH_REFRESH_TOKEN");
 const BACKUP_KEY = Deno.env.get("BACKUP_ENCRYPTION_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 const KEEP_WEEKS = 8;
-const PAGE = 1000;
+const PAGE = 5000;
 const MAGIC = new TextEncoder().encode("BASTIONBK1");
 
 const CORS = {
@@ -98,6 +100,12 @@ Deno.serve(async (req) => {
   if (!BACKUP_KEY) return json({ error: "BACKUP_ENCRYPTION_KEY is not set in the Edge Function secrets." }, 500);
   if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) return json({ error: "drive_not_configured" }, 500);
 
+  // A run the runtime killed (CPU or time limit) never reaches its catch block
+  // and would show "running…" for ever. Close any such run first.
+  await admin.from("backup_runs")
+    .update({ ok: false, finished_at: new Date().toISOString(), error: "Stopped before finishing — the backup function was shut down (time or CPU limit)." })
+    .is("finished_at", null).lt("started_at", new Date(Date.now() - 10 * 60_000).toISOString());
+
   const { data: run } = await admin.from("backup_runs").insert({ triggered_by: triggeredBy }).select("id").single();
   const runId = run?.id as string | undefined;
 
@@ -121,17 +129,25 @@ Deno.serve(async (req) => {
     const stamp = new Date().toISOString();
     await writer.write(enc.encode(JSON.stringify({ bastion_backup: 1, created_at: stamp, tables: (tables ?? []).length }) + "\n"));
 
+    // 0644: the database writes each page as NDJSON text (backup_ndjson), and
+    // it is fetched as text/plain — parsing and re-stringifying every row here
+    // used up the function's CPU allowance ("CPU Time exceeded", 5 Nov 2026).
     let rows = 0;
     for (const t of (tables ?? []) as { table_name: string; has_id: boolean }[]) {
       for (let from = 0; ; from += PAGE) {
-        let q = admin.from(t.table_name).select("*").range(from, from + PAGE - 1);
-        if (t.has_id) q = q.order("id");
-        const { data, error } = await q;
-        if (error) throw new Error(`${t.table_name}: ${error.message}`);
-        const lines = (data ?? []).map((r) => JSON.stringify({ t: t.table_name, r })).join("\n");
-        if (lines) await writer.write(enc.encode(lines + "\n"));
-        rows += (data ?? []).length;
-        if (!data || data.length < PAGE) break;
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/backup_ndjson`, {
+          method: "POST",
+          headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Accept: "text/plain" },
+          body: JSON.stringify({ p_table: t.table_name, p_offset: from, p_limit: PAGE }),
+        });
+        if (!r.ok) throw new Error(`${t.table_name}: ${r.status} ${(await r.text()).slice(0, 300)}`);
+        if (!(r.headers.get("content-type") ?? "").startsWith("text/plain")) throw new Error(`${t.table_name}: expected text/plain, got ${r.headers.get("content-type")}`);
+        const text = await r.text();
+        if (!text || text === "null") break;   // past the end: the function returned null
+        const n = text.split("\n").length;
+        await writer.write(enc.encode(text + "\n"));
+        rows += n;
+        if (n < PAGE) break;
       }
     }
     await writer.close();
