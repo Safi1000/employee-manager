@@ -20,7 +20,7 @@ import { saveText } from "../lib/saveFile";
  * Reads payslips and the guard's bank details; writes nothing.
  */
 type Slip = {
-  id: string; employee_id: string; present_days: number; absent_days: number; leave_days: number; base_salary: number; bonus: number;
+  id: string; employee_id: string; working_days: number | null; present_days: number; absent_days: number; leave_days: number; base_salary: number; per_day_salary: number | null; final_salary: number | null; allowance: number | null; eobi: number | null; income_tax: number | null; bonus: number;
   advance: number; deductions: number; net_salary: number; amount_paid: number | null; disbursed: boolean; disbursed_at: string | null; payment_mode: string | null;
   employees: { full_name: string; employee_code: string | null; guard_code: string | null; phone: string | null; iban: string | null; bank_account: string | null; bank_name: string | null; account_title: string | null; cash_payment_flag: boolean | null; branch_id: string | null; display_number: number | null; clients: { employee_id_prefix: string | null } | null } | null;
 };
@@ -45,7 +45,7 @@ export default function PayoutTools({ period }: { period: string }) {
     if (!open) return;
     setSlips(null);
     void supabase.from("payslips")
-      .select("id, employee_id, present_days, absent_days, leave_days, base_salary, bonus, advance, deductions, net_salary, amount_paid, disbursed, disbursed_at, payment_mode, employees(full_name, employee_code, guard_code, phone, iban, bank_account, bank_name, account_title, cash_payment_flag, branch_id, display_number, clients(employee_id_prefix))")
+      .select("id, employee_id, working_days, present_days, absent_days, leave_days, base_salary, per_day_salary, final_salary, allowance, eobi, income_tax, bonus, advance, deductions, net_salary, amount_paid, disbursed, disbursed_at, payment_mode, employees(full_name, employee_code, guard_code, phone, iban, bank_account, bank_name, account_title, cash_payment_flag, branch_id, display_number, clients(employee_id_prefix))")
       .eq("period_month", month).order("created_at")
       .then(({ data, error }) => {
         if (error) setErr(friendlyDbError(error));
@@ -80,6 +80,7 @@ export default function PayoutTools({ period }: { period: string }) {
       present_days: s.present_days, absent_days: s.absent_days, leave_days: s.leave_days, base_salary: Number(s.base_salary), bonus: Number(s.bonus ?? 0),
       advance: Number(s.advance ?? 0), deductions: Number(s.deductions ?? 0), net_salary: Number(s.net_salary), amount_paid: Number(s.amount_paid ?? 0),
       disbursed: s.disbursed, disbursed_at: s.disbursed_at, period_month: month,
+      working_days: s.working_days, per_day_salary: s.per_day_salary, final_salary: s.final_salary, allowance: s.allowance, eobi: s.eobi, income_tax: s.income_tax,
     },
   });
   const waText = (s: Slip) => `${company?.name ?? ""} — salary ${monthLabel(month)} for ${s.employees?.full_name ?? ""}: ${s.present_days} days present, base PKR ${Math.round(Number(s.base_salary)).toLocaleString()}${Number(s.advance) ? `, advance −${Math.round(Number(s.advance)).toLocaleString()}` : ""}${Number(s.deductions) ? `, deductions −${Math.round(Number(s.deductions)).toLocaleString()}` : ""}. Net PKR ${Math.round(Number(s.net_salary)).toLocaleString()}${s.disbursed ? " — paid" : ""}.`;

@@ -17,7 +17,12 @@ export function brandingFromCompany(company: Company | null | undefined): PdfBra
     name: company?.name ?? "Company",
     legalName: company?.legal_name || company?.name || "Company",
     logoUrl: company?.logo_url ?? null,
-    brandColor: ((company as { brand_color?: string } | null)?.brand_color?.trim()) || "#1e40af",
+    // 6 Nov 2026: the colour a company actually set lives in its Invoice
+    // Structure settings (GGS: #b51a00, its logo red); companies.brand_color is
+    // unset, so every document fell back to a default blue.
+    brandColor: ((company as { brand_color?: string } | null)?.brand_color?.trim())
+      || ((company?.invoice_settings as { brand_color?: string } | null | undefined)?.brand_color?.trim())
+      || "#1e40af",
   };
 }
 

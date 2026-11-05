@@ -69,6 +69,7 @@ type EmployeeRow = {
 type PayslipRow = {
   id: string;
   period_month: string;
+  working_days?: number | null; per_day_salary?: number | null; final_salary?: number | null; allowance?: number | null; eobi?: number | null; income_tax?: number | null;
   present_days: number;
   absent_days: number;
   leave_days: number;
@@ -219,7 +220,7 @@ export default function MyProfile() {
         supabase
           .from("payslips")
           .select(
-            "id, period_month, present_days, absent_days, leave_days, base_salary, bonus, deductions, advance, net_salary, amount_paid, status, disbursed, disbursed_at",
+            "id, period_month, working_days, present_days, absent_days, leave_days, base_salary, per_day_salary, final_salary, allowance, bonus, deductions, advance, eobi, income_tax, net_salary, amount_paid, status, disbursed, disbursed_at",
           )
           .eq("employee_id", employeeId)
           .order("period_month", { ascending: false }),

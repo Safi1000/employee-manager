@@ -25,6 +25,9 @@ export function generatePayslipPdf(p: {
     base_salary: number; bonus: number; advance: number; deductions: number;
     net_salary: number; amount_paid: number; disbursed: boolean; disbursed_at: string | null;
     period_month?: string | null;
+    /** The payslip row's own figures (6 Nov 2026). Optional so an older caller still renders. */
+    working_days?: number | null; per_day_salary?: number | null; final_salary?: number | null;
+    allowance?: number | null; eobi?: number | null; income_tax?: number | null;
   };
 }) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -49,7 +52,8 @@ export function generatePayslipPdf(p: {
     } catch { /* no logo is better than a broken one */ }
   }
   font("bold", 13); ink(INK); doc.text(p.branding.legalName, textX, y + 1, { maxWidth: 110 });
-  const contact = [p.company?.registration_line, p.company?.legal_address, (p.company?.contact_phones ?? []).filter(Boolean).join(", ") || p.company?.contact_phone]
+  // Address and phones only — no registration line or NTN on a payslip (Shayan, 6 Nov 2026).
+  const contact = [p.company?.legal_address, (p.company?.contact_phones ?? []).filter(Boolean).join(", ") || p.company?.contact_phone]
     .filter((s): s is string => !!s && !!s.trim());
   font("normal", 7.5); ink(SOFT);
   contact.slice(0, 3).forEach((line, i) => doc.text(line, textX, y + 6 + i * 3.6, { maxWidth: 110 }));
@@ -80,23 +84,53 @@ export function generatePayslipPdf(p: {
   y += 36;
 
   // ── Attendance ────────────────────────────────────────────────────────────
-  const boxW = (W - 8) / 3;
-  ([["Present", p.slip.present_days], ["Leave", p.slip.leave_days], ["Absent", p.slip.absent_days]] as const).forEach(([label, v], i) => {
+  // Paid days are not stored: they are what the salary was paid for — salary
+  // earned (gross less allowance and bonus) over the per-day rate — so they are
+  // read off the record's money, and shown only when that is a whole number.
+  const gross = p.slip.final_salary != null ? n(p.slip.final_salary) : null;
+  const earned = gross != null ? gross - n(p.slip.allowance) - n(p.slip.bonus) : null;
+  const perDay = Number(p.slip.per_day_salary || 0);
+  const paidDaysRaw = earned != null && perDay > 0 ? earned / perDay : null;
+  const paidDays = paidDaysRaw != null && Math.abs(paidDaysRaw - Math.round(paidDaysRaw)) < 0.05 ? Math.round(paidDaysRaw) : null;
+  const boxes: [string, string, boolean][] = [];
+  if (p.slip.working_days) boxes.push(["Days in month", String(n(p.slip.working_days)), false]);
+  boxes.push(["Present", String(n(p.slip.present_days)), false], ["Leave", String(n(p.slip.leave_days)), false], ["Absent", String(n(p.slip.absent_days)), false]);
+  if (paidDays != null) boxes.push(["Total paid days", String(paidDays), true]);
+  const boxW = (W - 4 * (boxes.length - 1)) / boxes.length;
+  boxes.forEach(([label, v, strong], i) => {
     const x = L + i * (boxW + 4);
-    doc.setDrawColor(...RULE); doc.roundedRect(x, y, boxW, 15, 2, 2, "S");
-    font("normal", 7); ink(SOFT); doc.text(`${label.toUpperCase()} DAYS`, x + 4, y + 5.5);
-    font("bold", 13); ink(INK); doc.text(String(n(v)), x + boxW - 4, y + 11, { align: "right" });
+    if (strong) { doc.setFillColor(br, bg, bb); doc.roundedRect(x, y, boxW, 15, 2, 2, "F"); }
+    else { doc.setDrawColor(...RULE); doc.roundedRect(x, y, boxW, 15, 2, 2, "S"); }
+    font("normal", 6.5); if (strong) doc.setTextColor(255, 255, 255); else ink(SOFT);
+    doc.text(label.toUpperCase(), x + 3, y + 5.5);
+    font("bold", 13); if (strong) doc.setTextColor(255, 255, 255); else ink(INK);
+    doc.text(v, x + boxW - 3, y + 11.5, { align: "right" });
   });
   y += 22;
 
   // ── Earnings | Deductions ────────────────────────────────────────────────
   const colW = (W - 6) / 2, xE = L, xD = L + colW + 6;
-  const earnings: [string, number][] = [["Base salary for the month", n(p.slip.base_salary)]];
+  // Earnings are the record's: salary for the paid days, allowance, bonus —
+  // together the payslip's gross. (Older callers without gross fall back to base.)
+  const earnings: [string, number][] = earned != null
+    ? [[paidDays != null ? `Salary for ${paidDays} paid day${paidDays === 1 ? "" : "s"}` : "Salary for the month", earned]]
+    : [["Base salary for the month", n(p.slip.base_salary)]];
+  if (n(p.slip.allowance)) earnings.push(["Allowance", n(p.slip.allowance)]);
   if (n(p.slip.bonus)) earnings.push(["Bonus", n(p.slip.bonus)]);
   const deductions: [string, number][] = [];
   if (n(p.slip.advance)) deductions.push(["Advance recovered", n(p.slip.advance)]);
+  if (n(p.slip.eobi)) deductions.push(["EOBI", n(p.slip.eobi)]);
+  if (n(p.slip.income_tax)) deductions.push(["Income tax", n(p.slip.income_tax)]);
   if (n(p.slip.deductions)) deductions.push(["Other deductions", n(p.slip.deductions)]);
-
+  // The slip must add up to the record's net. Where the payroll applied an
+  // adjustment inside the gross, the difference is shown as its own line rather
+  // than leaving earnings − deductions ≠ net on the page.
+  const sumE = earnings.reduce((t, l) => t + l[1], 0), sumD = deductions.reduce((t, l) => t + l[1], 0);
+  const gap = sumE - sumD - n(p.slip.net_salary);
+  if (gap !== 0) {
+    if (gap > 0) deductions.push(["Adjustment applied in payroll", gap]);
+    else earnings.push(["Adjustment applied in payroll", -gap]);
+  }
   const table = (x: number, title: string, lines: [string, number][], totalLabel: string) => {
     let yy = y;
     doc.setFillColor(br, bg, bb); doc.rect(x, yy, colW, 7, "F");
