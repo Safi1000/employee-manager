@@ -56,6 +56,8 @@ import { generateDepositSlipPdf } from "../../lib/depositSlip";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import AmountInWords from "../../components/AmountInWords";
 import { usePageState } from "../../lib/pageState";
+import { recordPaymentChecked } from "../../lib/paymentEntry";
+import PaymentChecksPanel from "../../components/PaymentChecksPanel";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -2102,7 +2104,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
         // must be posted first, or this credit drives the receivable control
         // negative and ar_control_equals_open_invoices reports a gap the wrong
         // way round. See the ordering note on the Opening Balances screen.
-        const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
+        const { error: rpcErr, cancelled } = await recordPaymentChecked({
           p_invoice_id: null,
           p_client_id: selectedClient.id,
           p_amount: amount,
@@ -2116,7 +2118,8 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
           p_withholding: 0,
           p_custodian_location_id:
             paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
-        });
+        }, selectedClient.id);
+        if (cancelled) return;
         if (rpcErr) throw rpcErr;
         setIsPaymentModalOpen(false);
         await loadAll();
@@ -2156,7 +2159,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
       // is safe because NO CLIENT SPANS MORE THAN ONE REGION, so everything it
       // can reach sits in the same region as the invoice in front of them. If a
       // client ever does span regions, this is the comment that has to change.
-      const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
+      const { error: rpcErr, cancelled } = await recordPaymentChecked({
         p_invoice_id: invoice.id,
         p_amount: amount,
         p_payment_date: paymentDate,
@@ -2166,7 +2169,8 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
         p_withholding: 0,
         p_custodian_location_id:
           paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
-      });
+      }, selectedClient.id);
+      if (cancelled) return;
       if (rpcErr) throw rpcErr;
       setIsPaymentModalOpen(false);
       await loadAll();
@@ -2576,6 +2580,8 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
       </BandFrame>
 
       <div className={embed ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
+        {/* 0640: cash waiting for its custodian, and payments that look entered twice. */}
+        <PaymentChecksPanel canEdit={hasPermission(profile, "invoices.edit")} />
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />

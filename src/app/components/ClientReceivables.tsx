@@ -14,6 +14,7 @@ import { canReadBankBalances, loadBankOptions } from "../lib/bankOptions";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../lib/custodian";
 import { exportTable } from "../lib/excel";
 import { downloadClientLedgerPdf } from "../lib/clientLedgerPdf";
+import { recordPaymentChecked } from "../lib/paymentEntry";
 
 /**
  * CLIENT RECEIVABLES (0626, DECIDED 2 Nov 2026). Replaces the month-picker
@@ -653,7 +654,7 @@ function ReceiptModal({ row, companyId, owed, onClose, onSaved }: {
           if (!who || !companyId) throw new Error("Choose who received the cash.");
           loc = await ensureCustodianLocation(companyId, who.employeeId, who.fullName, who.kind);
         }
-        const { error } = await supabase.rpc("record_invoice_payment", {
+        const { error, cancelled } = await recordPaymentChecked({
           p_invoice_id: invoiceId || null,
           p_client_id: invoiceId ? null : row.client_id,
           p_amount: cash,
@@ -664,7 +665,8 @@ function ReceiptModal({ row, companyId, owed, onClose, onSaved }: {
           // Always explicit: null would apply the client's rate unseen.
           p_withholding: tax,
           p_custodian_location_id: loc,
-        });
+        }, row.client_id);
+        if (cancelled) return;
         if (error) throw error;
       }
       onSaved();

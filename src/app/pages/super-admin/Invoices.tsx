@@ -66,6 +66,7 @@ import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import CommentsButton from "../../components/CommentsButton";
 import { usePageState } from "../../lib/pageState";
 import { openStoredLink } from "../../lib/driveFile";
+import { recordPaymentChecked } from "../../lib/paymentEntry";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -811,7 +812,7 @@ export default function Invoices() {
       // amount_received updates, the bank/cash move and the ledger entry all
       // commit or roll back together — so a partial failure can never leave an
       // orphaned payment row again.
-      const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
+      const { error: rpcErr, cancelled } = await recordPaymentChecked({
         p_invoice_id: paymentInvoice.id,
         p_amount: amt,
         p_payment_date: paymentForm.payment_date,
@@ -825,7 +826,8 @@ export default function Invoices() {
         p_withholding: Number(paymentForm.withholding || 0),
         p_custodian_location_id:
           paymentForm.payment_mode === "Cash" ? paymentForm.custodian_location_id : null,
-      });
+      }, paymentInvoice.client_id);
+      if (cancelled) return;
       if (rpcErr) throw rpcErr;
 
       setIsPaymentOpen(false);
