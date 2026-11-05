@@ -150,3 +150,65 @@ Purpose for all: **App Functionality** (plus the extra purpose noted).
 Not collected: contacts, messages/emails, browsing or search history,
 purchases, payment info, credit info, audio, fitness, sensitive info beyond the
 above, diagnostics, advertising data.
+
+---
+
+## Resubmission after Guideline 2.1 "Information Needed" (5 Nov 2026)
+
+Apple asked for six things in the Notes field, plus a screen recording. Also
+remove `1-sign-in` from the screenshots (Guideline 2.3.3: screenshots must show
+the app in use, not the login page). Paste this into **App Review Information →
+Notes**, replacing the earlier notes:
+
+```
+1. SCREEN RECORDING
+A recording made on a physical iPhone running the latest iOS is attached / linked here: <LINK>.
+It starts at launch and shows: signing in with the demo supervisor account, the
+supervisor's sites, a site's guard list, today's attendance sheet, confirming a
+shift, switching the app to Urdu, and signing out.
+The app has no account registration: every login is created by the employer's
+office in the Bastion web system, so there is no in-app sign-up and account
+deletion is handled by the employer (described in the privacy policy). The app
+has no user-generated content shared between users, no public posting, and no
+paid content or in-app purchases.
+
+2. PURPOSE AND AUDIENCE
+Bastion Field is the mobile companion to Bastion, an operations system used by
+private security (guarding) companies in Pakistan. Its users are the company's
+own staff: site supervisors confirm each shift's attendance for the guards at
+their sites and photograph guards; office staff record site visits, incidents,
+their own expense requests and trips. It replaces paper registers and WhatsApp
+messages, so attendance and payroll in the office are based on what was
+confirmed at the site. It is not for the general public.
+
+3. HOW TO ACCESS IT
+Choose the "Supervisor" tab and sign in with the employee code and PIN given in
+the Sign-In Information above (code NGS-001). This is a demo company,
+"Northgate Security (Demo)" — every person, site and phone number is invented.
+After sign-in you see three sites; open one to see its guards, then
+"Today's attendance" to mark present / absent / leave and confirm the shift.
+The Urdu button switches the language. In real companies a new phone must be
+approved by the office; for this demo account the phone is approved
+automatically, so no waiting is involved.
+
+4. EXTERNAL SERVICES
+- Supabase (database, authentication and file storage) — hosts the Bastion data
+  the app reads and writes.
+- Expo Push Service with Apple Push Notification service (and Firebase Cloud
+  Messaging on Android) — delivers notifications when a request is decided.
+- Apple's on-device location and camera APIs (no third-party mapping or AI services).
+No payment processors, advertising or analytics SDKs are used.
+
+5. REGIONAL DIFFERENCES
+None. The app works the same in every region. It is built for security companies
+in Pakistan and offers English and Urdu.
+
+6. REGULATED INDUSTRY / THIRD-PARTY MATERIAL
+The app does not provide a regulated service to the public and contains no
+protected third-party content. It is an internal operations tool used by the
+employer's own staff. Published by TECHXSERVE Enterprise (Pvt) Ltd, the developer
+of Bastion.
+
+DISTRIBUTION: the app is meant only for these companies' staff; we would like it
+distributed as an Unlisted App once approved.
+```
