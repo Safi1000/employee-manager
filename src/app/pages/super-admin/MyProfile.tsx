@@ -560,6 +560,7 @@ export default function MyProfile() {
                                 type="button"
                                 onClick={() => generatePayslipPdf({
                                   branding: brandingFromCompany(company),
+                                  company,
                                   monthLabel: fmtMonth((p.period_month ?? "").slice(0, 7)),
                                   employee: {
                                     full_name: emp.full_name,

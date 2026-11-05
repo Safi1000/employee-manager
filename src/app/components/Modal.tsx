@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, AlertCircle } from "lucide-react";
 
 interface ModalProps {
@@ -43,7 +44,11 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
     lg: "max-w-4xl",
   };
 
-  return (
+  // 6 Nov 2026: rendered at the end of <body>. A modal opened from inside a
+  // container with a transform / backdrop-filter (the page Header's action
+  // buttons — "Pay out") was positioned against THAT box and clipped by it,
+  // not the viewport. A portal keeps React context and events; only the DOM moves.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-ink/55 backdrop-blur-[2px]" onClick={onClose} />
       {/* Three regions in a bounded flex column: header (fixed), body (the only
@@ -92,5 +97,5 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
         )}
       </div>
     </div>
-  );
+  , document.body);
 }

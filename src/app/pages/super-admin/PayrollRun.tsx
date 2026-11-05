@@ -7,7 +7,8 @@ import PayrollManagement from "./PayrollManagement";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
-import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
+import type { PayrollExportRow } from "../../lib/excel";
+import { exportPayrollWorkbook } from "../../lib/payrollExcel";
 import { generatePayrollSheetsPdf } from "../../lib/payrollSheetPdf";
 import { brandingFromCompany } from "../../lib/pdfBranding";
 import { guardDisplayCode } from "../../lib/guardCode";
@@ -644,7 +645,7 @@ export default function PayrollRun() {
 
   const runExport = (keys: string[]) => {
     const sheets = buildSheets(keys);
-    if (exportFormat === "excel") { exportPayrollSheets(sheets, fmtMonth(month)); return; }
+    if (exportFormat === "excel") { void exportPayrollWorkbook({ company, sheets, periodLabel: fmtMonth(month) }); return; }
     generatePayrollSheetsPdf({
       branding: brandingFromCompany(company), monthLabel: fmtMonth(month),
       clients: sheets, mode: exportFormat === "pdf_site" ? "site" : "client",

@@ -313,7 +313,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [loadedPeriod, setLoadedPeriod] = useState<string | null>(null);
   const loadSeqRef = useRef(0);
   const [cashBalance, setCashBalance] = useState(0);
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
   const canAdjust = hasPermission(profile, "payroll.adjust");
   const canReverse = hasPermission(profile, "reversals.execute");
   // Custodian held cash and bank balances are "View bank accounts & cash custody"
@@ -2447,8 +2447,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       .filter((sheet) => sheet.rows.length > 0);
 
   const runExport = async (keys: string[]) => {
-    const { exportPayrollSheets } = await import("../../lib/excel");
-    exportPayrollSheets(buildSheets(keys), formatPeriod(selectedPeriod));
+    const { exportPayrollWorkbook } = await import("../../lib/payrollExcel");
+    await exportPayrollWorkbook({ company, sheets: buildSheets(keys), periodLabel: formatPeriod(selectedPeriod) });
   };
 
   const shellCardTotals = useMemo(() => {
