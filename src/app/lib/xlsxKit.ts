@@ -62,7 +62,7 @@ const HEAD_ROW = 5;
 const MONEY = '#,##0;[Red]-#,##0';
 const INT = '#,##0';
 const DATE = 'dd mmm yyyy';
-const HEAD = "FF111111", INK = "FF0F172A", SOFT = "FF64748B", RULE = "FFE2E8F0", BAND = "FFF8FAFC", TOTAL_FILL = "FFF1F5F9", NOTE = "FFB45309";
+const HEAD = "FFF2F2F2", GRID = "FFD9D9D9", INK = "FF0F172A", SOFT = "FF64748B", NOTE = "FFB45309";
 
 const argb = (hex: string) => "FF" + hex.replace("#", "").toUpperCase().padStart(6, "0");
 const colLetter = (n: number) => { let s = ""; for (let i = n; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s; return s; };
@@ -115,12 +115,12 @@ function addSheet(wb: ExcelJSNS.Workbook, s: XSheet, legalName: string, brand: s
   s.columns.forEach((c, i) => {
     const cell = head.getCell(i + 1);
     cell.value = c.header;
-    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD } };
     cell.alignment = { vertical: "middle", wrapText: true, horizontal: c.kind === "money" || c.kind === "int" ? "right" : c.kind === "center" ? "center" : "left" };
-    cell.border = { bottom: { style: "medium", color: { argb: brand } } };
+    cell.border = { top: { style: "thin", color: { argb: GRID } }, left: { style: "thin", color: { argb: GRID } }, right: { style: "thin", color: { argb: GRID } }, bottom: { style: "thin", color: { argb: brand } } };
   });
-  head.height = 30;
+  head.height = 24;
 
   const first = HEAD_ROW + 1;
   s.rows.forEach((r, ri) => {
@@ -130,8 +130,7 @@ function addSheet(wb: ExcelJSNS.Workbook, s: XSheet, legalName: string, brand: s
       const v = r[c.key];
       cell.value = v === undefined || v === "" ? null : (v as ExcelJSNS.CellValue);
       cell.font = { name: "Calibri", size: 10, color: { argb: INK } };
-      cell.border = { bottom: { style: "hair", color: { argb: RULE } } };
-      if (ri % 2 === 1) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BAND } };
+      cell.border = { left: { style: "thin", color: { argb: GRID } }, right: { style: "thin", color: { argb: GRID } }, bottom: { style: "thin", color: { argb: GRID } } };
       if (c.kind === "money") { cell.numFmt = MONEY; cell.alignment = { horizontal: "right" }; }
       else if (c.kind === "int") { cell.numFmt = INT; cell.alignment = { horizontal: "right" }; }
       else if (c.kind === "date") { cell.numFmt = DATE; cell.alignment = { horizontal: "left" }; }
@@ -148,8 +147,7 @@ function addSheet(wb: ExcelJSNS.Workbook, s: XSheet, legalName: string, brand: s
     s.columns.forEach((c, ci) => {
       const cell = row.getCell(ci + 1);
       cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_FILL } };
-      cell.border = { top: { style: "thin", color: { argb: INK } }, bottom: { style: "double", color: { argb: INK } } };
+      cell.border = { left: { style: "thin", color: { argb: GRID } }, right: { style: "thin", color: { argb: GRID } }, top: { style: "thin", color: { argb: INK } }, bottom: { style: "double", color: { argb: INK } } };
       if (c.key === labelKey) cell.value = s.totalLabel!;
       if (c.total) {
         const L = colLetter(ci + 1);
@@ -281,13 +279,11 @@ export async function saveAoaWorkbook(o: { company?: Company | null; fileName: s
       return { width: Math.min(45, longest) };
     });
 
-    let band = 0;
     rows.forEach((r, ri) => {
       const row = ws.getRow(ri + 1);
       const titleZone = head >= 0 ? ri < head : ri === 0;
       const isHead = headRows.has(ri);
       const isTotal = !isHead && r.some((v) => typeof v === "string" && v.trim().length <= 40 && TOTAL_RE.test(v.trim()));
-      if (isHead) band = 0;
       for (let c = 0; c < n; c++) {
         const v = r[c];
         const cell = row.getCell(c + 1);
@@ -299,9 +295,9 @@ export async function saveAoaWorkbook(o: { company?: Company | null; fileName: s
           continue;
         }
         if (isHead) {
-          cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+          cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD } };
-          cell.border = { bottom: { style: "medium", color: { argb: brand } } };
+          cell.border = { top: { style: "thin", color: { argb: GRID } }, left: { style: "thin", color: { argb: GRID } }, right: { style: "thin", color: { argb: GRID } }, bottom: { style: "thin", color: { argb: brand } } };
           cell.alignment = { vertical: "middle", wrapText: true };
           continue;
         }
@@ -311,17 +307,13 @@ export async function saveAoaWorkbook(o: { company?: Company | null; fileName: s
           cell.alignment = { horizontal: "right" };
         }
         if (isTotal) {
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_FILL } };
-          cell.border = { top: { style: "thin", color: { argb: INK } }, bottom: { style: "double", color: { argb: INK } } };
+          cell.border = { left: { style: "thin", color: { argb: GRID } }, right: { style: "thin", color: { argb: GRID } }, top: { style: "thin", color: { argb: INK } }, bottom: { style: "double", color: { argb: INK } } };
         } else if (r.some((x) => !isBlank(x))) {
-          cell.border = { bottom: { style: "hair", color: { argb: RULE } } };
-          if (band % 2 === 1) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BAND } };
+          cell.border = { left: { style: "thin", color: { argb: GRID } }, right: { style: "thin", color: { argb: GRID } }, bottom: { style: "thin", color: { argb: GRID } } };
         }
       }
-      if (isHead) row.height = headEnd > head ? 18 : 28;
+      if (isHead) row.height = headEnd > head ? 16 : 24;
       else if (ri === 0) row.height = 22;
-      if (!titleZone && !isHead && r.some((x) => !isBlank(x))) band++;
-      else if (!titleZone && !isHead) band = 0;
     });
 
     // Title rows with one value span the sheet; the layout's own merges are kept.
