@@ -16,6 +16,8 @@ import { supabase } from "../lib/supabase";
  */
 export type CheckRow = {
   name: string;
+  /** Employee id — needed for the same-shift-at-two-clients check (Monthly board rows carry it). */
+  empId?: string | null;
   payDays: number | null | undefined;
   present: number;
   leave: number;
@@ -55,6 +57,66 @@ async function contractedGuards(clientId: string, month: string): Promise<number
 }
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
+const pct = (a: number, b: number) => (b ? Math.round(((a - b) / b) * 100) : 0);
+
+type Extras = {
+  /** What the client was invoiced for the month, before tax. null = no invoice yet. */
+  billed: number | null;
+  /** Last month's payslips for this client's guards: pay days, gross, headcount. */
+  prev: { payDays: number; gross: number; heads: number } | null;
+  /** Same guard, same day, same shift, present at two clients. */
+  clashes: { name: string; date: string; shift: string }[];
+};
+
+async function loadExtras(clientId: string, month: string, empIds: string[], names: Map<string, string>): Promise<Extras> {
+  const start = `${month.slice(0, 7)}-01`;
+  const [y, m] = start.split("-").map(Number);
+  const end = `${start.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  const prevStart = `${new Date(y, m - 2, 1).getFullYear()}-${String(new Date(y, m - 2, 1).getMonth() + 1).padStart(2, "0")}-01`;
+
+  const [inv, prev, att] = await Promise.all([
+    supabase.from("invoices").select("subtotal, invoice_amount, tax_added_total, invoice_kind, status")
+      .eq("client_id", clientId).eq("service_month", start),
+    supabase.from("payslips").select("final_salary, allowance, bonus, per_day_salary, employees!inner(client_id)")
+      .eq("period_month", prevStart).eq("employees.client_id", clientId),
+    empIds.length
+      ? supabase.from("attendance_records").select("employee_id, attendance_date, worked_shift, scheduled_shift, worked_for_client_id, status")
+          .in("employee_id", empIds.slice(0, 400)).gte("attendance_date", start).lte("attendance_date", end)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const invs = ((inv.data ?? []) as any[]).filter((i) => i.status !== "Cancelled" && i.status !== "Void");
+  const billed = invs.length
+    ? invs.reduce((t, i) => t + (Number(i.subtotal) > 0 ? Number(i.subtotal) : Number(i.invoice_amount ?? 0) - Number(i.tax_added_total ?? 0)), 0)
+    : null;
+
+  const ps = (prev.data ?? []) as any[];
+  const prevAgg = ps.length ? {
+    heads: ps.length,
+    gross: ps.reduce((t, r) => t + Number(r.final_salary ?? 0), 0),
+    payDays: ps.reduce((t, r) => {
+      const pd = Number(r.per_day_salary ?? 0);
+      const d = pd > 0 ? (Math.round(Number(r.final_salary ?? 0)) - Math.round(Number(r.allowance ?? 0)) - Math.round(Number(r.bonus ?? 0))) / pd : 0;
+      return t + (Math.abs(d - Math.round(d)) < 0.05 ? Math.round(d) : 0);
+    }, 0),
+  } : null;
+
+  // Present-type marks keyed by guard + day + shift; two different clients on one key is a clash.
+  const seen = new Map<string, Set<string>>();
+  for (const r of (att.data ?? []) as any[]) {
+    if (!/^(present|double_duty|relief_cover)$/i.test(String(r.status ?? ""))) continue;
+    const shift = String(r.worked_shift ?? r.scheduled_shift ?? "day").toLowerCase();
+    const key = `${r.employee_id}|${r.attendance_date}|${shift}`;
+    const set = seen.get(key) ?? new Set<string>();
+    set.add(String(r.worked_for_client_id ?? "?"));
+    seen.set(key, set);
+  }
+  const clashes = [...seen].filter(([, set]) => set.size > 1).map(([k]) => {
+    const [id, date, shift] = k.split("|");
+    return { name: names.get(id) ?? "A guard", date, shift };
+  });
+  return { billed, prev: prevAgg, clashes };
+}
 
 export default function PayDaysChecks({ rows, daysInMonth, clientId, month, mode, defaultOpen = false }: {
   rows: CheckRow[];
@@ -68,6 +130,17 @@ export default function PayDaysChecks({ rows, daysInMonth, clientId, month, mode
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [contracted, setContracted] = useState<number | null | undefined>(undefined);
+  const [extras, setExtras] = useState<Extras | null>(null);
+  const empKey = rows.map((r) => r.empId ?? "").join(",");
+  useEffect(() => {
+    let cancelled = false;
+    setExtras(null);
+    if (!clientId) return;
+    const ids = rows.map((r) => r.empId).filter((x): x is string => !!x);
+    const names = new Map(rows.filter((r) => r.empId).map((r) => [r.empId as string, r.name]));
+    void loadExtras(clientId, month, ids, names).then((x) => { if (!cancelled) setExtras(x); }, () => undefined);
+    return () => { cancelled = true; };
+  }, [clientId, month, empKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -135,9 +208,35 @@ export default function PayDaysChecks({ rows, daysInMonth, clientId, month, mode
       if (missing) out.push({ level: "info", title: `${missing} without a readable pay-day figure`, detail: "Saved payslips don't store pay days; for these the salary does not divide into whole days at the per-day rate." });
     }
 
+    // 9. Same guard, same day, same shift, present at two clients (a double duty is two shifts, so it is not this).
+    if (extras?.clashes.length) out.push({ level: "warn", title: `${extras.clashes.length} shift${extras.clashes.length === 1 ? "" : "s"} marked present at two clients`, detail: "The same guard is present for the same shift on the same day at two clients — one of the marks is probably wrong, and both clients may be billed.", names: extras.clashes.slice(0, 12).map((c) => `${c.name} · ${c.date} · ${c.shift}`) });
+
+    // 10. Billed against paid (payroll).
+    if (mode === "payroll" && clientId && extras) {
+      const gross = rs.reduce((t, r) => t + Number(r.gross ?? 0), 0);
+      if (extras.billed == null) out.push({ level: "info", title: "Not billed yet", detail: `No invoice for this month's service yet — payroll cost so far Rs ${fmt(Math.round(gross))}.` });
+      else if (gross > extras.billed) out.push({ level: "warn", title: "Payroll costs more than the client was billed", detail: `Gross payroll Rs ${fmt(Math.round(gross))} against Rs ${fmt(Math.round(extras.billed))} invoiced (before tax) — Rs ${fmt(Math.round(gross - extras.billed))} short. Check the invoice, the rate, or extra guards not billed.` });
+      else {
+        const margin = Math.round(((extras.billed - gross) / extras.billed) * 100);
+        out.push({ level: margin < 5 ? "info" : "ok", title: margin < 5 ? "Thin margin" : "Billed covers payroll", detail: `Invoiced Rs ${fmt(Math.round(extras.billed))} (before tax), gross payroll Rs ${fmt(Math.round(gross))} — ${margin}% left before EOBI, kit and overheads.` });
+      }
+    }
+
+    // 11. Month on month.
+    if (extras?.prev && rs.length) {
+      const gross = rs.reduce((t, r) => t + Number(r.gross ?? 0), 0);
+      const jumps: string[] = [];
+      if (Math.abs(pct(pd, extras.prev.payDays)) >= 15) jumps.push(`pay days ${fmt(extras.prev.payDays)} → ${fmt(pd)} (${pct(pd, extras.prev.payDays) > 0 ? "+" : ""}${pct(pd, extras.prev.payDays)}%)`);
+      if (Math.abs(rs.length - extras.prev.heads) >= Math.max(3, extras.prev.heads * 0.1)) jumps.push(`guards ${extras.prev.heads} → ${rs.length}`);
+      if (mode === "payroll" && gross > 0 && Math.abs(pct(gross, extras.prev.gross)) >= 15) jumps.push(`gross Rs ${fmt(Math.round(extras.prev.gross))} → ${fmt(Math.round(gross))} (${pct(gross, extras.prev.gross) > 0 ? "+" : ""}${pct(gross, extras.prev.gross)}%)`);
+      out.push(jumps.length
+        ? { level: "warn", title: "Big change from last month", detail: jumps.join(" · ") + ". A new contract, a rate change or a missing batch of marks would explain it." }
+        : { level: "ok", title: "In line with last month", detail: `Last month: ${fmt(extras.prev.payDays)} pay days, ${extras.prev.heads} guards.` });
+    }
+
     if (!out.some((c) => c.level !== "ok") && rs.length) out.push({ level: "ok", title: "Nothing unusual", detail: "No guard over the month, nobody paid without a present day." });
     return { checks: out, totals: { pd, p, l, a, dd, n: rs.length } };
-  }, [rows, daysInMonth, contracted, clientId, mode]);
+  }, [rows, daysInMonth, contracted, clientId, mode, extras]);
 
   const warns = checks.filter((c) => c.level === "warn").length;
   const icon = (lv: Level) => lv === "warn" ? <AlertTriangle className="w-4 h-4 text-warning-600 shrink-0" />

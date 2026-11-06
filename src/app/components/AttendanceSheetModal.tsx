@@ -597,7 +597,7 @@ export default function AttendanceSheetModal({
                 daysInMonth={daysInMonth}
                 clientId={siteId ? null : realClientId}
                 rows={rows.filter((r) => !r.isReliever).map((r) => ({
-                  name: r.name, payDays: r.payDays, present: r.presents, leave: r.leaves, absent: r.absents,
+                  name: r.name, empId: r.empId ?? null, payDays: r.payDays, present: r.presents, leave: r.leaves, absent: r.absents,
                   doubleDuties: r.doubleDuties, allowedLeaves: r.allowedLeaves ?? null,
                 }))}
               />
