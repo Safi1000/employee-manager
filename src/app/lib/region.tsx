@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
   type ReactNode,
 } from "react";
 import { supabase, type Region } from "./supabase";
@@ -50,6 +51,19 @@ export function RegionProvider({ children }: { children: ReactNode }) {
   const [regions, setRegions] = useState<Region[]>([]);
   const [regionId, setRegionIdState] = useState<string | null>(ALL_REGIONS);
   const [loading, setLoading] = useState(true);
+  // 6 Nov 2026: bumped to read the list again — after the sign-in refreshes, and
+  // when the tab comes back into view while the list is still empty.
+  const [reloadKey, setReloadKey] = useState(0);
+  const emptyRef = useRef(true);
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") setReloadKey((k) => k + 1);
+    });
+    const onFocus = () => { if (emptyRef.current) setReloadKey((k) => k + 1); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { sub.subscription.unsubscribe(); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+  }, []);
 
   // A pinned profile is locked to its own region and never sees the selector.
   const locked = !!profile?.branch_id;
@@ -71,8 +85,12 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       // used to land here as an empty list, and an empty list HIDES the region
       // bar and every report's region filter until the page was reloaded.
       // Retry a few times, and never replace a known list with nothing.
+      // 6 Nov 2026: an EMPTY answer is the usual failure, not an error — a read
+      // sent before the session is attached is answered by row security with no
+      // rows. A company always has at least its Head Office, so empty is retried
+      // for ~15 s, and the auth / focus listeners above read again after that.
       let data: Region[] | null = null;
-      for (let attempt = 0; attempt < 4 && !cancelled; attempt++) {
+      for (let attempt = 0; attempt < 6 && !cancelled; attempt++) {
         const res = await supabase
           .from("branches")
           .select("id, company_id, name, code, kind, is_head_office, active")
@@ -82,14 +100,14 @@ export function RegionProvider({ children }: { children: ReactNode }) {
           .order("is_head_office", { ascending: false })
           .order("name", { ascending: true });
         if (!res.error && (res.data?.length ?? 0) > 0) { data = res.data as Region[]; break; }
-        if (!res.error && attempt >= 1) { data = (res.data as Region[]) ?? []; break; }
-        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
       }
 
       if (cancelled) return;
       if (data === null) { setLoading(false); return; }   // keep whatever was shown
 
       const rows = data;
+      emptyRef.current = rows.length === 0;
       setRegions(rows);
 
       if (profile?.branch_id) {
@@ -119,7 +137,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [companyId, userId, profile?.branch_id]);
+  }, [companyId, userId, profile?.branch_id, reloadKey]);
 
   const setRegionId = useCallback(
     (id: string | null) => {
