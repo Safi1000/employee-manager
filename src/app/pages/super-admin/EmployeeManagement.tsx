@@ -1,3 +1,4 @@
+import StaffReportButton from "../../components/StaffReportButton";
 import ReversalDialog from "../../components/ReversalDialog";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -2520,6 +2521,7 @@ export default function EmployeeManagement() {
         subtitle="Workforce roster, branches and document uploads"
         actions={
           <div className="flex items-center gap-2">
+            <StaffReportButton />
             <ExportButton onExport={() => setExportPickerOpen(true)} label="Export" />
             {/* Phase 8 §11.3: bulk-generate documents for the current filtered set. */}
             <Button variant="secondary" size="md" disabled={filtered.length === 0} onClick={() => setBulkOpen(true)}>

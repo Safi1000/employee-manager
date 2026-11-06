@@ -18,6 +18,7 @@
 // with an effective date + reason, which writes employee_salary_history and only
 // touches the live row when the change is already in effect. Past months keep
 // the pay they were actually run on.
+import StaffReportButton from "../../components/StaffReportButton";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Users,
@@ -1221,7 +1222,7 @@ export default function EmployeeAssignments() {
       <Header
         title="Assignments & Pay"
         subtitle="Posting, pay and contracted-vs-enrolled strength by client — edit one guard or the whole group"
-        actions={<ExportButton onExport={handleExport} label="Export" />}
+        actions={<div className="flex items-center gap-2"><StaffReportButton /><ExportButton onExport={handleExport} label="Export" /></div>}
       >
         {!loading && (() => {
           // Band (2026-10-20): strength first — how many are enrolled against
