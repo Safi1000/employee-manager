@@ -65,11 +65,29 @@ export default function FinanceReport({ readOnly = false }: { readOnly?: boolean
   useEffect(() => { void load(); }, [load]);
 
   // The region filter narrows what the database already scoped to the caller.
+  // 0645: salaries come per month AND region, and payroll / receivables have a
+  // per-region breakdown beside the company totals — so the region bar now
+  // narrows those too, not just the lists.
   const d = useMemo(() => {
-    if (!data || !regionId) return data;
+    if (!data) return data;
+    // One line per month for the company view: the region rows folded back together.
+    const byMonth = (xs: any[] | undefined) => {
+      const m = new Map<string, { month: string; people: number; paid: number }>();
+      for (const x of xs ?? []) {
+        const cur = m.get(x.month) ?? { month: x.month, people: 0, paid: 0 };
+        cur.people += Number(x.people ?? 0); cur.paid += Number(x.paid ?? 0);
+        m.set(x.month, cur);
+      }
+      return [...m.values()].sort((a, b) => a.month.localeCompare(b.month));
+    };
+    if (!regionId) return { ...data, salaries_paid: byMonth(data.salaries_paid) };
     const keep = (xs: any[] | undefined) => (xs ?? []).filter((x) => x.branch_id === regionId);
+    const pick = (xs: any[] | undefined, fallback: any) => (xs ? (xs.find((x) => x.branch_id === regionId) ?? { ...fallback, people: 0, net: 0, paid: 0, unpaid_people: 0, remaining: 0, owed: 0, overdue: 0, over_90: 0, clients_owing: 0, wht_awaiting: 0 }) : fallback);
     return { ...data, invoices_raised: keep(data.invoices_raised), invoices_delivered: keep(data.invoices_delivered), undelivered: keep(data.undelivered),
-      missing: keep(data.missing), receipts: keep(data.receipts), expenses: keep(data.expenses), late_clients: keep(data.late_clients), followups: keep(data.followups) };
+      missing: keep(data.missing), receipts: keep(data.receipts), expenses: keep(data.expenses), late_clients: keep(data.late_clients), followups: keep(data.followups),
+      salaries_paid: byMonth(keep(data.salaries_paid)),
+      payroll_status: data.payroll_status_by_branch ? { ...pick(data.payroll_status_by_branch, data.payroll_status), month: data.payroll_status?.month } : data.payroll_status,
+      receivables: pick(data.receivables_by_branch, data.receivables) };
   }, [data, regionId]);
   const regionName = regionId ? regions.find((r) => r.id === regionId)?.name ?? null : null;
   const sum = (xs: any[] | undefined, k = "amount") => (xs ?? []).reduce((s, x) => s + Number(x[k] ?? 0), 0);
