@@ -168,6 +168,12 @@ export const PK_BANKS: readonly { code: string | null; name: string; wallet?: tr
   { code: "UNIL", name: "United Bank (UBL)", lengths: [13, 16] },
   { code: null, name: "Zarai Taraqiati Bank (ZTBL)" },
   // Mobile wallets — no IBAN, account number is an 11-digit mobile (03XXXXXXXXX).
+  // Banks' own branchless (mobile-number) accounts, added 6 Nov 2026 — a guard
+  // paid into HBL Konnect (GHT-007) had no entry to pick.
+  { code: null, name: "HBL Konnect (Wallet)", wallet: true },
+  { code: null, name: "UBL Omni (Wallet)", wallet: true },
+  { code: null, name: "UPaisa (Wallet)", wallet: true },
+  { code: null, name: "Zindigi (Wallet)", wallet: true },
   { code: null, name: "Easypaisa (Wallet)", wallet: true },
   { code: null, name: "JazzCash (Wallet)", wallet: true },
   { code: null, name: "NayaPay (Wallet)", wallet: true },

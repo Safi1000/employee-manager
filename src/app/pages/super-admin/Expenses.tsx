@@ -1,3 +1,4 @@
+import { PK_BANKS } from "../../lib/validation";
 import { guardDisplayCode } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import CategoryPicker from "../../components/CategoryPicker";
@@ -4621,7 +4622,12 @@ export default function Expenses() {
                   onChange={(e) => setVendorBankName(e.target.value)}
                   className="w-full px-4 py-2 border border-border rounded-xl text-sm"
                   placeholder="e.g., Meezan Bank"
+                  list="vendor-bank-names"
                 />
+                {/* Suggestions from the same list the employee form offers; any other name can still be typed. */}
+                <datalist id="vendor-bank-names">
+                  {PK_BANKS.map((b) => <option key={b.name} value={b.name} />)}
+                </datalist>
               </div>
               <div>
                 <label className="block text-sm text-foreground mb-1">Branch Code</label>
