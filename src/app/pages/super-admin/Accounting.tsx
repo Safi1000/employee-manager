@@ -57,7 +57,6 @@ import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } f
 import AmountInWords from "../../components/AmountInWords";
 import { usePageState } from "../../lib/pageState";
 import { recordPaymentChecked } from "../../lib/paymentEntry";
-import PaymentChecksPanel from "../../components/PaymentChecksPanel";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -2581,8 +2580,6 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
 
       <div className={embed ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
         {/* 0640: cash waiting for its custodian, and payments that look entered twice. */}
-        {/* Receivables only (7 Nov 2026): these are client payments, nothing to do with payables. */}
-        {activeTab === "receivables" && <PaymentChecksPanel canEdit={hasPermission(profile, "invoices.edit")} />}
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />

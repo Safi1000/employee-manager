@@ -27,6 +27,7 @@ import { useOpenParam } from "../../lib/openParam";
 // Client receivables (0626): balance today, the client ledger by date, and
 // payments with the tax deducted entered in one form. Replaces the embedded
 // Banks & Ledgers month table.
+import PaymentChecksPanel from "../../components/PaymentChecksPanel";
 const ClientReceivables = lazy(() => import("../../components/ClientReceivables"));
 import Tabs from "../../components/Tabs";
 import StatCard from "../../components/StatCard";
@@ -1069,6 +1070,9 @@ export default function Invoices() {
 
         {tab === "receivables" && canViewReceivables && (
           <Suspense fallback={<div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading receivables…</div>}>
+            {/* 0640: cash waiting for its custodian and payments that look entered twice —
+                client payments, so they live with the receivables (moved here 7 Nov 2026). */}
+            <div className="mt-3"><PaymentChecksPanel canEdit={hasPermission(profile, "invoices.edit")} /></div>
             <ClientReceivables />
           </Suspense>
         )}
