@@ -3,6 +3,7 @@ import Modal from "./Modal";
 import Field from "./Field";
 import AddendumTable from "./AddendumTable";
 import ContractPosts from "./ContractPosts";
+import ContractDecisions from "./ContractDecisions";
 import ContractStatusBadge from "./ContractStatusBadge";
 import { formatDate } from "../lib/date";
 import {
@@ -42,6 +43,8 @@ export default function ContractViewModal({
   addendums,
   employees,
   onClose,
+  canEdit = false,
+  onChanged,
 }: {
   isOpen: boolean;
   contract: Contract | null;
@@ -51,6 +54,8 @@ export default function ContractViewModal({
   addendums: ContractAddendum[];
   employees: EmployeeAssignment[];
   onClose: () => void;
+  canEdit?: boolean;
+  onChanged?: () => void;
 }) {
   if (!contract) return null;
 
@@ -141,6 +146,8 @@ export default function ContractViewModal({
 
         {/* Posts — contract lines with every addendum in force applied, plus the annual increase (7 Nov 2026). */}
         <ContractPosts contract={contract} lines={lines} addendums={addendums} activeByLine={activeByLine} />
+        {/* 0647: rate reviews (annual / statutory, agreed / partial / refused) and ending the contract. */}
+        <ContractDecisions contract={contract} lines={lines} addendums={addendums} canEdit={canEdit} onChanged={onChanged} />
 
         {/* Addendums — same table the editor shows */}
         <div className="border border-border rounded-md overflow-hidden">

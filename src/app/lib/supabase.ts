@@ -1088,6 +1088,9 @@ export function effectiveRateByLine(
   for (const a of addendums) {
     if (a.change_type !== "RATE_CHANGE" || a.new_rate == null) continue;
     if (a.effective_from > onDate) continue;
+    // 0647: a rate change with no line but a SITE is for the guards added by
+    // addendum at that site, never for the contract's own lines.
+    if (!a.contract_line_id && a.site_id) continue;
     const targets = a.contract_line_id
       ? lines.filter((l) => l.id === a.contract_line_id)
       : a.category
@@ -1141,10 +1144,13 @@ export function effectiveBillingGroups(
   };
   for (const l of lines) add(l.category, rate.get(l.id) ?? (Number(l.unit_rate) || 0), Number(l.committed_count) || 0, true);
   const lineCategoryById = new Map(lines.map((l) => [l.id, l.category] as const));
-  const categoryRateChange = (cat: ContractLineCategory, after: string): number | null => {
+  // The rate for guards added by addendum: the latest line-less RATE_CHANGE for their
+  // category made on/after them — site-scoped to their site (0647) or category-wide.
+  const categoryRateChange = (cat: ContractLineCategory, after: string, siteId: string | null): number | null => {
     let best: { on: string; r: number } | null = null;
     for (const a of addendums) {
       if (a.change_type !== "RATE_CHANGE" || a.new_rate == null || a.contract_line_id || a.category !== cat) continue;
+      if (a.site_id && a.site_id !== siteId) continue;
       if (a.effective_from > onDate || a.effective_from < after) continue;
       if (!best || a.effective_from >= best.on) best = { on: a.effective_from, r: Number(a.new_rate) || 0 };
     }
@@ -1158,7 +1164,7 @@ export function effectiveBillingGroups(
     if (!cat) continue;
     let r: number;
     if (a.contract_line_id) r = rate.get(a.contract_line_id) ?? Number(lines.find((l) => l.id === a.contract_line_id)?.unit_rate ?? 0);
-    else if (delta > 0) r = categoryRateChange(cat, a.effective_from) ?? (Number((a as { unit_rate?: number | null }).unit_rate ?? 0) || Number(lines.find((l) => l.category === cat)?.unit_rate ?? 0));
+    else if (delta > 0) r = categoryRateChange(cat, a.effective_from, a.site_id ?? null) ?? (Number((a as { unit_rate?: number | null }).unit_rate ?? 0) || Number(lines.find((l) => l.category === cat)?.unit_rate ?? 0));
     else { const first = lines.find((l) => l.category === cat); r = first ? rate.get(first.id) ?? Number(first.unit_rate ?? 0) : 0; }
     add(cat, r, delta, false);
   }

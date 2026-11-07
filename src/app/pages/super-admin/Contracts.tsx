@@ -22,6 +22,7 @@ import ContractViewModal from "../../components/ContractViewModal";
 import ContractRenewModal from "../../components/ContractRenewModal";
 import ContractCyclesModal from "../../components/ContractCyclesModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
+import StatutoryChangeModal from "../../components/StatutoryChangeModal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import MobileCardList from "../../components/MobileCardList";
 import { formatDay } from "../../lib/date";
@@ -85,6 +86,9 @@ export default function Contracts() {
   const [clientFilter, setClientFilter] = usePageState("Contracts.clientFilter", "all");
 
   const [addOpen, setAddOpen] = useState(false);
+  // 0647: propose a statutory pass-through (EOBI, minimum wage) to many clients at once.
+  const [statutoryOpen, setStatutoryOpen] = useState(false);
+  const [statutoryNote, setStatutoryNote] = useState<string | null>(null);
   const [editingRow, setEditingRow] = useState<ContractRow | null>(null);
   const [viewingRow, setViewingRow] = useState<ContractRow | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
@@ -190,7 +194,11 @@ export default function Contracts() {
       if (clientFilter !== "all" && r.client_id !== clientFilter) return false;
       if (q && !r.client_name.toLowerCase().includes(q) && !r.contract_code.toLowerCase().includes(q)) return false;
       return true;
-    });
+    // 7 Nov 2026: live contracts first, ended ones at the bottom (order kept within each).
+    }).map((r, i) => ({ r, i })).sort((a, b) => {
+      const rank = (x: ContractRow) => (x.status === "active" ? 0 : x.status === "draft" ? 1 : x.status === "expired" ? 2 : 3);
+      return rank(a.r) - rank(b.r) || a.i - b.i;
+    }).map(({ r }) => r);
   }, [rows, search, statusFilter, clientFilter, regionId, clientBranchById, addendumsByContract]);
 
   const uploadDocument = async (
@@ -380,10 +388,15 @@ export default function Contracts() {
         subtitle="One client can have multiple contracts — each with per-category committed headcount and rates"
         actions={
           canEdit ? (
-            <Button variant="primary" size="md" onClick={() => setAddOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Contract
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="md" onClick={() => setStatutoryOpen(true)} title="Propose a statutory change (EOBI, minimum wage) to clients as a rate increase">
+                Statutory change
+              </Button>
+              <Button variant="primary" size="md" onClick={() => setAddOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Contract
+              </Button>
+            </div>
           ) : null
         }
       >
@@ -458,6 +471,7 @@ export default function Contracts() {
       <DetailSheet content={sheet} onClose={() => setSheet(null)} />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
+        {statutoryNote && <div className="mb-3 rounded-lg border border-success-200 bg-success-50 dark:bg-success-500/10 px-3 py-2 text-sm text-success-700 flex justify-between gap-2"><span>{statutoryNote}</span><button type="button" onClick={() => setStatutoryNote(null)} className="text-xs underline">dismiss</button></div>}
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />
@@ -645,8 +659,8 @@ export default function Contracts() {
                     activeGuards, looseActive, valuePerMonth, overStaffed,
                   } = deriveContract(row);
                   return (
-                    <tr key={row.id} className={`hover:bg-muted/50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
-                      <td className="px-4 py-3 text-xs font-mono text-foreground">{row.contract_code}</td>
+                    <tr key={row.id} className={`hover:bg-muted/50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""} ${row.status === "terminated" || row.status === "expired" ? "opacity-60" : ""}`}>
+                      <td className="px-4 py-3 text-xs font-mono text-foreground whitespace-nowrap">{row.contract_code}</td>
                       <td className="px-4 py-3 text-sm text-foreground">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-foreground">{row.client_name}</span>
@@ -658,11 +672,18 @@ export default function Contracts() {
                         </div>
                         <div className="text-xs text-muted-foreground font-mono">{row.client_code}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
                         {/* Period reads MM/DD/YYYY; the rest of the app is DD/MM/YYYY. */}
                         <div>{formatDay(row.start_date)}</div>
-                        {eff.isInfinite ? (
+                        {row.termination_date && row.status === "active" ? (
+                          // 0647: an ending recorded for a future day — the contract still runs until then.
+                          <div className="text-xs text-warning-700">→ ends {formatDay(row.termination_date)}</div>
+                        ) : row.status === "terminated" && row.termination_date ? (
+                          <div className="text-xs text-muted-foreground">→ ended {formatDay(row.termination_date)}</div>
+                        ) : !eff.isInfinite && !effEndDate ? (
+                          <div className="text-xs text-muted-foreground">→ No end date</div>
+                        ) : eff.isInfinite ? (
                           // No end date (base or via renewal) — can never read "ending soon".
                           <div className="text-xs text-muted-foreground">
                             → No end date
@@ -712,7 +733,7 @@ export default function Contracts() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right text-foreground">
+                      <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap tabular-nums">
                         PKR {valuePerMonth.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -859,6 +880,20 @@ export default function Contracts() {
         />
       )}
 
+      {statutoryOpen && (
+        <StatutoryChangeModal
+          isOpen={statutoryOpen}
+          onClose={() => setStatutoryOpen(false)}
+          contracts={rows.map((r) => ({
+            id: r.id, code: r.contract_code ?? "", client: r.client_name, type: r.contract_type,
+            active: r.status === "active",
+            guards: [...effectiveCommittedByCategory(linesByContract.get(r.id) ?? [], addendumsByContract.get(r.id) ?? [], today()).entries()]
+              .filter(([cat]) => isPersonnelCategory(cat)).reduce((t, [, n]) => t + n, 0),
+          }))}
+          onDone={(n) => setStatutoryNote(`${n} proposal${n === 1 ? "" : "s"} opened — record each client's answer on its contract (View → Decisions → Answer).`)}
+        />
+      )}
+
       {/* View — read-only overview */}
       {viewingRow && (
         <ContractViewModal
@@ -870,6 +905,8 @@ export default function Contracts() {
           addendums={addendumsByContract.get(viewingRow.id) ?? []}
           employees={employeesByContract.get(viewingRow.id) ?? []}
           onClose={() => setViewingRow(null)}
+          canEdit={canEdit}
+          onChanged={() => void loadAll()}
         />
       )}
     </>

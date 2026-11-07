@@ -76,7 +76,13 @@ export default function ContractPosts({ contract, lines, addendums, activeByLine
       const p = byKey.get(key)!;
       const pending = a.effective_from > now;
       if (!pending) p.delta += delta;
-      if (!p.rate) p.rate = Number((a as { unit_rate?: number | null }).unit_rate ?? 0);
+      if (p.fromAddendumOnly) {
+        // Added guards follow the latest site-scoped / category rate change made after them (0647).
+        const rc = addendums.filter((x) => x.change_type === "RATE_CHANGE" && !x.contract_line_id && x.new_rate != null && x.category === cat
+          && (!x.site_id || x.site_id === (a.site_id ?? null)) && x.effective_from >= a.effective_from && x.effective_from <= now)
+          .sort((x, y) => x.effective_from.localeCompare(y.effective_from)).pop();
+        p.rate = rc ? Number(rc.new_rate) : (p.rate || Number((a as { unit_rate?: number | null }).unit_rate ?? 0));
+      } else if (!p.rate) p.rate = Number((a as { unit_rate?: number | null }).unit_rate ?? 0);
       p.tags.push({ delta, date: a.effective_from, ref: a.reference ?? null, pending });
     }
     const name = (p: Post) => (p.siteId ? siteNames.get(p.siteId) ?? "…" : "No site");
