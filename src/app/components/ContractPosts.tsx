@@ -142,7 +142,7 @@ export default function ContractPosts({ contract, lines, addendums, activeByLine
                       <td className="px-3 py-2 text-foreground align-top">
                         {p.siteId ? siteNames.get(p.siteId) ?? "…" : <span className="text-muted-foreground">No site</span>}
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {p.fromAddendumOnly && <span className="rounded-full border border-brand-300 bg-brand-50 dark:bg-brand-500/10 px-1.5 text-[10px] font-medium text-brand-700 dark:text-brand-500">Added by addendum</span>}
+                          {p.fromAddendumOnly && <span className="rounded-full border border-brand-200 bg-brand-50 dark:bg-brand-500/10 px-1.5 text-[10px] font-medium text-brand-700 dark:text-brand-500">Added by addendum</span>}
                           {p.tags.map((t, i) => (
                             <span key={i} title={t.ref ?? undefined} className={`rounded-full border px-1.5 text-[10px] ${t.pending ? "border-dashed border-border text-muted-foreground" : t.delta > 0 ? "border-success-200 bg-success-50 text-success-700 dark:bg-success-500/10" : "border-danger-200 bg-danger-50 text-danger-700 dark:bg-danger-500/10"}`}>
                               {t.delta > 0 ? "+" : ""}{t.delta} {t.pending ? `from ${formatDate(t.date)}` : `· ${formatDate(t.date)}`}
@@ -177,7 +177,7 @@ export default function ContractPosts({ contract, lines, addendums, activeByLine
         )}
       </div>
 
-      <div className={`border rounded-md p-3 ${dueSoon ? "border-warning-300 bg-warning-50/50 dark:bg-warning-500/5" : "border-border"}`}>
+      <div className={`border rounded-md p-3 ${dueSoon ? "border-warning-200 bg-warning-50/50 dark:bg-warning-500/5" : "border-border"}`}>
         <div className="flex items-center gap-2 mb-2">
           <TrendingUp className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">Annual increase</span>
