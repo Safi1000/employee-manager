@@ -1387,7 +1387,7 @@ export default function Clients() {
                 <div key={row.id} className="group bg-card border border-border rounded-[18px] p-4 flex flex-col gap-3 hover:border-brand-500/60 transition-colors">
                   <div className="flex items-start justify-between gap-3">
                     <button type="button" onClick={() => { setDetailRow(row); setDetailTab("overview"); }} className="text-left min-w-0">
-                      <div className="font-display text-[17px] font-bold tracking-tight text-foreground group-hover:underline truncate">{row.name}</div>
+                      <div className="font-display text-[17px] font-bold tracking-tight text-foreground group-hover:underline line-clamp-2 leading-tight" title={row.name}>{row.name}</div>
                       <div className="text-xs text-muted-foreground mt-0.5 truncate"><span className="font-ledger">{row.client_code}</span> · {row.industry ?? "No industry"} · {branchName}</div>
                     </button>
                     <span className="flex items-center gap-1.5 flex-shrink-0">
