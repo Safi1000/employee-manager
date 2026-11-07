@@ -60,7 +60,20 @@ function Hit({ onClick, children, className = "", label }: { onClick: () => void
   );
 }
 
-export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | null }) {
+/**
+ * NO MONEY ON THE DASHBOARD (Shayan, 7 Nov 2026 — DECIDED): "sometimes the
+ * dashboard is open and people pass by, so I don't want them to see" billing,
+ * receipts, bank and cash balances, receivables, payroll amounts, margins or
+ * partner shares. Those widgets and the band's money tiles are not rendered at
+ * all (not blurred — a blur can be undone by anyone at the screen); the same
+ * figures stay on the Finance pages behind their permissions. To bring one back,
+ * remove its key from MONEY_WIDGETS / set SHOW_MONEY — a decision, not a toggle.
+ */
+const SHOW_MONEY = false;
+const MONEY_WIDGETS = new Set(["month_landing", "payday", "cash_month", "client_map", "payroll_last", "receivables_ladder", "region_cards", "partner_pot"]);
+
+export default function CommandDesign({ d: dIn, c }: { d: DashData; c: CommandData | null }) {
+  const d = SHOW_MONEY ? dIn : { ...dIn, show: (k: string) => !MONEY_WIDGETS.has(k) && dIn.show(k as never) } as DashData;
   const [sheet, setSheet] = useState<DetailContent | null>(null);
   const now = new Date();
   const dayOfMonth = now.getDate();
@@ -277,6 +290,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
               </span>
             </Hit>
           )}
+          {SHOW_MONEY && (
           <div className="flex-[999_1_420px] grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
             {(d.can.invoices || d.can.reports) && billed != null && (
               <BandStat to="/app/invoices" label={`Billed for ${billLabel}`} value={mil(billed)}
@@ -288,6 +302,7 @@ export default function CommandDesign({ d, c }: { d: DashData; c: CommandData | 
             {tally && <BandStat to="/app/accounting" label="Banks tallied" value={tally.value} sub={tally.sub} tone={tally.tone} title={tally.tip} />}
             {d.can.receivables && ar && <BandStat to="/app/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% over 90 days or opening`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
+          )}
         </div>
 
         {attention.length > 0 && (
