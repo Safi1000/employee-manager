@@ -43,6 +43,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Days-out values that should trigger a contract-end alert: two weeks, one week,
 // three days and one day before the contract ends. Must match CONTRACT_NOTICE_DAYS
 // in Compliance.tsx, which renders the same windows in the calendar.
+const INCREASE_ALERT_DAYS = [30, 14, 7, 1] as const;
 const CONTRACT_ALERT_DAYS = [14, 7, 3, 1];
 
 // Fallback sender if the company has not set sender_email. Resend allows this
@@ -68,7 +69,7 @@ type AlertItem = {
   category: string;
   daysRemaining: number;
   priority?: string | null;
-  source: "important_date" | "contract_end" | "invoice_reminder" | "attendance_reminder";
+  source: "important_date" | "contract_end" | "contract_increase" | "invoice_reminder" | "attendance_reminder";
 };
 
 /** A threshold notice that must be recorded — but only once the email is away. */
@@ -224,6 +225,46 @@ async function collectAlerts(
       category: "Contract",
       daysRemaining: days,
       source: "contract_end",
+    });
+    if (useLog) toLog.push({ alert_key: alertKey, threshold });
+  }
+
+  // ── 2b. Annual contract increases (7 Nov 2026) ───────────────────────────
+  // Each active contract's anniversary of its start date is when the annual
+  // increase falls due ("at least 10% annual increase" on GGS's contracts).
+  // Announced at 30 / 14 / 7 / 1 days, once per threshold per anniversary (the
+  // key carries the date, so next year announces again) — and not at all once
+  // a rate-change addendum is recorded within 45 days of that anniversary.
+  const { data: incContracts } = await db
+    .from("contracts")
+    .select("id, contract_code, start_date, annual_escalation_pct, status, clients:client_id(name), contract_addendums(change_type, effective_from)")
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .not("start_date", "is", null);
+  for (const c of incContracts ?? []) {
+    const start = c.start_date as string;
+    const [sy, sm, sd] = start.split("-").map(Number);
+    const [ty] = today.split("-").map(Number);
+    let annivY = ty;
+    let anniv = `${annivY}-${String(sm).padStart(2, "0")}-${String(sd).padStart(2, "0")}`;
+    if (anniv < today) { annivY += 1; anniv = `${annivY}-${String(sm).padStart(2, "0")}-${String(sd).padStart(2, "0")}`; }
+    if (annivY <= sy) continue;   // the first year has no increase yet
+    const days = diffDaysUTC(anniv, today);
+    const threshold = [...INCREASE_ALERT_DAYS].sort((a, b) => a - b).find((t) => days <= t);
+    if (threshold === undefined) continue;
+    const recorded = ((c.contract_addendums ?? []) as { change_type: string; effective_from: string }[])
+      .some((a) => a.change_type === "RATE_CHANGE" && Math.abs(diffDaysUTC(a.effective_from, anniv)) <= 45);
+    if (recorded) continue;
+    const alertKey = `increase:${c.id}:${anniv}`;
+    if (useLog && alreadySent.has(`${alertKey}|${threshold}`)) continue;
+    const clientName = (c.clients as { name?: string } | null)?.name ?? "Client";
+    const code = c.contract_code ? ` (${c.contract_code})` : "";
+    const pct = Number(c.annual_escalation_pct ?? 0);
+    alerts.push({
+      title: `${clientName}${code} — annual increase due ${anniv}${pct > 0 ? ` (${pct}% per contract)` : ""}; none recorded yet`,
+      category: "Contract increase",
+      daysRemaining: days,
+      source: "contract_increase",
     });
     if (useLog) toLog.push({ alert_key: alertKey, threshold });
   }
