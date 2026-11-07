@@ -1114,10 +1114,30 @@ export function effectiveContractLinesValue(
   onDate: string,
 ): number {
   const rate = effectiveRateByLine(lines, addendums, onDate);
-  return lines.reduce(
+  const base = lines.reduce(
     (sum, l) => sum + (Number(l.committed_count) || 0) * (rate.get(l.id) ?? (Number(l.unit_rate) || 0)),
     0,
   );
+  // 7 Nov 2026: HEADCOUNT addendums count too. This applied rate changes only,
+  // so Bank of AJK read 52 × 53,151 = 2,763,852 after 22 guards had been added
+  // by addendum — while the headcount beside it (effectiveCommittedByCategory)
+  // already included them. An added guard is valued at the addendum's own rate;
+  // a reduction at the rate of the line it cuts (else the first line of its
+  // category). The same delta rule as the headcount, so the two cannot disagree.
+  const lineCategoryById = new Map(lines.map((l) => [l.id, l.category] as const));
+  let added = 0;
+  for (const a of addendums) {
+    if (a.effective_from > onDate) continue;
+    const delta = addendumHeadcountDelta(a);
+    if (!delta) continue;
+    const cat = addendumCategory(a, lineCategoryById);
+    const lineRate = a.contract_line_id ? rate.get(a.contract_line_id) ?? Number(lines.find((l) => l.id === a.contract_line_id)?.unit_rate ?? 0) : 0;
+    const catLine = lines.find((l) => l.category === cat);
+    const catRate = catLine ? rate.get(catLine.id) ?? Number(catLine.unit_rate ?? 0) : 0;
+    const r = Number((a as { unit_rate?: number | null }).unit_rate ?? 0) || lineRate || catRate;
+    added += delta * r;
+  }
+  return Math.max(0, base + added);
 }
 
 /**
