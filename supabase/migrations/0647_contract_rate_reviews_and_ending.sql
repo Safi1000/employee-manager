@@ -78,6 +78,11 @@ alter table public.contract_rate_reviews enable row level security;
 drop policy if exists rate_reviews_read on public.contract_rate_reviews;
 create policy rate_reviews_read on public.contract_rate_reviews for select
   using (company_id = (select public.current_company_id()) or (select public.is_ssa_unscoped()));
+-- Money-shaped (amounts asked and agreed), so read-gated like the other money tables:
+-- only a login that may see contracts may see their rate reviews.
+drop policy if exists perm_read on public.contract_rate_reviews;
+create policy perm_read on public.contract_rate_reviews as restrictive for select
+  using ((select public.has_perm('contracts.view')) or (select public.has_perm('contracts.edit')));
 revoke insert, update, delete on public.contract_rate_reviews from anon, authenticated;
 grant select on public.contract_rate_reviews to authenticated;
 
@@ -113,6 +118,12 @@ declare
   v_new numeric;
 begin
   perform public.require_perm('contracts.edit');
+  -- tenant guard [resolved], before anything that could tell a caller whether another company's row exists
+  if p_review_id is not null then
+    perform public.assert_same_company((select company_id from public.contract_rate_reviews where id = p_review_id));
+  else
+    perform public.assert_same_company((select company_id from public.contracts where id = p_contract_id));
+  end if;
   if p_review_id is not null then
     select * into r from public.contract_rate_reviews where id = p_review_id;
     if r.id is null then raise exception 'That review does not exist.'; end if;
@@ -249,6 +260,7 @@ as $$
 declare k public.contracts; v_notice int; v_given int; v_short int; v_posted int; v_n int;
 begin
   perform public.require_perm('contracts.edit');
+  perform public.assert_same_company((select company_id from public.contracts where id = p_contract_id));
   select * into k from public.contracts where id = p_contract_id;
   if k.id is null then raise exception 'That contract does not exist.'; end if;
   -- tenant guard [resolved]: owning company from the contract row
