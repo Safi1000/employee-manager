@@ -237,7 +237,7 @@ async function collectAlerts(
   // a rate-change addendum is recorded within 45 days of that anniversary.
   const { data: incContracts } = await db
     .from("contracts")
-    .select("id, contract_code, start_date, annual_escalation_pct, status, clients:client_id(name), contract_addendums(change_type, effective_from)")
+    .select("id, contract_code, start_date, annual_escalation_pct, status, clients:client_id(name), contract_addendums(change_type, effective_from), contract_rate_reviews(kind, due_on, outcome)")
     .eq("company_id", companyId)
     .eq("status", "active")
     .not("start_date", "is", null);
@@ -252,8 +252,12 @@ async function collectAlerts(
     const days = diffDaysUTC(anniv, today);
     const threshold = [...INCREASE_ALERT_DAYS].sort((a, b) => a - b).find((t) => days <= t);
     if (threshold === undefined) continue;
+    // 0647: a decided annual review (agreed, less, refused or deferred) near this
+    // anniversary also ends the reminders — a refusal is an answer, not a silence.
     const recorded = ((c.contract_addendums ?? []) as { change_type: string; effective_from: string }[])
-      .some((a) => a.change_type === "RATE_CHANGE" && Math.abs(diffDaysUTC(a.effective_from, anniv)) <= 45);
+      .some((a) => a.change_type === "RATE_CHANGE" && Math.abs(diffDaysUTC(a.effective_from, anniv)) <= 45)
+      || ((c.contract_rate_reviews ?? []) as { kind: string; due_on: string; outcome: string }[])
+        .some((r) => r.kind === "annual" && r.outcome !== "proposed" && Math.abs(diffDaysUTC(r.due_on, anniv)) <= 45);
     if (recorded) continue;
     const alertKey = `increase:${c.id}:${anniv}`;
     if (useLog && alreadySent.has(`${alertKey}|${threshold}`)) continue;
