@@ -44,7 +44,7 @@ async function contractedGuards(clientId: string, month: string): Promise<number
   const end = `${start.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
   const { data } = await supabase
     .from("contracts")
-    .select("id, status, start_date, end_date, termination_date, number_of_guards, contract_lines(committed_count)")
+    .select("id, status, start_date, end_date, termination_date, number_of_guards, contract_lines(committed_count), contract_addendums(change_type, count_delta, effective_from)")
     .eq("client_id", clientId);
   const live = ((data ?? []) as any[]).filter((c) =>
     c.status !== "draft" && c.start_date <= end && (!c.end_date || c.end_date >= start) && (!c.termination_date || c.termination_date >= start));
@@ -52,7 +52,11 @@ async function contractedGuards(clientId: string, month: string): Promise<number
   return live.reduce((t, c) => {
     const lines = (c.contract_lines ?? []) as { committed_count: number | null }[];
     const committed = lines.reduce((s, l) => s + Number(l.committed_count ?? 0), 0);
-    return t + (committed > 0 ? committed : Number(c.number_of_guards ?? 0));
+    // 7 Nov 2026: headcount addendums in force by the month's end (Bank of AJK +21 from 1 Nov).
+    const delta = ((c.contract_addendums ?? []) as { change_type: string; count_delta: number | null; effective_from: string }[])
+      .filter((a) => a.effective_from <= end)
+      .reduce((s, a) => s + (a.change_type === "ADD_HEADCOUNT" ? Number(a.count_delta ?? 0) : a.change_type === "REDUCE_HEADCOUNT" ? -Number(a.count_delta ?? 0) : 0), 0);
+    return t + (committed > 0 ? committed : Number(c.number_of_guards ?? 0)) + delta;
   }, 0);
 }
 

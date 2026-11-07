@@ -74,13 +74,16 @@ export default function StaffReportButton({ size = "md" }: { size?: "sm" | "md" 
       const contracted = new Map<string, number>();
       if (clientIds.length) {
         const { data } = await supabase.from("contracts")
-          .select("client_id, status, end_date, termination_date, number_of_guards, contract_lines(committed_count), client:client_id(name)")
+          .select("client_id, status, end_date, termination_date, number_of_guards, contract_lines(committed_count), contract_addendums(change_type, count_delta, effective_from), client:client_id(name)")
           .in("client_id", clientIds).eq("status", "active");
         const today = new Date().toISOString().slice(0, 10);
         for (const c of (data ?? []) as any[]) {
           if ((c.end_date && c.end_date < today) || (c.termination_date && c.termination_date < today)) continue;
           const lines = (c.contract_lines ?? []).reduce((t: number, l: any) => t + Number(l.committed_count ?? 0), 0);
-          const n = lines > 0 ? lines : Number(c.number_of_guards ?? 0);
+          // Headcount addendums in force today count too (7 Nov 2026).
+          const delta = (c.contract_addendums ?? []).filter((a: any) => a.effective_from <= today)
+            .reduce((t: number, a: any) => t + (a.change_type === "ADD_HEADCOUNT" ? Number(a.count_delta ?? 0) : a.change_type === "REDUCE_HEADCOUNT" ? -Number(a.count_delta ?? 0) : 0), 0);
+          const n = (lines > 0 ? lines : Number(c.number_of_guards ?? 0)) + delta;
           const name = c.client?.name;
           if (name && n) contracted.set(name, (contracted.get(name) ?? 0) + n);
         }
