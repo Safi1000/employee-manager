@@ -82,6 +82,10 @@ export default function CommandDesign({ d: dIn, c }: { d: DashData; c: CommandDa
 
   // ---- right now ----
   const sites = c?.sites ?? null;
+  // Today's marks across every client (no money) — for the attendance tile.
+  const dayTotals = (sites ?? []).reduce((t, x) => ({ present: t.present + x.present, leave: t.leave + x.onLeave, absent: t.absent + x.absent }), { present: 0, leave: 0, absent: 0 });
+  const dayMarked = dayTotals.present + dayTotals.leave + dayTotals.absent;
+  const dayPct = dayMarked ? Math.round((dayTotals.present / dayMarked) * 1000) / 10 : d.attendanceTodayPct;
   // Unmarked clients are left out of the cover figure entirely: their guards
   // may well be on post, the register just has not been filled in yet.
   const markedSites = sites ? sites.filter((x) => x.marked > 0) : [];
@@ -303,6 +307,37 @@ export default function CommandDesign({ d: dIn, c }: { d: DashData; c: CommandDa
             {d.can.receivables && ar && <BandStat to="/app/invoices?tab=receivables" label="Owed to us" value={mil(ar.total)} sub={`${Math.round(ar90 * 100)}% over 90 days or opening`} tone={ar90 > 0.25 ? "bad" : undefined} />}
           </div>
           )}
+          {/* No money (7 Nov 2026): the band carries operations instead — counts and percentages only. */}
+          {!SHOW_MONEY && (
+          <div className="flex-[999_1_420px] grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
+            {(d.can.attendance || d.can.roster) && (
+              // The same day as the counts: the latest marked day (c.asOf), not "today", which is
+              // 0% until anyone marks it — that showed "0%" beside P 321 · L 28 · A 2.
+              <BandStat to="/app/attendance" label={c?.asOf ? `Attendance · ${new Date(`${c.asOf}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "Attendance"}
+                value={`${dayPct}%`}
+                sub={sites && dayMarked ? `P ${fmt(dayTotals.present)} · L ${fmt(dayTotals.leave)} · A ${fmt(dayTotals.absent)}` : "not marked yet"}
+                tone={dayMarked > 0 && dayPct < 90 ? "bad" : undefined} />
+            )}
+            {d.can.employees && c?.workforce && (
+              <BandStat to="/app/employees" label="Workforce" value={fmt(c.workforce.active)} sub={`+${c.workforce.joined} joined · ${c.workforce.left} left this month`} />
+            )}
+            {(d.can.attendance || d.can.roster) && c?.freeRelievers && (
+              <BandStat to="/app/attendance" label="Relievers free" value={fmt(c.freeRelievers.length)} sub="on the books, not posted on the last marked day" />
+            )}
+            {(d.can.invoices || d.can.reports) && c?.expectedClients != null && (
+              <BandStat to="/app/invoices" label={`Invoices for ${billLabel}`} value={`${c.billedClients ?? 0} of ${c.expectedClients}`} sub="contracted clients invoiced"
+                tone={c.notBilled && c.notBilled.length > 0 && dayOfMonth > 10 ? "bad" : undefined} />
+            )}
+            {d.can.payroll && c?.payrollLast && (
+              <BandStat to="/app/payroll" label={`Salaries · ${billLabel}`} value={`${c.payrollLast.paidSlips} of ${c.payrollLast.slips}`} sub="payslips paid"
+                tone={c.payrollLast.paidSlips < c.payrollLast.slips && dayOfMonth > 10 ? "bad" : undefined} />
+            )}
+            {d.can.compliance && (
+              <BandStat to="/app/compliance" label="Incidents & licences" value={fmt(d.openIncidents)} sub={`open incidents · ${d.licencesOverdue} licences overdue, ${d.licencesExpiring} expiring`}
+                tone={d.licencesOverdue > 0 ? "bad" : undefined} />
+            )}
+          </div>
+          )}
         </div>
 
         {attention.length > 0 && (
@@ -360,6 +395,58 @@ export default function CommandDesign({ d: dIn, c }: { d: DashData; c: CommandDa
         )}
 
         <div className="flex-[1_1_340px] min-w-0 flex flex-col gap-4 md:gap-5">
+          {/* No money (7 Nov 2026): attendance, payroll progress and what is coming up fill this column instead. */}
+          {!SHOW_MONEY && (d.can.attendance || d.can.roster) && d.attendanceTrend.length > 0 && (() => {
+            const pts = d.attendanceTrend.slice(-14);
+            const max = Math.max(1, ...pts.map((x) => x.present + x.leave + x.absent));
+            return (
+              <Card kicker="Attendance · last 7 days" title={`${dayPct}% present${c?.asOf ? ` on ${new Date(`${c.asOf}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}`}>
+                <div className="flex items-end gap-1 h-28">
+                  {pts.map((x) => {
+                    const tot = x.present + x.leave + x.absent;
+                    return (
+                      <div key={x.date} className="flex-1 h-full flex flex-col justify-end gap-px" title={`${x.label}: present ${x.present}, leave ${x.leave}, absent ${x.absent}`}>
+                        <div className="bg-down rounded-sm" style={{ height: `${(x.absent / max) * 100}%` }} />
+                        <div className="bg-warning-500 rounded-sm" style={{ height: `${(x.leave / max) * 100}%` }} />
+                        <div className="bg-up rounded-sm" style={{ height: `${(x.present / max) * 100}%`, minHeight: tot ? 2 : 0 }} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-[11px] text-muted-foreground"><span>{pts[0]?.label}</span><span>{pts[pts.length - 1]?.label}</span></div>
+                <div className="flex gap-3 text-xs text-muted-foreground"><Legend color="#3d6b3a">Present</Legend><Legend color="#e9a73c">Leave</Legend><Legend color="#a3392a">Absent</Legend></div>
+              </Card>
+            );
+          })()}
+          {!SHOW_MONEY && d.can.payroll && c?.payrollLast && (() => {
+            const p = c.payrollLast;
+            const pctPaid = p.slips ? p.paidSlips / p.slips : 0;
+            return (
+              <Card kicker={`Payroll · ${billLabel}`} title={p.paidSlips >= p.slips ? "Every salary is paid" : `${p.slips - p.paidSlips} still to pay`}>
+                <div className="h-2.5 rounded-full bg-muted overflow-hidden"><div className="h-full bg-up" style={{ width: `${Math.round(pctPaid * 100)}%` }} /></div>
+                <div className="flex gap-4 text-sm">
+                  <MiniFig label="Payslips" value={fmt(p.slips)} />
+                  <MiniFig label="Paid" value={fmt(p.paidSlips)} tone={p.paidSlips >= p.slips ? "good" : undefined} />
+                  <MiniFig label="Left" value={fmt(p.slips - p.paidSlips)} tone={p.slips > p.paidSlips && dayOfMonth > 10 ? "bad" : undefined} />
+                </div>
+              </Card>
+            );
+          })()}
+          {!SHOW_MONEY && (d.contractsEnding.length > 0 || d.recentIncidents.length > 0 || (c?.notBilled?.length ?? 0) > 0) && (
+            <Card kicker="Coming up" title="Needs a decision">
+              <ul className="text-sm space-y-1.5">
+                {d.contractsEnding.slice(0, 4).map((k) => (
+                  <li key={k.id} className="flex justify-between gap-2"><Link to="/app/contracts" className="text-foreground hover:underline truncate">{k.client_name} · contract ends</Link><span className={`font-ledger text-xs shrink-0 ${k.days_left <= 14 ? "text-down font-semibold" : "text-muted-foreground"}`}>{k.days_left < 0 ? `${-k.days_left}d ago` : `in ${k.days_left}d`}</span></li>
+                ))}
+                {(c?.notBilled ?? []).slice(0, 4).map((n) => (
+                  <li key={n.clientId} className="flex justify-between gap-2"><Link to="/app/invoices" className="text-foreground hover:underline truncate">{n.name} · not invoiced for {billLabel}</Link><span className="font-ledger text-xs text-muted-foreground shrink-0">{n.heads} guards</span></li>
+                ))}
+                {d.recentIncidents.slice(0, 3).map((i) => (
+                  <li key={i.id} className="flex justify-between gap-2"><Link to="/app/field" className="text-foreground hover:underline truncate">{i.category} · {i.severity}</Link><span className="font-ledger text-xs text-muted-foreground shrink-0">{i.status}</span></li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {d.show("month_landing") && (d.can.invoices || d.can.reports) && billed != null && (() => {
             const exp = c?.expectedClients ?? 0, done = c?.billedClients ?? 0;
             const pctDone = exp ? done / exp : 1;

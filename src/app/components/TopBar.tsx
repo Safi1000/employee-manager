@@ -17,7 +17,10 @@ export default function TopBar({ children }: { children?: ReactNode }) {
   return (
     // Same paper as the page, no rule: the band below is the page's frame, so
     // the bar reads as part of the canvas rather than a second header.
-    <div className="flex-shrink-0 bg-background px-2 md:px-8 pt-1.5 md:pt-3 flex items-center gap-2 md:gap-3 min-h-12">
+    // 7 Nov 2026: transparent, not bg-background — the shell around the page is
+    // bg-muted/50, so a bg-background bar drew a darker strip with a hard edge
+    // under it ("the weird black line").
+    <div className="flex-shrink-0 bg-transparent px-2 md:px-8 pt-1.5 md:pt-3 flex items-center gap-2 md:gap-3 min-h-12">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent("sidebar:open"))}

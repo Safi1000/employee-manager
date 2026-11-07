@@ -165,7 +165,18 @@ export default function SuperAdminDashboard() {
           can.employees ? withRegion(supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
           can.attendance || can.roster ? withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", today), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
           can.attendance || can.roster ? withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", yesterday), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
-          can.attendance || can.roster ? withRegion(supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
+          // 7 Nov 2026: paged — a week is ~2,400 rows, and one request stops at 1,000,
+          // so the trend showed the first three days and zero after them.
+          can.attendance || can.roster ? (async () => {
+            const all: { attendance_date: string; status: string }[] = [];
+            for (let from = 0; ; from += 1000) {
+              const res = await withRegion(supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today).order("attendance_date").order("id").range(from, from + 999), regionId);
+              if (res.error) return { data: null, error: res.error };
+              all.push(...((res.data ?? []) as { attendance_date: string; status: string }[]));
+              if (!res.data || res.data.length < 1000) break;
+            }
+            return { data: all, error: null };
+          })() : Promise.resolve({ data: [], error: null, count: 0 } as never),
           can.expenses ? withRegion(supabase.from("expenses").select("amount, expense_date, category_id").gte("expense_date", mStart).lte("expense_date", mEnd), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
           can.expenses ? withRegion(supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
           can.payroll ? withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", periodMonthKey).eq("disbursed", true), regionId) : Promise.resolve({ data: [], error: null, count: 0 } as never),
