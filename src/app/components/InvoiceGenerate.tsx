@@ -16,6 +16,7 @@ import {
   DEFAULT_INVOICE_SETTINGS,
   effectiveCommittedByCategory,
   effectiveRateByLine,
+  effectiveBillingGroups,
   effectiveContractEnd,
   computeInvoiceTaxes,
   financialYearLabel,
@@ -436,26 +437,28 @@ export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => vo
       }
       const conLines = lines.filter((l) => l.contract_id === con.id);
       const conAdds = addendums.filter((a) => a.contract_id === con.id);
-      const eff = effectiveCommittedByCategory(conLines, conAdds, end);
-      // Rate-change addendums effective by the period end replace the base line rate.
-      const effRate = effectiveRateByLine(conLines, conAdds, end);
+      // 7 Nov 2026: one draft line per category and rate, from the shared billing
+      // groups (lines + every headcount addendum in force + rate changes). It used to
+      // bill each line's ORIGINAL count whenever a category had several lines, so a
+      // multi-site contract's addendums (Bank of AJK +22) were never invoiced.
+      const groups = effectiveBillingGroups(conLines, conAdds, end);
       const draftLines: DraftLine[] = [];
-      for (const l of conLines) {
-        const single = conLines.filter((x) => x.category === l.category).length === 1;
-        // §10.4: Variable clients — the guard headcount line's quantity comes from
-        // verified attendance (avg guards on ground), not the flat committed count.
-        const attributed = group === "VARIABLE" && l.category === "GUARD" ? attQty.get(client.id) : undefined;
-        const qty = attributed != null && attributed > 0
-          ? attributed
-          : single && eff.get(l.category) != null ? eff.get(l.category)! : l.committed_count;
-        const rate = effRate.get(l.id) ?? l.unit_rate;
-        if (qty <= 0 && rate <= 0) continue;
+      for (const g of groups) {
+        const sameCat = groups.filter((x) => x.category === g.category);
+        const lineLike = conLines.find((l) => l.category === g.category && (effectiveRateByLine(conLines, conAdds, end).get(l.id) ?? l.unit_rate) === g.rate)
+          ?? conLines.find((l) => l.category === g.category);
+        // §10.4: Variable clients — the guard headcount comes from verified attendance
+        // (avg guards on ground), not the committed count; only when one guard rate applies.
+        const attributed = group === "VARIABLE" && g.category === "GUARD" && sameCat.length === 1 ? attQty.get(client.id) : undefined;
+        const qty = attributed != null && attributed > 0 ? attributed : g.qty;
+        if (qty <= 0 && g.rate <= 0) continue;
+        const base = lineLike?.label ?? CONTRACT_LINE_CATEGORY_LABEL[g.category];
         draftLines.push({
-          category: l.category,
-          label: l.label ?? CONTRACT_LINE_CATEGORY_LABEL[l.category],
+          category: g.category,
+          label: sameCat.length > 1 ? `${base} @ ${g.rate.toLocaleString()}` : base,
           quantity: String(qty),
-          unit_rate: String(rate),
-          taxable: l.taxable,
+          unit_rate: String(g.rate),
+          taxable: lineLike?.taxable ?? true,
         });
       }
       if (draftLines.length === 0) return null;

@@ -1108,36 +1108,70 @@ export function effectiveRateByLine(
 // Contract monthly value with rate-change addendums applied (base committed count ×
 // the effective per-line rate on the date). Use this instead of contractLinesValue
 // wherever the CURRENT billable value should reflect signed rate changes.
-export function effectiveContractLinesValue(
+/**
+ * WHAT A CONTRACT BILLS ON A DATE (7 Nov 2026) — one shared answer for the
+ * invoice draft, the contract's monthly value and the contract page.
+ *
+ * Guards in force grouped by category and rate:
+ *   - each line's committed count at its effective rate (rate-change addendums applied);
+ *   - plus every ADD_HEADCOUNT addendum in force — on its line's rate when it names a
+ *     line, else on the latest category-wide RATE_CHANGE made on/after it, else on
+ *     the addendum's own unit_rate (Bank of AJK's 21 branches from 1 Nov);
+ *   - minus every REDUCE_HEADCOUNT in force at the rate of the line it cuts (else
+ *     the category's first line).
+ *
+ * The invoice draft used to bill each line's ORIGINAL count whenever a contract
+ * had more than one line in a category — so Bank of AJK (28 site lines) would have
+ * been invoiced for 52 guards, not 74.
+ */
+export type BillingGroup = { category: ContractLineCategory; rate: number; qty: number; fromLines: number; fromAddendums: number };
+export function effectiveBillingGroups(
   lines: ContractLine[],
   addendums: ContractAddendum[],
   onDate: string,
-): number {
+): BillingGroup[] {
   const rate = effectiveRateByLine(lines, addendums, onDate);
-  const base = lines.reduce(
-    (sum, l) => sum + (Number(l.committed_count) || 0) * (rate.get(l.id) ?? (Number(l.unit_rate) || 0)),
-    0,
-  );
-  // 7 Nov 2026: HEADCOUNT addendums count too. This applied rate changes only,
-  // so Bank of AJK read 52 × 53,151 = 2,763,852 after 22 guards had been added
-  // by addendum — while the headcount beside it (effectiveCommittedByCategory)
-  // already included them. An added guard is valued at the addendum's own rate;
-  // a reduction at the rate of the line it cuts (else the first line of its
-  // category). The same delta rule as the headcount, so the two cannot disagree.
+  const groups = new Map<string, BillingGroup>();
+  const add = (category: ContractLineCategory, r: number, n: number, fromLine: boolean) => {
+    const key = `${category}|${r}`;
+    const g = groups.get(key) ?? { category, rate: r, qty: 0, fromLines: 0, fromAddendums: 0 };
+    g.qty += n;
+    if (fromLine) g.fromLines += n; else g.fromAddendums += n;
+    groups.set(key, g);
+  };
+  for (const l of lines) add(l.category, rate.get(l.id) ?? (Number(l.unit_rate) || 0), Number(l.committed_count) || 0, true);
   const lineCategoryById = new Map(lines.map((l) => [l.id, l.category] as const));
-  let added = 0;
+  const categoryRateChange = (cat: ContractLineCategory, after: string): number | null => {
+    let best: { on: string; r: number } | null = null;
+    for (const a of addendums) {
+      if (a.change_type !== "RATE_CHANGE" || a.new_rate == null || a.contract_line_id || a.category !== cat) continue;
+      if (a.effective_from > onDate || a.effective_from < after) continue;
+      if (!best || a.effective_from >= best.on) best = { on: a.effective_from, r: Number(a.new_rate) || 0 };
+    }
+    return best ? best.r : null;
+  };
   for (const a of addendums) {
     if (a.effective_from > onDate) continue;
     const delta = addendumHeadcountDelta(a);
     if (!delta) continue;
     const cat = addendumCategory(a, lineCategoryById);
-    const lineRate = a.contract_line_id ? rate.get(a.contract_line_id) ?? Number(lines.find((l) => l.id === a.contract_line_id)?.unit_rate ?? 0) : 0;
-    const catLine = lines.find((l) => l.category === cat);
-    const catRate = catLine ? rate.get(catLine.id) ?? Number(catLine.unit_rate ?? 0) : 0;
-    const r = Number((a as { unit_rate?: number | null }).unit_rate ?? 0) || lineRate || catRate;
-    added += delta * r;
+    if (!cat) continue;
+    let r: number;
+    if (a.contract_line_id) r = rate.get(a.contract_line_id) ?? Number(lines.find((l) => l.id === a.contract_line_id)?.unit_rate ?? 0);
+    else if (delta > 0) r = categoryRateChange(cat, a.effective_from) ?? (Number((a as { unit_rate?: number | null }).unit_rate ?? 0) || Number(lines.find((l) => l.category === cat)?.unit_rate ?? 0));
+    else { const first = lines.find((l) => l.category === cat); r = first ? rate.get(first.id) ?? Number(first.unit_rate ?? 0) : 0; }
+    add(cat, r, delta, false);
   }
-  return Math.max(0, base + added);
+  return [...groups.values()].filter((g) => g.qty !== 0).map((g) => ({ ...g, qty: Math.max(0, g.qty) }));
+}
+
+export function effectiveContractLinesValue(
+  lines: ContractLine[],
+  addendums: ContractAddendum[],
+  onDate: string,
+): number {
+  // The billing groups ARE the value: one rule for the invoice and for the figure shown.
+  return effectiveBillingGroups(lines, addendums, onDate).reduce((t, g) => t + g.qty * g.rate, 0);
 }
 
 /**

@@ -20,7 +20,7 @@ export default function TopBar({ children }: { children?: ReactNode }) {
     // 7 Nov 2026: transparent, not bg-background — the shell around the page is
     // bg-muted/50, so a bg-background bar drew a darker strip with a hard edge
     // under it ("the weird black line").
-    <div className="flex-shrink-0 bg-transparent px-2 md:px-8 pt-1.5 md:pt-3 flex items-center gap-2 md:gap-3 min-h-12">
+    <div className="relative z-10 flex-shrink-0 bg-transparent px-2 md:px-8 pt-1.5 md:pt-3 flex items-center gap-2 md:gap-3 min-h-12">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent("sidebar:open"))}
@@ -33,6 +33,13 @@ export default function TopBar({ children }: { children?: ReactNode }) {
       </button>
       <div className="flex-1 min-w-0 flex items-center gap-3">{children}</div>
       <ThemeToggle className="flex-shrink-0" />
+      {/* 7 Nov 2026: a soft fade in the shell's own colour under the bar, so a
+          scrolled page melts beneath it instead of being sliced off in a hard
+          line (most visible in dark mode). Two layers rebuild the shell colour
+          (bg-muted/50 over bg-background) opaquely; the mask fades it out. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-full h-5 bg-background [mask-image:linear-gradient(to_bottom,black,transparent)]">
+        <div className="h-full bg-muted/50" />
+      </div>
     </div>
   );
 }
