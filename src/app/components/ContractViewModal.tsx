@@ -2,6 +2,7 @@ import { FileText } from "lucide-react";
 import Modal from "./Modal";
 import Field from "./Field";
 import AddendumTable from "./AddendumTable";
+import ContractPosts from "./ContractPosts";
 import ContractStatusBadge from "./ContractStatusBadge";
 import { formatDate } from "../lib/date";
 import {
@@ -67,7 +68,8 @@ export default function ContractViewModal({
   const effectiveRate = effectiveRateByLine(lines, addendums, today());
 
   const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
-  const totalCommitted = lines.reduce((n, l) => n + (Number(l.committed_count) || 0), 0);
+  // In force today: the lines plus every headcount addendum (7 Nov 2026), as the posts table counts.
+  const totalCommitted = [...effectiveByCategory.values()].reduce((n, v) => n + v, 0);
   const totalActive = lines.reduce((n, l) => n + (activeByLine.get(l.id) ?? 0), 0);
 
   // Effective end (renewal addendums applied) — the modal reflects the current end,
@@ -132,97 +134,20 @@ export default function ContractViewModal({
               <span className="text-muted-foreground">— (open-ended)</span>
             )}
           </Field>
-          <Field label="Guards (active / committed)">
+          <Field label="Guards (active / in force)">
             {totalActive} / {totalCommitted}
           </Field>
         </div>
 
-        {/* Contract Lines — same columns as the editor, read-only */}
-        <div className="border border-border rounded-md overflow-hidden">
-          <div className="px-3 py-2 bg-muted/50 border-b border-border">
-            <span className="text-sm font-medium text-foreground">Contract Lines</span>
-          </div>
-          {lines.length === 0 ? (
-            <p className="px-3 py-3 text-sm text-muted-foreground">No lines on this contract.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted-foreground uppercase border-b border-border">
-                    <th className="text-left px-3 py-2">Category</th>
-                    <th className="text-left px-3 py-2">Notes</th>
-                    <th className="text-right px-3 py-2">Committed</th>
-                    <th className="text-right px-3 py-2">Active</th>
-                    <th className="text-right px-3 py-2">Rate / month</th>
-                    <th className="text-right px-3 py-2">Line value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {lines.map((l) => {
-                    const committed = Number(l.committed_count) || 0;
-                    const active = activeByLine.get(l.id) ?? 0;
-                    const effective = effectiveByCategory.get(l.category);
-                    const baseRate = Number(l.unit_rate) || 0;
-                    const rate = effectiveRate.get(l.id) ?? baseRate;
-                    const rateChanged = rate !== baseRate;
-                    return (
-                      <tr key={l.id}>
-                        <td className="px-3 py-2 text-foreground">
-                          {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
-                        </td>
-                        <td className="px-3 py-2 text-muted-foreground">{l.location || "—"}</td>
-                        <td className="px-3 py-2 text-right text-foreground tabular-nums">
-                          {committed}
-                          {effective != null && effective !== committed && (
-                            <div className="text-[10px] text-muted-foreground">
-                              {effective} after addendums
-                            </div>
-                          )}
-                        </td>
-                        <td
-                          className={`px-3 py-2 text-right tabular-nums ${
-                            active > committed ? "text-danger-700 font-medium" : "text-foreground"
-                          }`}
-                        >
-                          {active}
-                        </td>
-                        <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
-                          {rate.toLocaleString()}
-                          {rateChanged && (
-                            <div className="text-[10px] text-muted-foreground/70 line-through">
-                              {baseRate.toLocaleString()}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
-                          {(committed * rate).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-border bg-muted/50 font-medium text-foreground">
-                    <td className="px-3 py-2" colSpan={2}>Total</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{totalCommitted}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{totalActive}</td>
-                    <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      PKR {valuePerMonth.toLocaleString()}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* Posts — contract lines with every addendum in force applied, plus the annual increase (7 Nov 2026). */}
+        <ContractPosts contract={contract} lines={lines} addendums={addendums} activeByLine={activeByLine} />
 
         {/* Addendums — same table the editor shows */}
         <div className="border border-border rounded-md overflow-hidden">
           <div className="px-3 py-2 bg-muted/50 border-b border-border">
-            <span className="text-sm font-medium text-foreground">Addendums</span>
+            <span className="text-sm font-medium text-foreground">Addendum history</span>
             <span className="text-[11px] text-muted-foreground ml-2">
-              Dated changes to committed count / rate.
+              Every dated change behind the posts above — headcount, rate, renewal.
             </span>
           </div>
           <AddendumTable addendums={addendums} categoryByLineId={categoryByLineId} />
