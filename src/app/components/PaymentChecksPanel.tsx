@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Check, HandCoins, X } from "lucide-react";
 import { supabase, friendlyDbError } from "../lib/supabase";
+import Modal from "./Modal";
+import Button from "./Button";
 import { formatDate } from "../lib/date";
 
 /**
@@ -22,6 +24,11 @@ export default function PaymentChecksPanel({ canEdit }: { canEdit: boolean }) {
   const [dups, setDups] = useState<Dup[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // The app's own dialogs (7 Nov 2026) instead of the browser's confirm / prompt boxes.
+  const [askGenuine, setAskGenuine] = useState<Dup | null>(null);
+  const [askDispute, setAskDispute] = useState<Awaiting | null>(null);
+  const [disputeNote, setDisputeNote] = useState("");
+  const who = (name: string | null) => name ?? "not recorded";
 
   const load = useCallback(async () => {
     const [a, d] = await Promise.all([supabase.rpc("cash_awaiting_confirmation"), supabase.rpc("possible_duplicate_receipts")]);
@@ -31,23 +38,20 @@ export default function PaymentChecksPanel({ canEdit }: { canEdit: boolean }) {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const confirm = async (row: Awaiting, received: boolean) => {
-    let note: string | null = null;
-    if (!received) {
-      note = window.prompt(`Cash of PKR ${pkr(row.amount)} from ${row.client_name} was recorded into ${row.custodian}'s keeping by ${row.entered_by ?? "someone"}.\n\nWhat happened? (The office is alerted.)`);
-      if (!note?.trim()) return;
-    }
+  const confirm = async (row: Awaiting, received: boolean, note: string | null = null) => {
+    if (!received && !note?.trim()) { setDisputeNote(""); setAskDispute(row); return; }
     setBusy(row.payment_id); setErr(null);
     const { error } = await supabase.rpc("confirm_cash_custody", { p_payment_id: row.payment_id, p_received: received, p_note: note });
     setBusy(null);
     if (error) { setErr(friendlyDbError(error)); return; }
+    setAskDispute(null);
     void load();
   };
   const genuine = async (row: Dup) => {
-    if (!window.confirm(`Mark the PKR ${pkr(row.amount)} payment from ${row.client_name} (dated ${formatDate(row.payment_date)}) as a genuine second payment?`)) return;
     setBusy(row.payment_id); setErr(null);
     const { error } = await supabase.rpc("mark_receipt_not_duplicate", { p_payment_id: row.payment_id });
     setBusy(null);
+    setAskGenuine(null);
     if (error) { setErr(friendlyDbError(error)); return; }
     void load();
   };
@@ -64,7 +68,7 @@ export default function PaymentChecksPanel({ canEdit }: { canEdit: boolean }) {
               <li key={r.payment_id} className="flex flex-wrap items-center gap-2">
                 <span className="flex-1 min-w-0">
                   <span className="text-foreground">PKR {pkr(r.amount)} · {r.client_name}</span>
-                  <span className="text-xs text-muted-foreground"> · dated {formatDate(r.payment_date)}{r.invoice_number ? ` · ${r.invoice_number}` : ""} · into {r.custodian}'s keeping, entered {formatDate(r.entered_on)} by {r.entered_by ?? "someone"}</span>
+                  <span className="text-xs text-muted-foreground"> · dated {formatDate(r.payment_date)}{r.invoice_number ? ` · ${r.invoice_number}` : ""} · into {r.custodian}'s keeping, entered {formatDate(r.entered_on)} by {who(r.entered_by)}</span>
                 </span>
                 {r.can_confirm ? (
                   <span className="flex gap-2">
@@ -86,14 +90,35 @@ export default function PaymentChecksPanel({ canEdit }: { canEdit: boolean }) {
               <li key={r.payment_id} className="flex flex-wrap items-center gap-2">
                 <span className="flex-1 min-w-0">
                   <span className="text-foreground">PKR {pkr(r.amount)} · {r.client_name}</span>
-                  <span className="text-xs text-muted-foreground"> · {formatDate(r.payment_date)}{r.invoice_number ? ` (${r.invoice_number})` : ""}, entered {formatDate(r.entered_on)} by {r.entered_by ?? "someone"} — and {formatDate(r.earlier_date)}{r.earlier_invoice ? ` (${r.earlier_invoice})` : ""}, entered {formatDate(r.earlier_entered_on)} by {r.earlier_entered_by ?? "someone"}</span>
+                  <span className="text-xs text-muted-foreground"> · {formatDate(r.payment_date)}{r.invoice_number ? ` (${r.invoice_number})` : ""}, entered {formatDate(r.entered_on)} by {who(r.entered_by)} — and {formatDate(r.earlier_date)}{r.earlier_invoice ? ` (${r.earlier_invoice})` : ""}, entered {formatDate(r.earlier_entered_on)} by {who(r.earlier_entered_by)}</span>
                 </span>
-                {canEdit && <button type="button" disabled={busy === r.payment_id} onClick={() => void genuine(r)} className="text-xs font-semibold text-brand-700 dark:text-brand-500 hover:underline disabled:opacity-50">Genuine</button>}
+                {canEdit && <button type="button" disabled={busy === r.payment_id} onClick={() => setAskGenuine(r)} className="text-xs font-semibold text-brand-700 dark:text-brand-500 hover:underline disabled:opacity-50">Genuine</button>}
               </li>
             ))}
           </ul>
         </div>
       )}
+      <Modal isOpen={!!askGenuine} onClose={() => setAskGenuine(null)} title="Mark as a genuine second payment?" size="sm"
+        footer={<div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setAskGenuine(null)}>Cancel</Button>
+          <Button size="sm" disabled={!!busy} onClick={() => askGenuine && void genuine(askGenuine)}>Yes, it was paid twice</Button>
+        </div>}>
+        {askGenuine && <div className="space-y-2 text-sm">
+          <p className="text-foreground">PKR {pkr(askGenuine.amount)} from <span className="font-semibold">{askGenuine.client_name}</span>, dated {formatDate(askGenuine.payment_date)} — and the same amount dated {formatDate(askGenuine.earlier_date)}.</p>
+          <p className="text-muted-foreground">Mark it genuine only if the client really paid this twice (check the bank statement or the receipts). If it was entered twice by mistake, reverse it from the client's ledger instead. This only clears the warning; it changes no figures.</p>
+        </div>}
+      </Modal>
+      <Modal isOpen={!!askDispute} onClose={() => setAskDispute(null)} title="Cash not received" size="sm"
+        footer={<div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setAskDispute(null)}>Cancel</Button>
+          <Button size="sm" disabled={!!busy || !disputeNote.trim()} onClick={() => askDispute && void confirm(askDispute, false, disputeNote)}>Report to the office</Button>
+        </div>}>
+        {askDispute && <div className="space-y-2 text-sm">
+          <p className="text-foreground">PKR {pkr(askDispute.amount)} from {askDispute.client_name} was recorded into {askDispute.custodian}'s keeping by {who(askDispute.entered_by)}.</p>
+          <label className="block text-muted-foreground">What happened? The office is alerted.</label>
+          <textarea value={disputeNote} onChange={(e) => setDisputeNote(e.target.value)} rows={3} className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm" autoFocus />
+        </div>}
+      </Modal>
     </div>
   );
 }
