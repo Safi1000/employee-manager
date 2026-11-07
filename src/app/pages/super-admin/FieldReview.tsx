@@ -105,8 +105,9 @@ export default function FieldReview() {
   ], [canAttendance, canWarnings, canMoney, canTrips, canEmployees, confs, warnings, moneyCount]);
 
   return (
-    <div className="space-y-4">
+    <>
       <Header title="Field Review" subtitle="What the field app sent that needs a decision — attendance, warnings, expense requests, trips, employee updates" />
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
       {err && <div className="rounded-lg border border-down/40 bg-down/10 p-3 text-sm text-down">{err}</div>}
       {items.length > 1 && <Tabs value={view} onChange={setView} items={items} />}
       {loading ? (
@@ -126,7 +127,8 @@ export default function FieldReview() {
           <div className="space-y-3">{warnings.map((w) => <WarningCard key={w.id} w={w} onDone={load} onError={setErr} />)}</div>
         )
       ) : <Empty text="You need one of the review permissions to use this page." />}
-    </div>
+      </div>
+    </>
   );
 }
 

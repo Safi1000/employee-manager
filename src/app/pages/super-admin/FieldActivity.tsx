@@ -76,8 +76,9 @@ export default function FieldActivity() {
   };
 
   return (
-    <div className="space-y-4">
+    <>
       <Header title="Field Activity" subtitle="Everything done in the field app, for the office to acknowledge" />
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
       {err && <div className="rounded-lg border border-down/40 bg-down/10 p-3 text-sm text-down">{err}</div>}
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <Tabs value={view} onChange={setView} items={[
@@ -121,7 +122,8 @@ export default function FieldActivity() {
           </div>
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 
