@@ -385,6 +385,8 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
   const [err, setErr] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [taxLine, setTaxLine] = useState<Line | null>(null);
+  // 0659: move a receipt part to the invoice it really paid.
+  const [moveLine, setMoveLine] = useState<Line | null>(null);
   const [contactOpen, setContactOpen] = useState(false);
   const [writeOffOpen, setWriteOffOpen] = useState(false);
   const [contacts, setContacts] = useState<{ id: string; contacted_on: string; channel: string; note: string; promised_amount: number | null; promised_by: string | null; next_follow_up: string | null }[]>([]);
@@ -529,9 +531,15 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
                 <td className="px-3 py-2 text-right">
                   <div className="font-ledger">{fmt(l.wht)}</div>
                   <WhtBadge status={l.wht_status} cert={l.wht_certificate} />
-                  {canEdit && l.line_kind === "receipt" && (l.payment_ids?.length ?? 0) === 1 && l.wht_status !== "certificate received" && (
+                  {/* 0659: any receipt, even one spread over several invoices. */}
+                  {canEdit && l.line_kind === "receipt" && (l.payment_ids?.length ?? 0) >= 1 && l.wht_status !== "certificate received" && (
                     <button className="text-[11px] text-brand-600 hover:underline" onClick={() => setTaxLine(l)}>
                       {l.wht ? "Change tax" : "Add tax deducted"}
+                    </button>
+                  )}
+                  {canEdit && l.line_kind === "receipt" && (l.payment_ids?.length ?? 0) >= 1 && (
+                    <button className="block ml-auto text-[11px] text-brand-600 hover:underline" onClick={() => setMoveLine(l)}>
+                      Move to invoice
                     </button>
                   )}
                 </td>
@@ -574,6 +582,9 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
       {receiptOpen && (
         <ReceiptModal row={row} companyId={companyId} owed={row.balance}
           onClose={() => setReceiptOpen(false)} onSaved={() => { setReceiptOpen(false); void load(); }} />
+      )}
+      {moveLine && (
+        <MoveModal line={moveLine} clientId={row.client_id} onClose={() => setMoveLine(null)} onSaved={() => { setMoveLine(null); void load(); }} />
       )}
       {taxLine && (
         <TaxModal line={taxLine} onClose={() => setTaxLine(null)} onSaved={() => { setTaxLine(null); void load(); }} />
@@ -788,7 +799,11 @@ function TaxModal({ line, onClose, onSaved }: { line: Line; onClose: () => void;
     const v = Number(wht || 0);
     if (v < 0) return setErr("Tax deducted cannot be negative.");
     setBusy(true);
-    const { error } = await supabase.rpc("record_payment_withholding", { p_payment_id: line.payment_ids![0], p_withholding: v });
+    // 0659: a receipt spread over several invoices takes its tax as a whole, oldest invoice first.
+    const ids = line.payment_ids ?? [];
+    const { error } = ids.length > 1
+      ? await supabase.rpc("set_receipt_withholding", { p_payment_ids: ids, p_withholding: v })
+      : await supabase.rpc("record_payment_withholding", { p_payment_id: ids[0], p_withholding: v });
     setBusy(false);
     if (error) return setErr(friendlyDbError(error));
     onSaved();
@@ -804,6 +819,68 @@ function TaxModal({ line, onClose, onSaved }: { line: Line; onClose: () => void;
         <label className="block">
           <span className="lbl">Tax deducted (PKR)</span>
           <input type="number" inputMode="decimal" className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={wht} onChange={(e) => setWht(e.target.value)} />
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+// 0659: re-point one part of a receipt to the invoice it really paid. No money moves.
+function MoveModal({ line, clientId, onClose, onSaved }: { line: Line; clientId: string; onClose: () => void; onSaved: () => void }) {
+  type Part = { id: string; amount: number; withholding_amount: number; invoices: { invoice_number: string | null } | null };
+  type Inv = { id: string; invoice_number: string | null; invoice_date: string; invoice_amount: number; amount_received: number };
+  const [parts, setParts] = useState<Part[]>([]);
+  const [invs, setInvs] = useState<Inv[]>([]);
+  const [partId, setPartId] = useState("");
+  const [invId, setInvId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    void Promise.all([
+      supabase.from("invoice_payments").select("id, amount, withholding_amount, invoices(invoice_number)").in("id", line.payment_ids ?? []),
+      supabase.from("invoices").select("id, invoice_number, invoice_date, invoice_amount, amount_received").eq("client_id", clientId).order("invoice_date", { ascending: false }).limit(24),
+    ]).then(([p, i]) => {
+      const ps = ((p.data ?? []) as any[]).map((x) => ({ ...x, amount: n(x.amount), withholding_amount: n(x.withholding_amount) })) as Part[];
+      setParts(ps);
+      if (ps.length === 1) setPartId(ps[0].id);
+      setInvs(((i.data ?? []) as any[]).map((x) => ({ ...x, invoice_amount: n(x.invoice_amount), amount_received: n(x.amount_received) })));
+    });
+  }, [line.payment_ids, clientId]);
+  const part = parts.find((x) => x.id === partId);
+  const settle = part ? part.amount + part.withholding_amount : 0;
+  const save = async () => {
+    if (!partId) return setErr("Choose which part of the receipt to move.");
+    if (!invId) return setErr("Choose the invoice it paid.");
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("move_receipt_part", { p_payment_id: partId, p_invoice_id: invId });
+    setBusy(false);
+    if (error) return setErr(friendlyDbError(error));
+    onSaved();
+  };
+  return (
+    <Modal isOpen onClose={onClose} size="sm" title="Move to the invoice it paid" error={err} onDismissError={() => setErr(null)}
+      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Move"}</Button></div>}>
+      <div className="space-y-3 text-sm">
+        <p className="text-muted-foreground">
+          Payment of {fmt(line.received)} on {fmtDate(line.line_date)}. Use this when a payment was applied to the wrong invoice — for example an
+          older invoice whose leftover was really the tax they deducted. No money moves; only which invoice it settles.
+        </p>
+        <label className="block">
+          <span className="lbl">Part of the receipt</span>
+          <select className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={partId} onChange={(e) => setPartId(e.target.value)}>
+            {parts.length !== 1 && <option value="">Choose…</option>}
+            {parts.map((x) => <option key={x.id} value={x.id}>{fmt(x.amount)}{x.withholding_amount ? ` + ${fmt(x.withholding_amount)} tax` : ""} — now on {x.invoices?.invoice_number ?? "no invoice"}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="lbl">Invoice it paid</span>
+          <select className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-card" value={invId} onChange={(e) => setInvId(e.target.value)}>
+            <option value="">Choose…</option>
+            {invs.map((x) => {
+              const room = Math.round(x.invoice_amount - x.amount_received);
+              return <option key={x.id} value={x.id} disabled={!!part && room < Math.round(settle)}>{x.invoice_number ?? "—"} · {fmtDate(x.invoice_date)} · {room > 0 ? `${room.toLocaleString()} open` : "fully settled"}</option>;
+            })}
+          </select>
         </label>
       </div>
     </Modal>
