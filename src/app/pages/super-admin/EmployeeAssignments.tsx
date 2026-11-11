@@ -80,6 +80,7 @@ import {
   type EmployeeRow,
 } from "./EmployeeManagement";
 import { usePageState } from "../../lib/pageState";
+import { baseSalaryError, hasPayOnRecord } from "../../lib/payOnRecord";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const daysInCurrentMonth = () => {
@@ -3137,11 +3138,26 @@ function AssignEmployeesModal({
       );
       return;
     }
-    const base = baseSalary ? Number(baseSalary) : null;
-    if (base != null && (isNaN(base) || base <= 0)) {
-      setErr("Enter a valid base salary, or leave it blank.");
-      return;
+    // 0650: required. A guard posted with no pay is paid nothing — Nasir Ali
+    // (GGS-00646) worked all of October 2026 on a blank "set later".
+    // A typed salary applies to everyone picked. Left blank, it is allowed only
+    // when every one of them already has pay on record (a re-posting keeps it).
+    const typedBase = baseSalary.trim() !== "";
+    if (typedBase) {
+      const salErrMsg = baseSalaryError(baseSalary);
+      if (salErrMsg) { setErr(salErrMsg); return; }
+    } else {
+      const unpaid = targets.filter((e) => !hasPayOnRecord(e));
+      if (unpaid.length > 0) {
+        const names = unpaid.slice(0, 3).map((e) => e.full_name).join(", ") + (unpaid.length > 3 ? ` and ${unpaid.length - 3} more` : "");
+        setErr(
+          `Base salary is required: ${names} ${unpaid.length === 1 ? "has" : "have"} none on record.` +
+          (canAccounts ? "" : " Ask Accounts to set it on Assignments & Pay before posting."),
+        );
+        return;
+      }
     }
+    const base = typedBase ? Number(baseSalary) : null;
 
     setSaving(true);
     setErr(null);
@@ -3175,6 +3191,20 @@ function AssignEmployeesModal({
         const e = targets[i];
         const fail = (m: string) => new Error(`${e.full_name}: ${m}`);
 
+        // The salary goes in FIRST: the database refuses a posting or a
+        // category move for anyone with no pay on record (0650).
+        if (base != null) {
+          const { error: salErr } = await supabase.rpc("set_employee_salary", {
+            p_employee_id: e.id,
+            p_effective_date: startDate,
+            p_base_salary: base,
+            p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
+            p_per_day_salary: base / daysInCurrentMonth(),
+            p_reason: "Initial salary",
+          });
+          if (salErr) throw fail(salErr.message);
+        }
+
         if (!toClient) {
           // change_category closes any open posting the day before, clears the
           // client mirrors and sets the new category — the same dated path the
@@ -3198,17 +3228,6 @@ function AssignEmployeesModal({
           if (Object.keys(patch).length > 0) {
             const { error: shErr } = await supabase.from("employees").update(patch).eq("id", e.id);
             if (shErr) throw fail(shErr.message);
-          }
-          if (base != null) {
-            const { error: salErr } = await supabase.rpc("set_employee_salary", {
-              p_employee_id: e.id,
-              p_effective_date: startDate,
-              p_base_salary: base,
-              p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
-              p_per_day_salary: base / daysInCurrentMonth(),
-              p_reason: "Initial salary",
-            });
-            if (salErr) throw fail(salErr.message);
           }
           setProgress(i + 1);
           continue;
@@ -3272,19 +3291,7 @@ function AssignEmployeesModal({
         const { error: dispErr } = await supabase.rpc("assign_display_number", { p_employee_id: e.id });
         if (dispErr) throw fail(dispErr.message);
 
-        // Seed the first salary-history row — the capture trigger only fires on
-        // UPDATE, so without this the guard would have no effective-dated pay.
-        if (base != null) {
-          const { error: salErr } = await supabase.rpc("set_employee_salary", {
-            p_employee_id: e.id,
-            p_effective_date: startDate,
-            p_base_salary: base,
-            p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
-            p_per_day_salary: base / daysInCurrentMonth(),
-            p_reason: "Initial salary",
-          });
-          if (salErr) throw fail(salErr.message);
-        }
+        // (The first salary-history row was seeded above, before the posting.)
         setProgress(i + 1);
       }
       await onDone(
@@ -3512,7 +3519,7 @@ function AssignEmployeesModal({
             {canAccounts && (<>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Base salary (PKR)</label>
-              <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="Leave blank to set later" />
+              <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder={candidates.some((e) => picked.has(e.id) && !hasPayOnRecord(e)) ? "Required" : "Keep current salary"} />
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Allowance (PKR)</label>
@@ -3575,6 +3582,9 @@ function TransferModal({
   const [effectiveDate, setEffectiveDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // 0650: a move needs pay on record. Asked for only when there is none.
+  const needsSalary = !hasPayOnRecord(employee);
+  const [baseSalary, setBaseSalary] = useState("");
 
   const movingToClient = dest === "client";
   const movingToSite = dest === "site";
@@ -3638,9 +3648,26 @@ function TransferModal({
       setErr("That is the client they are already on.");
       return;
     }
+    if (needsSalary) {
+      const m = baseSalaryError(baseSalary);
+      if (m) { setErr(`${employee.full_name} has no base salary on record. ${m}`); return; }
+    }
     setSaving(true);
     setErr(null);
     try {
+      // Pay first: the database refuses the move for anyone with none (0650).
+      if (needsSalary) {
+        const base = Number(baseSalary);
+        const { error: salErr } = await supabase.rpc("set_employee_salary", {
+          p_employee_id: employee.id,
+          p_effective_date: effectiveDate,
+          p_base_salary: base,
+          p_allowance: Math.max(0, Number(employee.allowance ?? 0)),
+          p_per_day_salary: base / daysInCurrentMonth(),
+          p_reason: "Set at transfer (none on record)",
+        });
+        if (salErr) throw salErr;
+      }
       const onClient = movingToClient || movingToSite;
       const { error: mvErr } = await supabase.rpc("change_category", {
         p_guard_id: employee.id,
@@ -3812,6 +3839,23 @@ function TransferModal({
             className={inputCls}
           />
         </label>
+
+        {needsSalary && dest !== "branch" && (
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Base salary (PKR) *</span>
+            <input
+              type="number"
+              min={1}
+              value={baseSalary}
+              onChange={(e) => setBaseSalary(e.target.value)}
+              className={inputCls}
+              placeholder="Required — none on record"
+            />
+            <span className="mt-1 block text-[11px] text-muted-foreground">
+              {employee.full_name} has no base salary. It is recorded from the effective date.
+            </span>
+          </label>
+        )}
 
         {clientChanges && (
           <p className="text-xs text-muted-foreground">

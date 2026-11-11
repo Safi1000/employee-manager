@@ -87,6 +87,33 @@ type RowState = {
   adjustment_carried: number;
   /** The periods and reasons behind adjustment_carried, for the drawer and the slip. */
   adjustment_detail: string | null;
+  /**
+   * The working the row's figures were made from, kept from the calculation
+   * itself so the Details panel shows the SAME numbers rather than a second
+   * computation that could disagree with them. null until computed.
+   */
+  calc: PayCalc | null;
+};
+
+/** The intermediate steps of one row's pay (see the rows memo). */
+type PayCalc = {
+  /** Monthly rate in force for the month (salary history, per date), or the day rate for per-day pay. */
+  rate: number;
+  perDay: number;
+  perDayBasis: boolean;
+  /** Pay for days actually stood, double duty included (verified attendance × rate per date). */
+  earnedWorked: number;
+  /** Leave days paid (up to the allowance, or all of them when overridden). */
+  paidLeaves: number;
+  paidLeavePay: number;
+  /** Earned + bonus − deductions; what income tax is figured on. */
+  earnedSalary: number;
+  /** Final − tax − EOBI: what the advance can be recovered from. */
+  deductible: number;
+  /** Advance outstanding BEFORE this payslip (employee_advance_outstanding). */
+  advanceOutstanding: number;
+  /** Earnings came from verified attendance (attendance_payroll) rather than the plain day count. */
+  fromAttendancePayroll: boolean;
 };
 
 const firstOfMonth = (d: Date) => {
@@ -446,6 +473,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
    * all of October at Regent 1, moved on 1 Nov, shown under the new client).
    */
   const [clientShares, setClientShares] = useState<Map<string, ClientShare[]>>(new Map());
+  /** Whose pay breakdown is open (Details). An id, so the panel follows live edits to the row. */
+  const [detailsId, setDetailsId] = useState<string | null>(null);
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = usePageState<"all" | "Cleared" | "Pending">("PayrollManagement.statusFilter", "all");
   const [disbursedFilter, setDisbursedFilter] = usePageState<"all" | "yes" | "no">("PayrollManagement.disbursedFilter", "all");
@@ -997,6 +1026,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           ? Number((existing as any).adjustment_carried ?? 0)
           : carriedAdj.get(emp.id)?.carried ?? 0,
         adjustment_detail: carriedAdj.get(emp.id)?.detail ?? null,
+        calc: null,
       };
       const edits = rowEdits.get(emp.id) ?? {};
       const merged = { ...defaults, ...edits };
@@ -1085,6 +1115,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // here any more than it can for an advance.
       merged.adjustment_carried = defaults.adjustment_carried;
       merged.net_salary = Math.max(0, deductible - merged.advance + merged.adjustment_carried);
+      merged.calc = {
+        rate: emp.pay_basis === "per_day" ? perDay : rateEff,
+        perDay,
+        perDayBasis: emp.pay_basis === "per_day",
+        earnedWorked: Math.round(earnedWorked),
+        paidLeaves: countableLeaves,
+        paidLeavePay: Math.round(paidLeavePay),
+        earnedSalary,
+        deductible,
+        advanceOutstanding: computedAdvance,
+        fromAttendancePayroll: !!ap,
+      };
       return merged;
     });
   }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary, statutoryRates]);
@@ -3369,6 +3411,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                     <Check className="w-3 h-3" strokeWidth={2.5} /> Disbursed
                                   </span>
                                 )}
+                                {/* Why the pay is what it is — days, rate, leave, advances, deductions. */}
+                                <button
+                                  type="button"
+                                  onClick={(ev) => { ev.stopPropagation(); setDetailsId(e.id); }}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                                  title="Breakdown of this month's pay"
+                                >
+                                  Details
+                                </button>
                               </div>
                               <div className="text-xs text-muted-foreground font-mono">
                                 {empDisplay(e)}
@@ -4694,7 +4745,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         title="Disbursement Date"
         size="sm"
       >
-        {rowDisburseTarget && (() => {
+        {detailsId && (() => {
+          const r = rows.find((x) => x.employee.id === detailsId);
+          if (!r) return null;
+          return (
+            <PayslipDetailsModal
+              row={r}
+              clientName={clients.find((c) => c.id === r.employee.client_id)?.name ?? null}
+              onClose={() => setDetailsId(null)}
+            />
+          );
+        })()}
+                {rowDisburseTarget && (() => {
           const already = Math.round(rowDisburseTarget.amount_paid || 0);
           // paymentAmountDraft is the amount paid NOW; it accumulates onto
           // Amount Paid, so the new cumulative target is already + payNow.
@@ -4933,5 +4995,254 @@ function RunPipeline({ period }: { period: string }) {
       ))}
       <Link to="/app/payroll-run" className="rounded-lg border border-brand-500/50 px-2.5 py-1 text-brand-700 dark:text-brand-500 hover:bg-brand-500/10">Open Payroll Run →</Link>
     </div>
+  );
+}
+
+// ── Payslip Details ───────────────────────────────────────────────────────────
+// "Why is this person's pay what it is?" answered on the row itself, without
+// having to ask. Every figure is the row's own — the same RowState and calc the
+// table and the payslip are made from — so the explanation cannot disagree with
+// the number it explains. The only reads here are the records behind the
+// advance, the salary history and the payments, which the row does not carry.
+
+const pkr = (n: number | null | undefined) => `PKR ${Math.round(Number(n ?? 0)).toLocaleString()}`;
+const shortDate = (d: string | null | undefined) =>
+  d ? new Date(d.slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+
+function DetailLine({ label, value, sub, strong, tone }: {
+  label: string; value: string; sub?: string; strong?: boolean; tone?: "minus" | "plus";
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-4 py-1.5 ${strong ? "border-t border-border mt-1 pt-2" : ""}`}>
+      <div className="min-w-0">
+        <div className={`text-sm ${strong ? "font-semibold text-foreground" : "text-foreground"}`}>{label}</div>
+        {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
+      </div>
+      <div className={`text-sm tabular-nums shrink-0 ${strong ? "font-semibold text-foreground" : tone === "minus" ? "text-danger-700" : tone === "plus" ? "text-success-700" : "text-foreground"}`}>
+        {tone === "minus" ? "− " : tone === "plus" ? "+ " : ""}{value}
+      </div>
+    </div>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-0.5">
+      <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function PayslipDetailsModal({ row, clientName, onClose }: { row: RowState; clientName: string | null; onClose: () => void }) {
+  const e = row.employee;
+  const c = row.calc;
+  const month = row.period_month.slice(0, 7);
+  const monthStart = month + "-01";
+  const monthEnd = endOfMonthStr(row.period_month);
+  const [adv, setAdv] = useState<{ advance_date: string; amount: number; notes: string | null }[] | null>(null);
+  const [advHidden, setAdvHidden] = useState(false);
+  const [recovered, setRecovered] = useState<{ period_month: string; advance: number }[] | null>(null);
+  const [history, setHistory] = useState<{ effective_date: string; base_salary: number; allowance: number; reason: string | null }[] | null>(null);
+  const [payments, setPayments] = useState<{ amount: number; paid_at: string; payment_mode: string; description: string | null }[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const [a, r, h, p] = await Promise.all([
+        supabase.from("advances").select("advance_date, amount, notes").eq("employee_id", e.id)
+          .order("advance_date", { ascending: false }).limit(12),
+        supabase.from("payslips").select("period_month, advance").eq("employee_id", e.id)
+          .lt("period_month", monthStart).gt("advance", 0).order("period_month", { ascending: false }).limit(12),
+        supabase.from("employee_salary_history").select("effective_date, base_salary, allowance, reason").eq("employee_id", e.id)
+          .order("effective_date", { ascending: false }).limit(6),
+        row.payslip_id
+          ? supabase.from("payslip_payments").select("amount, paid_at, payment_mode, description").eq("payslip_id", row.payslip_id).order("paid_at")
+          : Promise.resolve({ data: [] as unknown[], error: null }),
+      ]);
+      if (!live) return;
+      setAdvHidden(!!a.error);
+      setAdv(a.error ? [] : ((a.data ?? []) as any[]).map((x) => ({ ...x, amount: Number(x.amount) })));
+      setRecovered(r.error ? [] : ((r.data ?? []) as any[]).map((x) => ({ ...x, advance: Number(x.advance) })));
+      setHistory(h.error ? [] : ((h.data ?? []) as any[]).map((x) => ({ ...x, base_salary: Number(x.base_salary), allowance: Number(x.allowance ?? 0) })));
+      setPayments(p.error ? [] : ((p.data ?? []) as any[]).map((x) => ({ ...x, amount: Number(x.amount) })));
+    })();
+    return () => { live = false; };
+  }, [e.id, monthStart, row.payslip_id]);
+
+  const days = row.working_days;
+  const marked = row.present_days + row.absent_days + row.leave_days;
+  const unmarked = Math.max(0, days - marked);
+  const joinedInMonth = e.join_date && e.join_date >= monthStart && e.join_date <= monthEnd ? e.join_date : null;
+  const lwd = (e as { last_working_day?: string | null }).last_working_day ?? null;
+  const leftInMonth = lwd && lwd >= monthStart && lwd <= monthEnd ? lwd : null;
+  const fines = finesFromNotes(row.notes);
+  const fineTotal = fines.reduce((n, f) => n + f.amount, 0);
+  const otherDeductions = Math.max(0, Math.round(row.deductions) - fineTotal);
+  const advanceCarries = c ? Math.max(0, Math.round(c.advanceOutstanding - row.advance)) : 0;
+  const balance = Math.round(row.net_salary) - Math.round(row.amount_paid || 0);
+
+  // The short answer: everything that moved this month away from the full rate,
+  // in the order a person asks about it. Built from the same figures below.
+  const reasons: string[] = [];
+  if (c && !c.perDayBasis && row.base_salary > 0 && Math.round(c.rate) !== Math.round(row.base_salary)) {
+    reasons.push(`The rate in force for ${formatPeriod(row.period_month)} was ${pkr(c.rate)}, not ${pkr(row.base_salary)} (salary history).`);
+  }
+  if (joinedInMonth) reasons.push(`Joined on ${shortDate(joinedInMonth)}, so the days before it are not paid.`);
+  if (leftInMonth) reasons.push(`Last working day was ${shortDate(leftInMonth)}, so the days after it are not paid.`);
+  if (unmarked > 0 && !joinedInMonth && !leftInMonth) reasons.push(`${unmarked} day${unmarked === 1 ? " is" : "s are"} not marked at all, and unmarked days are not paid.`);
+  if (row.extra_leave_absent > 0) reasons.push(`${row.extra_leave_absent} leave day${row.extra_leave_absent === 1 ? "" : "s"} over the paid allowance of ${row.allowed_leaves}, so unpaid.`);
+  if (row.absent_days > 0) reasons.push(`${row.absent_days} absent day${row.absent_days === 1 ? "" : "s"}, unpaid.`);
+  if (row.deductions > 0) reasons.push(`${pkr(row.deductions)} deducted${fines.length ? " (fines)" : ""}.`);
+  if (row.income_tax > 0) reasons.push(`${pkr(row.income_tax)} income tax.`);
+  if (row.eobi > 0) reasons.push(`${pkr(row.eobi)} EOBI (employee share).`);
+  if (row.advance > 0) reasons.push(`${pkr(row.advance)} taken back against an advance${advanceCarries > 0 ? `; ${pkr(advanceCarries)} still to recover next month` : ""}.`);
+  if (row.adjustment_carried < 0) reasons.push(`${pkr(-row.adjustment_carried)} correction carried from an earlier month.`);
+  if (row.adjustment_carried > 0) reasons.push(`${pkr(row.adjustment_carried)} owed from an earlier month, added.`);
+  if (row.double_duty_shifts > 0) reasons.push(`${row.double_duty_shifts} double-duty shift${row.double_duty_shifts === 1 ? "" : "s"} paid on top.`);
+  if (row.bonus > 0) reasons.push(`${pkr(row.bonus)} bonus added.`);
+  if (row.base_salary <= 0 && !(c && c.perDayBasis)) reasons.unshift("No base salary on record, so nothing is earned. Set it on Assignments & Pay.");
+
+  return (
+    <Modal isOpen onClose={onClose} size="md" title={`Details — ${e.full_name}`}>
+      <div className="space-y-5">
+        <div className="text-xs text-muted-foreground">
+          {e.guard_code ?? e.employee_code}{clientName ? ` · ${clientName}` : ""} · {formatPeriod(row.period_month)} ·{" "}
+          {row.payslip_id ? (row.disbursed ? "Payslip paid" : "Payslip saved, not paid") : "Not saved yet — figures as they stand"}
+        </div>
+
+        <DetailSection title="In short">
+          {reasons.length === 0 ? (
+            <p className="text-sm text-foreground">Full month at the full rate — nothing taken off.</p>
+          ) : (
+            <ul className="list-disc pl-5 space-y-1 text-sm text-foreground">
+              {reasons.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          )}
+          {row.days_over_month > 0 && (
+            <p className="text-[11px] text-warning-700 mt-1">
+              Attendance has {row.days_over_month} more day{row.days_over_month === 1 ? "" : "s"} than the month — some dates carry two statuses. Leave was trimmed first so worked days stay paid.
+            </p>
+          )}
+        </DetailSection>
+
+        <DetailSection title={`Days (${days} in the month)`}>
+          <DetailLine label="Present" value={`${row.present_days}`} />
+          {row.double_duty_shifts > 0 && <DetailLine label="Double-duty shifts" sub="Extra shifts on days already counted" value={`${row.double_duty_shifts}`} />}
+          <DetailLine
+            label="Leave"
+            sub={row.override_leaves ? "All leave paid (override on this payslip)" : `Paid allowance this month: ${row.allowed_leaves}`}
+            value={`${row.leave_days}${c ? ` · ${c.paidLeaves} paid` : ""}${row.extra_leave_absent > 0 ? ` · ${row.extra_leave_absent} unpaid` : ""}`}
+          />
+          <DetailLine label="Absent" sub="Unpaid" value={`${row.absent_days}`} />
+          {unmarked > 0 && (
+            <DetailLine
+              label="Not marked"
+              sub={joinedInMonth ? `Joined ${shortDate(joinedInMonth)}` : leftInMonth ? `Left after ${shortDate(leftInMonth)}` : "No attendance recorded — unpaid"}
+              value={`${unmarked}`}
+            />
+          )}
+          <DetailLine label="Paid days" value={`${row.effective_present_days} of ${days}`} strong />
+        </DetailSection>
+
+        <DetailSection title="Pay">
+          {c ? (
+            <>
+              <DetailLine
+                label={c.perDayBasis ? "Day rate" : "Monthly rate"}
+                sub={c.perDayBasis ? "Paid per day worked" : `${pkr(c.rate)} ÷ ${days} days = ${pkr(c.perDay)} a day${c.fromAttendancePayroll ? " (rate in force on each date)" : ""}`}
+                value={c.perDayBasis ? pkr(c.perDay) : pkr(c.rate)}
+              />
+              <DetailLine label="Pay for days worked" sub={`${row.present_days} present${row.double_duty_shifts ? ` + ${row.double_duty_shifts} double duty` : ""}`} value={pkr(c.earnedWorked)} />
+              {c.paidLeavePay > 0 && <DetailLine label="Paid leave" sub={`${c.paidLeaves} × ${pkr(c.perDay)}`} value={pkr(c.paidLeavePay)} tone="plus" />}
+              {row.bonus > 0 && <DetailLine label="Bonus" value={pkr(row.bonus)} tone="plus" />}
+              {fines.map((f, i) => <DetailLine key={i} label="Fine" sub={f.reason} value={pkr(f.amount)} tone="minus" />)}
+              {otherDeductions > 0 && <DetailLine label="Deductions" value={pkr(otherDeductions)} tone="minus" />}
+              <DetailLine label="Earned salary" value={pkr(c.earnedSalary)} strong />
+              {row.allowance > 0 && <DetailLine label="Allowance" value={pkr(row.allowance)} tone="plus" />}
+              <DetailLine label="Final salary" value={pkr(row.final_salary)} strong />
+              {row.income_tax > 0 && <DetailLine label="Income tax" sub="1% of earned salary above PKR 50,000" value={pkr(row.income_tax)} tone="minus" />}
+              {row.eobi > 0 && <DetailLine label="EOBI (employee share)" value={pkr(row.eobi)} tone="minus" />}
+              {(row.advance > 0 || c.advanceOutstanding > 0) && (
+                <DetailLine
+                  label="Advance recovered"
+                  sub={`Outstanding before this payslip ${pkr(c.advanceOutstanding)}${advanceCarries > 0 ? ` · ${pkr(advanceCarries)} carries to next month` : ""}`}
+                  value={pkr(row.advance)}
+                  tone="minus"
+                />
+              )}
+              {row.adjustment_carried !== 0 && (
+                <DetailLine
+                  label="Carried correction"
+                  sub={row.adjustment_detail ?? "From an earlier month"}
+                  value={pkr(Math.abs(row.adjustment_carried))}
+                  tone={row.adjustment_carried < 0 ? "minus" : "plus"}
+                />
+              )}
+              <DetailLine label="Net salary" value={pkr(row.net_salary)} strong />
+              {(row.amount_paid > 0 || row.disbursed) && (
+                <>
+                  <DetailLine label="Paid so far" value={pkr(row.amount_paid)} />
+                  {balance !== 0 && <DetailLine label={balance > 0 ? "Still owed" : "Overpaid"} value={pkr(Math.abs(balance))} />}
+                </>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Figures are still loading.</p>
+          )}
+        </DetailSection>
+
+        <DetailSection title="Advances">
+          {adv == null ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : adv.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {c && c.advanceOutstanding > 0
+                ? `${pkr(c.advanceOutstanding)} is outstanding, but the advance records are not visible to your login (they need Expenses access).`
+                : advHidden
+                  ? "Advance records are not visible to your login (they need Expenses access)."
+                  : "No advances on record."}
+            </p>
+          ) : (
+            adv.map((a, i) => <DetailLine key={i} label={shortDate(a.advance_date)} sub={a.notes ?? undefined} value={pkr(a.amount)} />)
+          )}
+          {recovered && recovered.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[11px] text-muted-foreground mb-0.5">Already recovered on earlier payslips</div>
+              {recovered.map((r) => <DetailLine key={r.period_month} label={formatPeriod(r.period_month)} value={pkr(r.advance)} />)}
+            </div>
+          )}
+        </DetailSection>
+
+        <DetailSection title="Salary history">
+          {history == null ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No salary on record.</p>
+          ) : (
+            history.map((h, i) => (
+              <DetailLine
+                key={i}
+                label={`From ${shortDate(h.effective_date)}`}
+                sub={h.reason ?? undefined}
+                value={`${pkr(h.base_salary)}${h.allowance ? ` + ${pkr(h.allowance)}` : ""}`}
+              />
+            ))
+          )}
+        </DetailSection>
+
+        {row.payslip_id && (
+          <DetailSection title="Payments">
+            {payments == null ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : payments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{row.amount_paid > 0 ? `Paid ${pkr(row.amount_paid)} (${row.payment_mode}).` : "Nothing paid yet."}</p>
+            ) : (
+              payments.map((p, i) => <DetailLine key={i} label={shortDate(p.paid_at)} sub={[p.payment_mode, p.description].filter(Boolean).join(" · ")} value={pkr(p.amount)} />)
+            )}
+          </DetailSection>
+        )}
+      </div>
+    </Modal>
   );
 }

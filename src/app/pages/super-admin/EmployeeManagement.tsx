@@ -35,6 +35,7 @@ import {
 } from "../../lib/employeeExportFields";
 import { useRegion, withRegion } from "../../lib/region";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
+import { baseSalaryError, hasPayOnRecord } from "../../lib/payOnRecord";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
@@ -4587,9 +4588,28 @@ function RehireModal({
 
   const save = async () => {
     if (target === "client" && !clientId) { fail("Select the client to rehire into."); return; }
+    // 0650: a rehire always confirms the salary — it is required, not optional.
+    const salMsg = baseSalaryError(baseSalary);
+    if (salMsg) { fail(salMsg); return; }
     setSaving(true);
     setErr(null);
+    // Someone with no pay on record must have it BEFORE the rehire, or the
+    // database refuses it (0650). Anyone else keeps the old order, so a refused
+    // rehire (e.g. the 7-day rule) leaves no new salary row behind.
+    const salaryFirst = !hasPayOnRecord(guard);
+    const recordSalary = async () => {
+      const { error: salErr } = await supabase.rpc("set_employee_salary", {
+        p_employee_id: guard.id,
+        p_effective_date: joinDate,
+        p_base_salary: Number(baseSalary),
+        p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
+        p_per_day_salary: Number(baseSalary) / daysInCurrentMonth(),
+        p_reason: "Rehire",
+      });
+      if (salErr) throw salErr;
+    };
     try {
+      if (salaryFirst) await recordSalary();
       if (target === "office_staff") {
         const { error: rErr } = await supabase.rpc("rehire_to_office_staff", {
           p_guard: guard.id, p_join_date: joinDate, p_branch_id: branchId || null,
@@ -4605,17 +4625,7 @@ function RehireModal({
       }
       // Record the (possibly new) salary effective from the rehire date, so this
       // stint pays the rehire rate and it lands in salary history.
-      if (baseSalary) {
-        const { error: salErr } = await supabase.rpc("set_employee_salary", {
-          p_employee_id: guard.id,
-          p_effective_date: joinDate,
-          p_base_salary: Number(baseSalary),
-          p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
-          p_per_day_salary: Number(baseSalary) / daysInCurrentMonth(),
-          p_reason: "Rehire",
-        });
-        if (salErr) throw salErr;
-      }
+      if (!salaryFirst) await recordSalary();
       await onDone();
     } catch (e: any) { fail(e.message ?? String(e)); setSaving(false); }
   };
@@ -4664,7 +4674,7 @@ function RehireModal({
           </label>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block"><span className="text-sm text-muted-foreground">Base salary (PKR)</span>
+          <label className="block"><span className="text-sm text-muted-foreground">Base salary (PKR) *</span>
             <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="0" />
           </label>
           <label className="block"><span className="text-sm text-muted-foreground">Allowance (PKR)</span>
@@ -4860,6 +4870,9 @@ export function ChangeCategoryModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fail = (m: string) => { setErr(m); onError(m); };
+  // 0650: a category move needs pay on record. Asked for only when there is none.
+  const needsSalary = !hasPayOnRecord(guard);
+  const [baseSalary, setBaseSalary] = useState("");
 
   const lines = clientId
     ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id))
@@ -4872,9 +4885,26 @@ export function ChangeCategoryModal({
   const save = async () => {
     if (!changed) { fail("Pick a different category (or a different client)."); return; }
     if (movingToClient && !clientId) { fail("Select a client to move this employee to."); return; }
+    if (needsSalary) {
+      const m = baseSalaryError(baseSalary);
+      if (m) { fail(`${guard.full_name} has no base salary on record. ${m}`); return; }
+    }
     setSaving(true);
     setErr(null);
     try {
+      // Pay first: the database refuses the move for anyone with none (0650).
+      if (needsSalary) {
+        const base = Number(baseSalary);
+        const { error: salErr } = await supabase.rpc("set_employee_salary", {
+          p_employee_id: guard.id,
+          p_effective_date: effectiveDate || todayIso(),
+          p_base_salary: base,
+          p_allowance: Math.max(0, Number(guard.allowance ?? 0)),
+          p_per_day_salary: base / daysInCurrentMonth(),
+          p_reason: "Set at category change (none on record)",
+        });
+        if (salErr) throw salErr;
+      }
       const { error: rpcErr } = await supabase.rpc("change_category", {
         p_guard_id: guard.id,
         p_new_category: category,
@@ -4982,6 +5012,15 @@ export function ChangeCategoryModal({
           <span className="text-sm text-muted-foreground">Effective date</span>
           <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={inputCls} />
         </label>
+        {needsSalary && (
+          <label className="block">
+            <span className="text-sm text-muted-foreground">Base salary (PKR) *</span>
+            <input type="number" min={1} value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="Required — none on record" />
+            <span className="mt-1 block text-[11px] text-muted-foreground">
+              {guard.full_name} has no base salary. It is recorded from the effective date.
+            </span>
+          </label>
+        )}
       </div>
     </Modal>
   );
