@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { downloadReceiptPdf, receiptWhatsAppText, type ReceiptLine } from "../lib/receiptPdf";
 import { brandingFromCompany } from "../lib/pdfBranding";
-import { ArrowLeft, Ban, Download, FileText, Loader2, MessageSquare, Plus, Search } from "lucide-react";
+import { ArrowLeft, Ban, Download, FileText, Loader2, MessageSquare, Plus, Search, ShieldCheck } from "lucide-react";
 import Tabs from "./Tabs";
 import PaymentFollowUp, { ContactModal, channelLabel } from "./PaymentFollowUp";
 import Button from "./Button";
@@ -16,6 +16,7 @@ import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } f
 import { exportTable } from "../lib/excel";
 import { downloadClientLedgerPdf } from "../lib/clientLedgerPdf";
 import { recordPaymentChecked } from "../lib/paymentEntry";
+import { askReason } from "./askReason";
 
 /**
  * CLIENT RECEIVABLES (0626, DECIDED 2 Nov 2026). Replaces the month-picker
@@ -71,6 +72,17 @@ type Row = {
   promised_amount: number | null;
   promised_by: string | null;
   next_follow_up: string | null;
+};
+
+/** 0661: a client holding its latest invoice as security — read from client_security_held(). */
+type SecurityHeld = {
+  hold_id: string; client_id: string; reason: string; since: string;
+  invoice_id: string | null; invoice_number: string | null; invoice_date: string | null; period_start: string | null;
+  invoice_amount: number; held_amount: number;
+};
+const loadSecurityHeld = async (): Promise<Map<string, SecurityHeld>> => {
+  const { data } = await supabase.rpc("client_security_held");
+  return new Map(((data ?? []) as SecurityHeld[]).map((h) => [h.client_id, { ...h, held_amount: n(h.held_amount), invoice_amount: n(h.invoice_amount) }]));
 };
 
 type RegionTotal = { branch_id: string | null; region_name: string; clients: number; balance: number; overdue: number; age_over_90: number };
@@ -165,13 +177,16 @@ export default function ClientReceivables() {
   const [selected, setSelected] = useState<Row | null>(null);
   const [view, setView] = usePageState<"balances" | "followup" | "writeoffs">("ClientReceivables.view", "balances");
   const [regions, setRegions] = useState<RegionTotal[]>([]);
+  const [held, setHeld] = useState<Map<string, SecurityHeld>>(new Map());
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data, error }, reg] = await Promise.all([
+    const [{ data, error }, reg, sec] = await Promise.all([
       supabase.rpc("client_receivables_today"),
       supabase.rpc("client_receivables_by_region"),
+      loadSecurityHeld(),
     ]);
+    setHeld(sec);
     setRegions(((reg.data ?? []) as RegionTotal[]).map((r) => ({ ...r, balance: n(r.balance), overdue: n(r.overdue), age_over_90: n(r.age_over_90) })));
     if (error) setErr(friendlyDbError(error));
     else {
@@ -207,9 +222,10 @@ export default function ClientReceivables() {
       bf: t.bf + r.owed_before_bastion,
       a0: t.a0 + r.age_0_30, a31: t.a31 + r.age_31_60, a61: t.a61 + r.age_61_90, a90: t.a90 + r.age_over_90,
       wht: t.wht + r.wht_awaiting_certificate,
+      held: t.held + (held.get(r.client_id)?.held_amount ?? 0),
     }),
-    { balance: 0, bf: 0, a0: 0, a31: 0, a61: 0, a90: 0, wht: 0 },
-  ), [visible]);
+    { balance: 0, bf: 0, a0: 0, a31: 0, a61: 0, a90: 0, wht: 0, held: 0 },
+  ), [visible, held]);
 
   if (selected) {
     return (
@@ -252,8 +268,8 @@ export default function ClientReceivables() {
   const exportList = () => exportTable({
     fileName: `Receivables ${today()}.xlsx`,
     title: `Client receivables — balance on ${fmtDate(today())}`,
-    headers: ["Client", "Owes now", "Opening balance 31 Aug (still owed)", "0–30 days", "31–60 days", "61–90 days", "Over 90 days", "Tax awaiting certificate", "Last payment", "Mode", "Amount"],
-    rows: visible.map((r) => [r.client_name, Math.round(r.balance), Math.round(r.owed_before_bastion), Math.round(r.age_0_30), Math.round(r.age_31_60),
+    headers: ["Client", "Owes now", "Held as security", "Opening balance 31 Aug (still owed)", "0–30 days", "31–60 days", "61–90 days", "Over 90 days", "Tax awaiting certificate", "Last payment", "Mode", "Amount"],
+    rows: visible.map((r) => [r.client_name, Math.round(r.balance), Math.round(held.get(r.client_id)?.held_amount ?? 0), Math.round(r.owed_before_bastion), Math.round(r.age_0_30), Math.round(r.age_31_60),
       Math.round(r.age_61_90), Math.round(r.age_over_90), Math.round(r.wht_awaiting_certificate), fmtDate(r.last_paid_on), r.last_paid_mode ?? "", r.last_paid_amount ?? ""]),
   });
 
@@ -305,7 +321,9 @@ export default function ClientReceivables() {
 
       <p className="text-xs text-muted-foreground">
         Balances are as of today. Payments clear the oldest amount first: the opening balance, then invoices by date.
-        "Opening (31 Aug)" is what is still owed from each client's opening balance at 31 Aug 2026. Click a client for their ledger.
+        "Opening (31 Aug)" is what is still owed from each client's opening balance at 31 Aug 2026. "Held as security" is the
+        latest invoice of a client that keeps one back in place of a guarantee — it is owed, but not late, so it is in no age column.
+        Click a client for their ledger.
       </p>
 
       <div className="rounded-xl border border-border bg-card overflow-x-auto">
@@ -314,6 +332,7 @@ export default function ClientReceivables() {
             <tr className="text-xs text-muted-foreground">
               <th className="px-3 py-2">Client</th>
               <th className="px-3 py-2 text-right">Owes now</th>
+              <th className="px-3 py-2 text-right">Held as security</th>
               <th className="px-3 py-2 text-right">Opening (31 Aug)</th>
               <th className="px-3 py-2 text-right">0–30 days</th>
               <th className="px-3 py-2 text-right">31–60</th>
@@ -324,9 +343,9 @@ export default function ClientReceivables() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-10 text-center text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading…</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">No client owes anything{search ? " that matches" : ""}.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-10 text-center text-muted-foreground">No client owes anything{search ? " that matches" : ""}.</td></tr>
             ) : visible.map((r) => (
               <tr key={r.client_id} className="border-t border-border hover:bg-muted/40 cursor-pointer" onClick={() => setSelected(r)}>
                 <td className="px-3 py-2">
@@ -334,8 +353,15 @@ export default function ClientReceivables() {
                   {r.wht_awaiting_certificate > 0.5 && (
                     <div className="text-[11px] text-warning-700 dark:text-warning-500">Tax {fmt(r.wht_awaiting_certificate)} awaiting certificate</div>
                   )}
+                  {held.has(r.client_id) && (
+                    <div className="text-[11px] text-info-700 dark:text-info-500">Holds latest invoice as security</div>
+                  )}
                 </td>
                 <td className={`px-3 py-2 text-right font-ledger font-semibold ${r.balance < -0.5 ? "text-success-700 dark:text-success-500" : "text-foreground"}`}>{fmtBal(r.balance)}</td>
+                <td className="px-3 py-2 text-right font-ledger text-info-700 dark:text-info-500"
+                  title={held.get(r.client_id)?.invoice_number ? `${held.get(r.client_id)!.invoice_number} — ${held.get(r.client_id)!.reason}` : undefined}>
+                  {held.has(r.client_id) ? fmt(held.get(r.client_id)!.held_amount) : ""}
+                </td>
                 <td className="px-3 py-2 text-right font-ledger text-muted-foreground">{fmt(r.owed_before_bastion)}</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmt(r.age_0_30)}</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmt(r.age_31_60)}</td>
@@ -352,6 +378,7 @@ export default function ClientReceivables() {
               <tr className="border-t-2 border-border font-semibold">
                 <td className="px-3 py-2">Total ({visible.length})</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmtBal(foot.balance)}</td>
+                <td className="px-3 py-2 text-right font-ledger">{foot.held > 0.5 ? fmt(foot.held) : ""}</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmt(foot.bf)}</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmt(foot.a0)}</td>
                 <td className="px-3 py-2 text-right font-ledger">{fmt(foot.a31)}</td>
@@ -384,6 +411,28 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  // 0661: does this client hold its latest invoice as security?
+  const [security, setSecurity] = useState<SecurityHeld | null>(null);
+  const [securityOpen, setSecurityOpen] = useState(false);
+  const loadSecurity = useCallback(async () => {
+    setSecurity((await loadSecurityHeld()).get(row.client_id) ?? null);
+  }, [row.client_id]);
+  useEffect(() => { void loadSecurity(); }, [loadSecurity]);
+  const endSecurity = async () => {
+    if (!security) return;
+    const note = await askReason({
+      title: "End security hold",
+      subject: { title: row.client_name, meta: `Holding its latest invoice since ${fmtDate(security.since)}` },
+      message: "Its latest invoice ages and counts as overdue again, like any other. Nothing in the ledger changes.",
+      label: "Why has it ended?",
+      placeholder: "e.g. Contract ended — security invoice paid",
+      confirmLabel: "End hold",
+    });
+    if (!note) return;
+    const { error } = await supabase.rpc("end_client_security_hold", { p_hold_id: security.hold_id, p_note: note });
+    if (error) { setErr(friendlyDbError(error)); return; }
+    await loadSecurity();
+  };
   const [taxLine, setTaxLine] = useState<Line | null>(null);
   // 0659: move a receipt part to the invoice it really paid.
   const [moveLine, setMoveLine] = useState<Line | null>(null);
@@ -451,10 +500,31 @@ function ClientLedger({ row, companyId, companyName, canEdit, onBack }: {
         <Button variant="secondary" size="sm" onClick={() => void downloadClientLedgerPdf({ companyName, branding: brandingFromCompany(company), clientName: row.client_name, scope: scopeLabel, lines: exportRows, closing })}>
           <FileText className="w-4 h-4 mr-1" /> PDF
         </Button>
+        {canEdit && !security && <Button variant="secondary" size="sm" onClick={() => setSecurityOpen(true)}><ShieldCheck className="w-4 h-4 mr-1" /> Holds invoice as security</Button>}
         {canEdit && <Button variant="secondary" size="sm" onClick={() => setContactOpen(true)}><MessageSquare className="w-4 h-4 mr-1" /> Log contact</Button>}
         {canEdit && row.balance > 0.5 && <Button variant="secondary" size="sm" onClick={() => setWriteOffOpen(true)}><Ban className="w-4 h-4 mr-1" /> Write off</Button>}
         {canEdit && <Button size="sm" onClick={() => setReceiptOpen(true)}><Plus className="w-4 h-4 mr-1" /> Record payment</Button>}
       </div>
+
+      {security && (
+        <div className="flex flex-wrap items-start gap-3 rounded-lg border border-info-200 bg-info-50 dark:bg-info-500/10 p-3 text-sm text-info-700 dark:text-info-500">
+          <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold">Holds its latest invoice as security · since {fmtDate(security.since)}</div>
+            <div className="text-xs mt-0.5">
+              {security.invoice_number
+                ? <>Held now: {security.invoice_number} — {fmt(security.held_amount)} unpaid of {fmt(security.invoice_amount)}. </>
+                : <>No invoice yet. </>}
+              It is owed but not late, so it is left out of ageing and overdue. Each new invoice takes its place. {security.reason}
+            </div>
+          </div>
+          {canEdit && <Button variant="secondary" size="sm" onClick={() => void endSecurity()}>End hold</Button>}
+        </div>
+      )}
+      {securityOpen && (
+        <SecurityHoldModal clientId={row.client_id} clientName={row.client_name}
+          onClose={() => setSecurityOpen(false)} onSaved={() => { setSecurityOpen(false); void loadSecurity(); }} />
+      )}
 
       {pendingWo.length > 0 && (
         <div className="rounded-lg border border-warning-200 bg-warning-50 dark:bg-warning-500/10 p-3 text-sm text-warning-700 dark:text-warning-500">
@@ -1157,5 +1227,52 @@ export function FormerClients() {
         </table>
       )}
     </div>
+  );
+}
+
+// 0661: start a security hold — the client keeps its latest invoice back in place of a guarantee.
+function SecurityHoldModal({ clientId, clientName, onClose, onSaved }: {
+  clientId: string; clientName: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [since, setSince] = useState(today());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("set_client_security_hold", { p_client_id: clientId, p_reason: reason.trim(), p_since: since });
+    setBusy(false);
+    if (error) { setErr(friendlyDbError(error)); return; }
+    onSaved();
+  };
+  return (
+    <Modal isOpen onClose={onClose} title="Holds latest invoice as security" size="sm" error={err} onDismissError={() => setErr(null)}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => void save()} disabled={busy || !reason.trim() || !since}>{busy ? "Saving…" : "Save"}</Button>
+        </div>
+      }>
+      <div className="space-y-4 text-sm">
+        <p className="text-foreground">
+          <span className="font-semibold">{clientName}</span> keeps its latest invoice unpaid as security. Each month the
+          previous one is released and the new one is held.
+        </p>
+        <p className="text-muted-foreground text-xs">
+          The latest invoice is shown as "held as security" and left out of ageing, overdue and receivable days. It is still
+          owed: the balance and the ledger do not change. Anything older that is unpaid still shows as overdue.
+        </p>
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1.5">Why<span className="text-danger-600 ml-0.5">*</span></label>
+          <textarea className="w-full min-h-16 px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground"
+            placeholder="e.g. In place of a PKR 5m bank guarantee; released at contract end"
+            value={reason} onChange={(e) => setReason(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1.5">Since<span className="text-danger-600 ml-0.5">*</span></label>
+          <input type="date" className="px-3 py-2 rounded-lg border border-border bg-background text-sm" value={since} onChange={(e) => setSince(e.target.value)} />
+        </div>
+      </div>
+    </Modal>
   );
 }
