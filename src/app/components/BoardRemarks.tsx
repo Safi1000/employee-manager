@@ -15,6 +15,9 @@ export type BoardRemark = {
   body: string;
   author_name: string | null;
   created_at: string;
+  /** 0658: Ops must acknowledge a top-level remark before verifying the half. */
+  acknowledged_at?: string | null;
+  acknowledged_by_name?: string | null;
 };
 
 export const remarkWhen = (iso: string) =>
@@ -24,7 +27,7 @@ export const remarkWhen = (iso: string) =>
 export async function loadBoardRemarks(clientId: string | null, category: string | null, month: string, half: 1 | 2, branchId: string | null = null) {
   let q = supabase
     .from("attendance_board_remarks")
-    .select("id, parent_id, kind, body, author_name, created_at")
+    .select("id, parent_id, kind, body, author_name, created_at, acknowledged_at, acknowledged_by_name")
     .eq("period_month", `${month}-01`)
     .eq("half", half);
   // A staff group's board is per region (0498).
@@ -37,7 +40,7 @@ export async function loadBoardRemarks(clientId: string | null, category: string
 }
 
 export default function BoardRemarks({
-  clientId, category, branchId = null, month, half, halfLabel, reloadKey = 0, onCount,
+  clientId, category, branchId = null, month, half, halfLabel, reloadKey = 0, onCount, canAck = false, onOpenCount,
 }: {
   clientId: string | null;
   category: string | null;
@@ -49,6 +52,9 @@ export default function BoardRemarks({
   /** Bump to re-read (e.g. after a send-back wrote a remark). */
   reloadKey?: number;
   onCount?: (n: number) => void;
+  /** 0658: Ops may acknowledge remarks; Ops verify of this half waits for every top-level remark to be acknowledged. */
+  canAck?: boolean;
+  onOpenCount?: (n: number) => void;
 }) {
   const [remarks, setRemarks] = useState<BoardRemark[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +69,7 @@ export default function BoardRemarks({
       const r = await loadBoardRemarks(clientId, category, month, half, clientId ? null : branchId);
       setRemarks(r);
       onCount?.(r.length);
+      onOpenCount?.(r.filter((x) => !x.parent_id && x.kind === "remark" && !x.acknowledged_at).length);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -102,13 +109,21 @@ export default function BoardRemarks({
     await load();
   };
 
+  const acknowledge = async (id: string) => {
+    setPosting(true); setErr(null);
+    const { error } = await supabase.rpc("acknowledge_board_remark", { p_remark_id: id });
+    setPosting(false);
+    if (error) { setErr(error.message); return; }
+    await load();
+  };
+
   return (
     <div className="space-y-3">
       {loading && <p className="text-xs text-muted-foreground"><Loader2 className="w-3.5 h-3.5 inline animate-spin mr-1" /> Loading remarks…</p>}
       {!loading && threads.length === 0 && <p className="text-xs text-muted-foreground">No remarks on {halfLabel} yet.</p>}
       {threads.map(({ remark, replies }) => (
         <div key={remark.id} className="space-y-1.5">
-          <RemarkBubble r={remark} />
+          <RemarkBubble r={remark} canAck={canAck} busy={posting} onAck={() => acknowledge(remark.id)} />
           {replies.map((rep) => (
             <div key={rep.id} className="flex gap-1.5 pl-4">
               <CornerDownRight className="w-3.5 h-3.5 mt-1.5 text-muted-foreground shrink-0" />
@@ -156,9 +171,11 @@ export default function BoardRemarks({
   );
 }
 
-function RemarkBubble({ r }: { r: BoardRemark }) {
+function RemarkBubble({ r, canAck = false, busy = false, onAck }: { r: BoardRemark; canAck?: boolean; busy?: boolean; onAck?: () => void }) {
+  // 0658: a top-level remark not yet acknowledged by Ops is highlighted; Ops verify waits for it.
+  const open = !r.parent_id && r.kind === "remark" && !r.acknowledged_at;
   return (
-    <div className={`rounded-md border px-2.5 py-1.5 ${r.kind === "returned" ? "border-warning-200 bg-warning-50 dark:bg-warning-500/10" : "border-border bg-card"}`}>
+    <div className={`rounded-md border px-2.5 py-1.5 ${r.kind === "returned" || open ? "border-warning-200 bg-warning-50 dark:bg-warning-500/10" : "border-border bg-card"}`}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium text-foreground">
           {r.author_name ?? "Unknown"}
@@ -167,6 +184,15 @@ function RemarkBubble({ r }: { r: BoardRemark }) {
         <span className="text-[10px] text-muted-foreground shrink-0">{remarkWhen(r.created_at)}</span>
       </div>
       <p className="text-sm text-foreground whitespace-pre-wrap break-words mt-0.5">{r.body}</p>
+      {!r.parent_id && r.kind === "remark" && (
+        r.acknowledged_at ? (
+          <p className="text-[10px] text-muted-foreground mt-0.5">Acknowledged by {r.acknowledged_by_name ?? "Ops"} · {remarkWhen(r.acknowledged_at)}</p>
+        ) : canAck ? (
+          <Button size="sm" variant="secondary" className="mt-1" disabled={busy} onClick={onAck}>Acknowledge</Button>
+        ) : (
+          <p className="text-[10px] text-warning-700 dark:text-warning-500 mt-0.5">Not yet acknowledged by Ops</p>
+        )
+      )}
     </div>
   );
 }

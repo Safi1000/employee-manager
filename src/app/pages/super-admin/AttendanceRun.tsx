@@ -21,6 +21,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Tabs from "../../components/Tabs";
 import BoardRemarks from "../../components/BoardRemarks";
+import RunRemarks from "../../components/RunRemarks";
 import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
@@ -87,6 +88,9 @@ export default function AttendanceRun() {
   const [sendBack, setSendBack] = useState<{ key: string; halves: Half[] } | null>(null);
   const [sendNote, setSendNote] = useState("");
   const [remarksFor, setRemarksFor] = useState<{ key: string; half: Half } | null>(null);
+  // 0658: board remarks Ops has not acknowledged yet, per "scopeKey|half". Ops verify waits for them.
+  const [openRemarks, setOpenRemarks] = useState<Map<string, number>>(new Map());
+  const openOn = (s: Scope, hs: Half[]) => hs.reduce((n, h) => n + (openRemarks.get(`${s.key}|${h}`) ?? 0), 0);
   const [boardFor, setBoardFor] = useState<Scope | null>(null);
 
   const period = `${month}-01`;
@@ -112,6 +116,16 @@ export default function AttendanceRun() {
         .eq("period_month", period),
       supabase.from("payroll_run_phases").select("client_id, category, phase").eq("period_month", period),
     ]);
+    // 0658: which boards still have remarks for Ops to acknowledge.
+    const { data: openRows } = await supabase.from("attendance_board_remarks")
+      .select("client_id, category, branch_id, half").eq("period_month", period)
+      .eq("kind", "remark").is("parent_id", null).is("acknowledged_at", null);
+    const om = new Map<string, number>();
+    for (const r of (openRows ?? []) as any[]) {
+      const k = `${r.client_id ?? `cat:${r.category}@${r.branch_id ?? ""}`}|${r.half}`;
+      om.set(k, (om.get(k) ?? 0) + 1);
+    }
+    setOpenRemarks(om);
     const err = hv.error ?? legacy.error ?? phases.error;
     if (err) { setError(err.message); setLoading(false); return; }
 
@@ -305,7 +319,9 @@ export default function AttendanceRun() {
                     )}
                     {tab === "review" && canAct && reviewHalves.length === 2 && (
                       <>
-                        <Button size="sm" variant="primary" disabled={busy} onClick={() => act(s, [1, 2], "ops_verify")}>
+                        <Button size="sm" variant="primary" disabled={busy || openOn(s, [1, 2]) > 0}
+                          title={openOn(s, [1, 2]) > 0 ? "Acknowledge HR's remarks on the board first" : undefined}
+                          onClick={() => act(s, [1, 2], "ops_verify")}>
                           {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1.5" />} Verify whole month
                         </Button>
                         <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setSendNote(""); setSendBack({ key: s.key, halves: [1, 2] }); }}>
@@ -324,6 +340,11 @@ export default function AttendanceRun() {
                     </Button>
                   </div>
 
+                  {/* 0658: Ops' remarks for Accounts; Finance Verify in the Payroll Run waits for them to be acknowledged. */}
+                  <div className="px-4 py-2 border-b border-border">
+                    <RunRemarks stage="ops_to_accounts" clientId={s.clientId} category={s.category} branchId={s.branchId}
+                      month={month} canAdd={canOps} canAck={false} compact />
+                  </div>
                   <div className="divide-y divide-border">
                     {([1, 2] as Half[]).map((h) => {
                       const r = s.halves[h];
@@ -353,7 +374,9 @@ export default function AttendanceRun() {
                           <div className="flex flex-wrap items-center gap-1.5">
                             {tab === "review" && canAct && inReview(r) && (
                               <>
-                                <Button size="sm" variant={reviewHalves.length === 2 ? "secondary" : "primary"} disabled={busy} onClick={() => act(s, [h], "ops_verify")}>
+                                <Button size="sm" variant={reviewHalves.length === 2 ? "secondary" : "primary"} disabled={busy || openOn(s, [h]) > 0}
+                                  title={openOn(s, [h]) > 0 ? "Acknowledge HR's remarks on this half first" : undefined}
+                                  onClick={() => act(s, [h], "ops_verify")}>
                                   <ShieldCheck className="w-4 h-4 mr-1.5" /> Verify
                                 </Button>
                                 <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setSendNote(""); setSendBack({ key: s.key, halves: [h] }); }}>
@@ -367,9 +390,11 @@ export default function AttendanceRun() {
                                 <Undo2 className="w-4 h-4 mr-1.5" /> Back to Review
                               </Button>
                             )}
-                            <Button size="sm" variant="ghost"
+                            <Button size="sm" variant={openOn(s, [h]) > 0 ? "secondary" : "ghost"}
+                              className={openOn(s, [h]) > 0 ? "text-warning-700 dark:text-warning-500" : ""}
                               onClick={() => setRemarksFor((cur) => (cur?.key === s.key && cur.half === h ? null : { key: s.key, half: h }))}>
                               <MessageSquare className="w-4 h-4" />
+                              {openOn(s, [h]) > 0 && <span className="ml-1 text-xs">{openOn(s, [h])} to acknowledge</span>}
                             </Button>
                           </div>
 
@@ -398,7 +423,9 @@ export default function AttendanceRun() {
 
                           {remarksFor?.key === s.key && remarksFor.half === h && (
                             <div className="basis-full rounded-md border border-border bg-secondary/30 p-3 max-h-[40dvh] overflow-auto">
-                              <BoardRemarks clientId={s.clientId} category={s.category} branchId={s.branchId} month={month} half={h} halfLabel={halfLabels[h]} />
+                              <BoardRemarks clientId={s.clientId} category={s.category} branchId={s.branchId} month={month} half={h} halfLabel={halfLabels[h]}
+                                canAck={canOps}
+                                onOpenCount={(n) => setOpenRemarks((m) => { const x = new Map(m); x.set(`${s.key}|${h}`, n); return x; })} />
                             </div>
                           )}
                         </div>

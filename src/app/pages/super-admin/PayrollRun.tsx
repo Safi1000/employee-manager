@@ -11,6 +11,7 @@ import type { PayrollExportRow } from "../../lib/excel";
 import { exportPayrollWorkbook } from "../../lib/payrollExcel";
 import { payDaysFromSlip } from "../../lib/payDays";
 import PayDaysChecks from "../../components/PayDaysChecks";
+import RunRemarks from "../../components/RunRemarks";
 import { generatePayrollSheetsPdf } from "../../lib/payrollSheetPdf";
 import { brandingFromCompany } from "../../lib/pdfBranding";
 import { guardDisplayCode } from "../../lib/guardCode";
@@ -101,6 +102,9 @@ export default function PayrollRun() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // 0658: Ops remarks Accounts has not acknowledged, per scope key. Finance Verify waits for them.
+  const [openOpsRemarks, setOpenOpsRemarks] = useState<Map<string, number>>(new Map());
+  const canAckOps = hasPermission(profile, "payroll.edit") || hasPermission(profile, "payroll.approve");
 
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [verified, setVerified] = useState<Set<string>>(new Set());       // scope keys OPS-verified this month
@@ -615,7 +619,7 @@ export default function PayrollRun() {
   };
 
   const financeVerifyAll = async () => {
-    const pending = financeScopes.filter((s) => !financeVerified.has(s.key));
+    const pending = financeScopes.filter((s) => !financeVerified.has(s.key) && !((openOpsRemarks.get(s.key) ?? 0) > 0));
     if (pending.length === 0) return;
     setBusyKey("__all__"); setErr(null);
     for (const s of pending) {
@@ -1044,12 +1048,20 @@ export default function PayrollRun() {
                       <>
                         <Button size="sm" variant="ghost" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setPhase(s, "review")}>Back to Review</Button>
                         {canApprovePayroll && (
-                        <Button size="sm" variant="primary" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setConfirmFV({ scope: s })}>
+                        <Button size="sm" variant="primary" disabled={busyKey === s.key || busyKey === "__all__" || (openOpsRemarks.get(s.key) ?? 0) > 0}
+                          title={(openOpsRemarks.get(s.key) ?? 0) > 0 ? "Acknowledge Ops' remarks first" : undefined}
+                          onClick={() => setConfirmFV({ scope: s })}>
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Finance Verify</>}
                         </Button>
                         )}
                       </>
                     )}
+                    {/* 0658: Ops' remarks for Accounts. Finance Verify waits until each is acknowledged. */}
+                    <div className="basis-full">
+                      <RunRemarks stage="ops_to_accounts" clientId={s.clientId ?? null} category={s.clientId ? null : (s.category ?? null)}
+                        month={month} canAdd={false} canAck={canAckOps} compact
+                        onOpenCount={(n) => setOpenOpsRemarks((m) => { const x = new Map(m); x.set(s.key, n); return x; })} />
+                    </div>
                   </div>
                   );
                 })}
