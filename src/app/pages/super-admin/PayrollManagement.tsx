@@ -4737,6 +4737,21 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         })()}
       </Modal>
 
+      {/* Details is its own modal. It used to sit INSIDE the Disbursement Date
+          modal below, which renders its children only while open — so the
+          Details button set state and nothing appeared. */}
+      {detailsId && (() => {
+        const r = rows.find((x) => x.employee.id === detailsId);
+        if (!r) return null;
+        return (
+          <PayslipDetailsModal
+            row={r}
+            clientName={clients.find((c) => c.id === r.employee.client_id)?.name ?? null}
+            onClose={() => setDetailsId(null)}
+          />
+        );
+      })()}
+
       <Modal
         isOpen={rowDisburseTarget !== null}
         error={error}
@@ -4745,17 +4760,6 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         title="Disbursement Date"
         size="sm"
       >
-        {detailsId && (() => {
-          const r = rows.find((x) => x.employee.id === detailsId);
-          if (!r) return null;
-          return (
-            <PayslipDetailsModal
-              row={r}
-              clientName={clients.find((c) => c.id === r.employee.client_id)?.name ?? null}
-              onClose={() => setDetailsId(null)}
-            />
-          );
-        })()}
                 {rowDisburseTarget && (() => {
           const already = Math.round(rowDisburseTarget.amount_paid || 0);
           // paymentAmountDraft is the amount paid NOW; it accumulates onto
