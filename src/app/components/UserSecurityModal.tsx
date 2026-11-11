@@ -3,6 +3,7 @@ import { Ban, Loader2, LogOut, ShieldCheck, ShieldOff, UserCheck } from "lucide-
 import Modal from "./Modal";
 import Button from "./Button";
 import { supabase, friendlyDbError } from "../lib/supabase";
+import { askReason } from "./askReason";
 
 /**
  * One login's security, for Access & Governance (0591): two-factor state, the
@@ -115,9 +116,16 @@ export default function UserSecurityModal({
             </Button>
           ) : (
             <Button variant="danger" size="sm" disabled={busy !== null}
-              onClick={() => {
-                const reason = window.prompt(`Why is ${name}'s login being disabled?`);
-                if (!reason?.trim()) return;
+              onClick={async () => {
+                const reason = await askReason({
+                  title: "Disable login",
+                  subject: { title: name },
+                  message: "They are signed out everywhere and cannot sign in until the login is enabled again.",
+                  label: "Why is the login being disabled?",
+                  confirmLabel: "Disable login",
+                  tone: "danger",
+                });
+                if (!reason) return;
                 void run("off", () => supabase.rpc("set_user_disabled", { p_user_id: user.id, p_disabled: true, p_reason: reason.trim() }), "Login disabled and signed out everywhere.");
               }}>
               <Ban className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Disable login

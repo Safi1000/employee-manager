@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { useRegion, withRegionOrUnassigned } from "../../lib/region";
 import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
+import { askReason } from "../../components/askReason";
 
 // §21 Alert Engine — three tiers. Persisted blocking/warning alerts with an
 // acknowledge/override trail, plus the live warning and dashboard signals
@@ -52,8 +53,14 @@ export default function Alerts() {
   const ack = async (id: string, blocking: boolean) => {
     let reason: string | null = null;
     if (blocking) {
-      reason = window.prompt("Override reason (required for blocking alerts):") ?? "";
-      if (!reason.trim()) return;
+      reason = await askReason({
+        title: "Override blocking alert",
+        message: "This alert blocks the work it is about. Acknowledging it lets that work go ahead.",
+        label: "Override reason",
+        confirmLabel: "Override",
+        tone: "danger",
+      });
+      if (!reason) return;
     }
     await run(supabase.rpc("acknowledge_alert", { p_alert_id: id, p_override_reason: reason }));
   };

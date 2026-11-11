@@ -10,6 +10,7 @@ import Tabs from "../../components/Tabs";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useRegion } from "../../lib/region";
 import { SiteLocations, SiteTasksPanel, VisitsPanel } from "../../components/FieldActivity";
+import { askReason } from "../../components/askReason";
 
 /**
  * Operations ▸ Field Supervisors (30 Oct 2026). Replaces the Field accounts card
@@ -357,7 +358,17 @@ export default function FieldSupervisors() {
   };
   const setDisabled = async (a: Account, disabled: boolean) => {
     let reason: string | null = null;
-    if (disabled) { reason = window.prompt(`Why is ${a.name}'s field login being disabled?`); if (!reason?.trim()) return; }
+    if (disabled) {
+      reason = await askReason({
+        title: "Disable field login",
+        subject: { title: a.name },
+        message: "They are signed out of Bastion Field and cannot sign in until the login is enabled again.",
+        label: "Why is the login being disabled?",
+        confirmLabel: "Disable login",
+        tone: "danger",
+      });
+      if (!reason) return;
+    }
     setBusy(a.user_id); setErr(null);
     const { error } = await supabase.rpc("set_user_disabled", { p_user_id: a.user_id, p_disabled: disabled, p_reason: reason?.trim() ?? null });
     setBusy(null);

@@ -42,6 +42,7 @@ import { guardDisplayCode } from "../../lib/guardCode";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { usePageState, PageStateScope } from "../../lib/pageState";
 import { savePdf } from "../../lib/saveFile";
+import { askReason } from "../../components/askReason";
 
 type EmployeeRow = Employee & { client_name: string | null };
 
@@ -1645,10 +1646,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   // 0657: hold / release one payslip. The database refuses any payment against a held payslip.
   const holdPayslip = async (employeeId: string, name: string) => {
-    const reason = window.prompt(`Why is ${name}'s payslip for ${formatPeriod(selectedPeriod)} on hold?`);
+    const reason = await askReason({
+      title: "Hold payslip",
+      subject: { title: name, meta: `Payslip for ${formatPeriod(selectedPeriod)}` },
+      message: "While it is held, no payment can be recorded against this payslip and it is left out of Mark all and bulk disbursement. The rest of the run carries on.",
+      label: "Why is it on hold?",
+      placeholder: "e.g. Advance to be confirmed with the supervisor",
+      hint: "Shown on the payslip row until the hold is released.",
+      confirmLabel: "Hold payslip",
+    });
     if (reason == null) return;
-    if (!reason.trim()) { setError("Say why the payslip is held."); return; }
-    const { error: hErr } = await supabase.rpc("hold_payslip", { p_employee_id: employeeId, p_period_month: selectedPeriod, p_reason: reason.trim() });
+    const { error: hErr } = await supabase.rpc("hold_payslip", { p_employee_id: employeeId, p_period_month: selectedPeriod, p_reason: reason });
     if (hErr) { setError(friendlyDbError(hErr)); return; }
     setSelectedEmpIds((prev) => { const n = new Set(prev); n.delete(employeeId); return n; });
     await loadPeriodData(selectedPeriod);
@@ -1656,10 +1664,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const releaseHold = async (employeeId: string) => {
     const h = holdsByEmployee.get(employeeId);
     if (!h) return;
-    const note = window.prompt(`Release the hold ("${h.reason}")? Say how it was settled:`);
+    const emp = employees.find((x) => x.id === employeeId);
+    const note = await askReason({
+      title: "Release hold",
+      subject: { title: emp?.full_name ?? "Payslip", meta: `Payslip for ${formatPeriod(selectedPeriod)}` },
+      message: <>Held because: <span className="font-medium">{h.reason}</span></>,
+      label: "How was it settled?",
+      placeholder: "e.g. Advance confirmed — already in Bastion",
+      hint: "Kept with the hold. Once released, the payslip can be paid.",
+      confirmLabel: "Release hold",
+    });
     if (note == null) return;
-    if (!note.trim()) { setError("Say how the question was settled."); return; }
-    const { error: rErr } = await supabase.rpc("release_payslip_hold", { p_hold_id: h.id, p_note: note.trim() });
+    const { error: rErr } = await supabase.rpc("release_payslip_hold", { p_hold_id: h.id, p_note: note });
     if (rErr) { setError(friendlyDbError(rErr)); return; }
     await loadPeriodData(selectedPeriod);
   };

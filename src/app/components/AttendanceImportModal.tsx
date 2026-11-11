@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { useRegion } from "../lib/region";
 import { formatDate } from "../lib/date";
 import { downloadTemplate, readTemplate, codeFor, daysIn, type Parsed, type TemplateGuard } from "../lib/attendanceImport";
+import { askReason } from "./askReason";
 
 /**
  * IMPORT A MONTH (0638, 3 Nov 2026). Pick the client and month → download the
@@ -154,8 +155,15 @@ export default function AttendanceImportModal({ isOpen, onClose, onImported }: {
   };
 
   const undo = async (imp: PastImport) => {
-    const reason = window.prompt(`Undo the import of ${formatDate(imp.created_at)}?\n\nEvery mark it wrote is removed — including any edited since — and the marks it replaced come back.\n\nWhy is it being undone?`);
-    if (!reason?.trim()) return;
+    const reason = await askReason({
+      title: "Undo attendance import",
+      subject: { title: `Import of ${formatDate(imp.created_at)}` },
+      warning: "Every mark it wrote is removed — including any edited since — and the marks it replaced come back.",
+      label: "Why is it being undone?",
+      confirmLabel: "Undo import",
+      tone: "danger",
+    });
+    if (!reason) return;
     setBusy("undo"); setErr(null);
     const { error } = await supabase.rpc("undo_attendance_import", { p_import_id: imp.id, p_reason: reason.trim() });
     setBusy(null);

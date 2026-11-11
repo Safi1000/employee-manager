@@ -83,6 +83,7 @@ import {
 import { useAuth, hasPermission, hasAnyPermission } from "../../lib/auth";
 import { usePageState } from "../../lib/pageState";
 import { savePdf } from "../../lib/saveFile";
+import { askReason } from "../../components/askReason";
 
 // Rows painted per page of the roster list. See renderEmployeeList.
 const EMPLOYEE_PAGE_SIZE = 50;
@@ -1480,8 +1481,14 @@ export default function EmployeeManagement() {
   // Phase 3D: advance/reverse the approval state machine. Reversal needs a reason.
   // Phase 3G: Archive replaces Delete — reason required, logged, never removes rows.
   const handleArchive = async (emp: EmployeeRow) => {
-    const reason = window.prompt(`Archive ${emp.full_name} (${displayCodeFor(emp)})?\nEnter a reason (required):`);
-    if (!reason || !reason.trim()) return;
+    const reason = await askReason({
+      title: "Archive employee",
+      subject: { title: emp.full_name, meta: displayCodeFor(emp) },
+      message: "Archiving hides the record from everyday lists. Nothing is deleted, and the reason is logged.",
+      confirmLabel: "Archive",
+      tone: "danger",
+    });
+    if (!reason) return;
     setError(null);
     const { error: aErr } = await supabase.rpc("archive_employee", {
       p_employee_id: emp.id,

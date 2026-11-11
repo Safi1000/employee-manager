@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { askReason } from "../components/askReason";
 
 /**
  * Recording a client payment, with the 0640 entry checks (4 Nov 2026: a 5 Oct
@@ -31,20 +32,34 @@ export async function recordPaymentChecked(
     });
     const w = data as Warnings | null;
     if (w && (w.duplicates.length || w.backdated_days)) {
-      const parts: string[] = [];
-      if (w.duplicates.length) {
-        parts.push("This client already has:");
-        for (const d of w.duplicates) {
-          parts.push(`• PKR ${pkr(d.amount)} dated ${d.payment_date}, entered ${d.entered_on} by ${d.entered_by ?? "someone"}${d.invoice ? ` (${d.invoice})` : ""}`);
-        }
-        parts.push("", "Is this a SECOND, separate payment?");
-      }
-      if (w.backdated_days) parts.push(`This payment is dated ${w.backdated_days} days ago.`);
-      parts.push("", "To save it anyway, say why (it is kept with the payment). Cancel to go back.");
-      const typed = window.prompt(parts.join("\n"));
-      if (typed === null || !typed.trim()) return { error: null, cancelled: true };
-      if (typed.trim().length < 5) return { error: { message: "Give a reason of at least a few words." } };
-      reason = typed.trim();
+      const typed = await askReason({
+        title: w.duplicates.length ? "Is this a second payment?" : "Backdated payment",
+        subject: { title: `PKR ${pkr(args.p_amount)}`, meta: `Dated ${args.p_payment_date}` },
+        message: w.duplicates.length ? (
+          <>
+            <p>This client already has a payment that looks the same:</p>
+            <ul className="space-y-1.5">
+              {w.duplicates.map((d, i) => (
+                <li key={i} className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
+                  <span className="font-semibold">PKR {pkr(d.amount)}</span> dated {d.payment_date}
+                  <span className="text-muted-foreground"> · entered {d.entered_on} by {d.entered_by ?? "someone"}{d.invoice ? ` · ${d.invoice}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+            <p>Save only if this is a separate payment, not the same one entered again.</p>
+          </>
+        ) : undefined,
+        warning: w.backdated_days
+          ? <>This payment is dated <span className="font-semibold">{w.backdated_days} days ago</span>. That is normal for a cheque that cleared later — say so below.</>
+          : undefined,
+        label: "Why save it anyway?",
+        placeholder: w.duplicates.length ? "e.g. Second instalment for the same month" : "e.g. Cheque dated 20 Oct, cleared 11 Nov",
+        hint: "Kept with the payment, and the super admins are told.",
+        confirmLabel: "Save payment",
+        minLength: 5,
+      });
+      if (typed === null) return { error: null, cancelled: true };
+      reason = typed;
     }
   }
   const { error } = await supabase.rpc("record_invoice_payment_checked", { ...args, p_entry_reason: reason });
