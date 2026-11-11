@@ -3364,6 +3364,7 @@ export default function EmployeeManagement() {
         <RehireModal
           guard={rehireTarget}
           clients={clients}
+          branches={branches}
           onClose={() => setRehireTarget(null)}
           onDone={async () => { setRehireTarget(null); await loadData(); }}
           onError={setError}
@@ -4561,13 +4562,19 @@ export function SalaryHistoryPanel({
 }
 
 function RehireModal({
-  guard, clients, onClose, onDone, onError,
+  guard, clients, branches, onClose, onDone, onError,
 }: {
-  guard: EmployeeRow; clients: Client[];
+  guard: EmployeeRow; clients: Client[]; branches: Branch[];
   onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
 }) {
   const [joinDate, setJoinDate] = useState(todayIso());
+  // 0648: a leaver can come back to a client (rehire_guard, opens a posting) or
+  // to the office (rehire_to_office_staff: no client, no posting, no display code).
+  const [target, setTarget] = useState<"client" | "office_staff">(
+    guard.category === "office_staff" ? "office_staff" : "client",
+  );
   const [clientId, setClientId] = useState(guard.client_id ?? "");
+  const [branchId, setBranchId] = useState(guard.branch_id ?? "");
   // Salary is re-confirmed on rehire — often a returning guard comes back on a new
   // rate. Prefilled from their last salary; recorded effective from the join date.
   const [baseSalary, setBaseSalary] = useState(guard.base_salary != null ? String(guard.base_salary) : "");
@@ -4579,16 +4586,23 @@ function RehireModal({
   const perDay = baseSalary ? computePerDay(baseSalary) : "";
 
   const save = async () => {
-    if (!clientId) { fail("Select the client to rehire into."); return; }
+    if (target === "client" && !clientId) { fail("Select the client to rehire into."); return; }
     setSaving(true);
     setErr(null);
     try {
-      const { error: rErr } = await supabase.rpc("rehire_guard", {
-        p_guard: guard.id, p_join_date: joinDate, p_client_id: clientId,
-      });
-      if (rErr) throw rErr;
-      // New client-prefixed display code for the new stint (permanent code kept).
-      await supabase.rpc("assign_display_number", { p_employee_id: guard.id });
+      if (target === "office_staff") {
+        const { error: rErr } = await supabase.rpc("rehire_to_office_staff", {
+          p_guard: guard.id, p_join_date: joinDate, p_branch_id: branchId || null,
+        });
+        if (rErr) throw rErr;
+      } else {
+        const { error: rErr } = await supabase.rpc("rehire_guard", {
+          p_guard: guard.id, p_join_date: joinDate, p_client_id: clientId,
+        });
+        if (rErr) throw rErr;
+        // New client-prefixed display code for the new stint (permanent code kept).
+        await supabase.rpc("assign_display_number", { p_employee_id: guard.id });
+      }
       // Record the (possibly new) salary effective from the rehire date, so this
       // stint pays the rehire rate and it lands in salary history.
       if (baseSalary) {
@@ -4620,17 +4634,35 @@ function RehireModal({
     >
       <div className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Same person, same permanent code ({guard.guard_code ?? guard.employee_code}) and full history. Opens a new posting and reopens the employment window.
+          Same person, same permanent code ({guard.guard_code ?? guard.employee_code}) and full history.{" "}
+          {target === "office_staff"
+            ? "Moves them to Office Staff (no client or posting) and reopens the employment window."
+            : "Opens a new posting and reopens the employment window."}
         </p>
+        <label className="block"><span className="text-sm text-muted-foreground">Rehire into</span>
+          <ThemedSelect value={target} onChange={(e) => setTarget(e.target.value as "client" | "office_staff")} className={inputCls}>
+            <option value="client">Client (guard posting)</option>
+            <option value="office_staff">Office staff</option>
+          </ThemedSelect>
+        </label>
         <label className="block"><span className="text-sm text-muted-foreground">Rehire (joining) date</span>
           <input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} className={inputCls} />
         </label>
-        <label className="block"><span className="text-sm text-muted-foreground">Client</span>
-          <ThemedSelect value={clientId} onChange={(e) => setClientId(e.target.value)} className={inputCls}>
-            <option value="">— Select —</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </ThemedSelect>
-        </label>
+        {target === "client" ? (
+          <label className="block"><span className="text-sm text-muted-foreground">Client</span>
+            <ThemedSelect value={clientId} onChange={(e) => setClientId(e.target.value)} className={inputCls}>
+              <option value="">— Select —</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </ThemedSelect>
+          </label>
+        ) : (
+          <label className="block"><span className="text-sm text-muted-foreground">Branch</span>
+            <ThemedSelect value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputCls}>
+              <option value="">— Keep current —</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </ThemedSelect>
+          </label>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block"><span className="text-sm text-muted-foreground">Base salary (PKR)</span>
             <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="0" />
