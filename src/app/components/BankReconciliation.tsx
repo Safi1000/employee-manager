@@ -122,11 +122,16 @@ export default function BankReconciliation({
     onMoved();
   };
 
-  const submitClear = async () => {
+  // 0655: two ways out of suspense. "Clear" = the real entry is now recorded,
+  // so the parked amount comes back out of the bank. "Write off as rounding"
+  // = there is no entry to find (Rs 100 at most); the bank figure stays and
+  // the amount goes to Rounding Differences.
+  const submitClear = async (asRounding = false) => {
     if (!clearing) return;
     if (!clearNote.trim()) return setErr("Say what the difference turned out to be.");
     setBusy(true); setErr(null);
-    const { error } = await supabase.rpc("clear_bank_suspense", { p_reconciliation_id: clearing.id, p_note: clearNote.trim() });
+    const { error } = await supabase.rpc(asRounding ? "write_off_bank_suspense" : "clear_bank_suspense",
+      { p_reconciliation_id: clearing.id, p_note: clearNote.trim() });
     setBusy(false);
     if (error) return setErr(friendlyDbError(error));
     setClearing(null); setClearNote("");
@@ -283,7 +288,10 @@ export default function BankReconciliation({
       <Modal isOpen={!!clearing} onClose={() => setClearing(null)} title="Clear suspense" error={err} onDismissError={() => setErr(null)}
         footer={<>
           <Button variant="secondary" onClick={() => setClearing(null)}>Cancel</Button>
-          <Button onClick={submitClear} disabled={busy}>{busy ? "Saving…" : "Clear it"}</Button>
+          {clearing && Math.abs(Number(clearing.difference)) <= 100 && (
+            <Button variant="secondary" onClick={() => submitClear(true)} disabled={busy}>Write off as rounding</Button>
+          )}
+          <Button onClick={() => submitClear(false)} disabled={busy}>{busy ? "Saving…" : "Clear it"}</Button>
         </>}>
         {clearing && (
           <div className="flex flex-col gap-3">
@@ -291,9 +299,15 @@ export default function BankReconciliation({
               {bankName(clearing.bank_account_id)}, {fmtDate(clearing.statement_date)}: {signed(clearing.difference)} in suspense.
             </p>
             <p className="text-xs text-muted-foreground">
-              Record the real entry first (the missing payment, the duplicate removed). Clearing then takes the parked
-              amount back out of the bank, so it is not counted twice.
+              <b>Clear it</b> when you found the cause: record the real entry first (the missing payment, the duplicate
+              removed). Clearing then takes the parked amount back out of the bank, so it is not counted twice.
             </p>
+            {Math.abs(Number(clearing.difference)) <= 100 && (
+              <p className="text-xs text-muted-foreground">
+                <b>Write off as rounding</b> when there is nothing to find (a few rupees of rounding). The bank balance
+                stays as the statement shows; the amount goes to Rounding Differences.
+              </p>
+            )}
             <div>
               <label className={label}>What was it? *</label>
               <input className={field} value={clearNote} onChange={(e) => setClearNote(e.target.value)} />
