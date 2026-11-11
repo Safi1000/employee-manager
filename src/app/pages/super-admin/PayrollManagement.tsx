@@ -2031,6 +2031,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       const target = Math.max(0, Math.round(targetPaid));
       const net = Math.round(row.net_salary);
       const pay = target - already; // > 0 pays out; < 0 returns to the company
+      // 0657: a held payslip cannot be paid. The database refuses it too
+      // (trg_payslip_hold_blocks_payment); this says why before anything is sent.
+      const heldNow = holdsByEmployee.get(row.employee.id);
+      if (pay > 0 && heldNow) {
+        setRowError(`This payslip is on hold: ${heldNow.reason}. Release the hold before paying it.`);
+        return;
+      }
       if (pay === 0) {
         setRowError("Amount Paid is unchanged — nothing to settle.");
         return;
@@ -4328,6 +4335,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </button>
                     </div>
                   )}
+                  {afterNet && holdsByEmployee.has(selectedRow.employee.id) && (
+                    <div className="flex items-start gap-2 p-2 bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200 rounded text-xs">
+                      <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" strokeWidth={2} />
+                      <div className="flex-1">
+                        <span className="font-semibold">On hold — cannot be disbursed.</span>{" "}
+                        {holdsByEmployee.get(selectedRow.employee.id)!.reason}
+                        {canHold ? " Release the hold on the payslip row first." : " Ask someone with payroll edit rights to release it."}
+                      </div>
+                    </div>
+                  )}
                   {!throughNet && (
                   <div className={`grid ${afterNet ? "grid-cols-1" : "grid-cols-2"} gap-2 pt-3 border-t border-border`}>
                     {/* Mark Cleared is redundant on Payroll Management — the row is
@@ -4349,6 +4366,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       // button is a disabled "Disbursed" marker — never a reversal.
                       disabled={
                         savingId === selectedRow.employee.id ||
+                        holdsByEmployee.has(selectedRow.employee.id) ||
                         Math.round(selectedRow.amount_paid || 0) >= Math.round(selectedRow.net_salary)
                       }
                       onClick={() => {
@@ -4380,7 +4398,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     >
                       {Math.round(selectedRow.amount_paid || 0) >= Math.round(selectedRow.net_salary)
                         ? "Disbursed"
-                        : selectedRow.amount_paid > 0
+                        : holdsByEmployee.has(selectedRow.employee.id)
+                          ? "On hold"
+                          : selectedRow.amount_paid > 0
                           ? "Pay balance"
                           : "Disburse"}
                     </Button>
@@ -4703,8 +4723,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && (!afterNet || selectedEmpIds.has(r.employee.id)),
           );
           const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
+          // Held payslips are never part of a bulk payment; name them so nobody
+          // is skipped without the person paying noticing.
+          const heldRows = filtered.filter((r) => remainingOf(r) > 0 && holdsByEmployee.has(r.employee.id));
           return (
             <div className="space-y-4">
+              {heldRows.length > 0 && (
+                <div className="flex items-start gap-2 p-3 bg-warning-50 text-warning-700 dark:text-warning-500 border border-warning-200 rounded-md text-xs">
+                  <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" strokeWidth={2} />
+                  <div className="flex-1">
+                    <div className="font-semibold">{heldRows.length} on hold — not included</div>
+                    <ul className="mt-1 space-y-0.5">
+                      {heldRows.map((r) => (
+                        <li key={r.employee.id}>{r.employee.full_name}: {holdsByEmployee.get(r.employee.id)!.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
               <div className="bg-muted/50 border border-border rounded-md p-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Rows with an unpaid balance</span>
@@ -4894,7 +4930,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 variant="primary"
                 size="md"
                 className="flex-1"
-                disabled={!rowDisburseDate}
+                disabled={!rowDisburseDate || holdsByEmployee.has(rowDisburseTarget.employee.id)}
                 onClick={async () => {
                   const tgt = rowDisburseTarget;
                   const date = rowDisburseDate;
