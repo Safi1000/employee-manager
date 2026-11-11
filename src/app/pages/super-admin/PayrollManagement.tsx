@@ -43,6 +43,7 @@ import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { usePageState, PageStateScope } from "../../lib/pageState";
 import { savePdf } from "../../lib/saveFile";
 import { askReason } from "../../components/askReason";
+import InetInitiateModal, { type InetInitiateItem } from "../../components/InetInitiateModal";
 
 type EmployeeRow = Employee & { client_name: string | null };
 
@@ -391,6 +392,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [loansByEmployee, setLoansByEmployee] = useState<Map<string, { outstanding: number; due: number }>>(new Map());
   // 0657: payslips on hold this period (employee → hold). No payment can be made against one.
   const [holdsByEmployee, setHoldsByEmployee] = useState<Map<string, { id: string; reason: string }>>(new Map());
+  // 0662: iNet banks (id → name) and payslips in transit on iNet (payslip id → batch label).
+  const [inetBanks, setInetBanks] = useState<Map<string, string>>(new Map());
+  const [inTransit, setInTransit] = useState<Map<string, string>>(new Map());
+  const [inetInit, setInetInit] = useState<{ bankId: string; items: InetInitiateItem[]; label: string; reference: string } | null>(null);
+  const [inetMsg, setInetMsg] = useState<string | null>(null);
   // Which period the per-period maps (payslips, advances, attendance) were
   // loaded for. Between a period switch and its load finishing, the rows carry
   // the NEW period with the OLD period's data — on 26 Oct 2026 the auto-save
@@ -632,7 +638,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes, loanRes, holdRes] = await Promise.all([
+    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes, loanRes, holdRes, inetBankRes, transitRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       // Outstanding advance balance (Σ advances − Σ recovered on prior payslips),
@@ -651,6 +657,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // 0656: loan instalments due this month. An error (e.g. no access) means no loans shown, never a crash.
       supabase.rpc("employee_loan_due", { p_period_start: start }),
       supabase.from("payroll_holds").select("id, employee_id, reason").eq("period_month", period).is("released_at", null),
+      // 0662. Errors (not applied yet, no access) mean no iNet banks — the screen pays as before.
+      supabase.rpc("inet_banks"),
+      supabase.from("inet_items").select("payslip_id, inet_batches(label)").eq("status", "initiated").not("payslip_id", "is", null),
     ]);
     // A newer load (another period) has started: this one's data is stale.
     if (seq !== loadSeqRef.current) return;
@@ -738,6 +747,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     });
     setAdvancesByEmployee(advMap);
     setHoldsByEmployee(new Map(((holdRes.error ? [] : holdRes.data) ?? []).map((h: any) => [h.employee_id as string, { id: h.id as string, reason: h.reason as string }])));
+    setInetBanks(new Map(((inetBankRes.error ? [] : inetBankRes.data) ?? []).map((b: any) => [b.id as string, b.bank_name as string])));
+    setInTransit(new Map(((transitRes.error ? [] : transitRes.data) ?? []).map((t: any) => [t.payslip_id as string, (t.inet_batches?.label as string) ?? "iNet"])));
     setLoansByEmployee(new Map(((loanRes.error ? [] : loanRes.data) ?? []).map((l: any) => [
       l.employee_id as string, { outstanding: Number(l.outstanding) || 0, due: Number(l.instalment_due) || 0 },
     ])));
@@ -2230,7 +2241,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
     // In afterNet (Payroll Management), disburse only the checked employees.
     const candidates = filtered.filter(
-      (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && (!afterNet || selectedEmpIds.has(r.employee.id)),
+      (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && !(r.payslip_id && inTransit.has(r.payslip_id)) && (!afterNet || selectedEmpIds.has(r.employee.id)),
     );
     if (candidates.length === 0) {
       setError(afterNet ? "Select at least one employee with an unpaid balance." : "No unpaid balances in the current filter to disburse.");
@@ -2238,6 +2249,23 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     if (bulkMode === "Bank" && !bulkBankId) {
       setError("Select a bank account for bulk disbursement.");
+      return;
+    }
+    // 0662: on an iNet bank nothing is paid here — the payslips are initiated
+    // and paid when someone else releases the batch.
+    if (bulkMode === "Bank" && inetBanks.has(bulkBankId)) {
+      const unsaved = candidates.filter((r) => !r.payslip_id);
+      if (unsaved.length) {
+        setError(`Save these payslips first: ${unsaved.map((r) => r.employee.full_name).join(", ")}.`);
+        return;
+      }
+      setIsBulkDisburseOpen(false);
+      setInetInit({
+        bankId: bulkBankId,
+        items: candidates.map((r) => ({ payslipId: r.payslip_id as string, name: r.employee.full_name, amount: remainingOf(r) })),
+        label: `${formatPeriod(selectedPeriod)} salaries`,
+        reference: "",
+      });
       return;
     }
     const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
@@ -3070,6 +3098,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className={embedded ? "px-0 pt-0 pb-0" : "px-8 pt-8 pb-0"}>
+        {inetMsg && (
+          <div className="mb-3 flex items-start gap-2 p-3 rounded-lg border border-info-200 bg-info-50 text-info-700 dark:bg-info-500/10 dark:text-info-500 text-sm">
+            <div className="flex-1">{inetMsg}</div>
+            <button type="button" onClick={() => setInetMsg(null)}><X className="w-4 h-4" /></button>
+          </div>
+        )}
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -3284,7 +3318,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   embed has its own `search` state); the sort still applies within
                   the matches. */}
               {runInline && (() => {
-                const selectable = afterNet ? filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0 && !holdsByEmployee.has(r.employee.id)) : [];
+                const selectable = afterNet ? filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0 && !holdsByEmployee.has(r.employee.id) && !(r.payslip_id && inTransit.has(r.payslip_id))) : [];
                 const allSelected = selectable.length > 0 && selectable.every((r) => selectedEmpIds.has(r.employee.id));
                 return (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
@@ -3489,6 +3523,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 >
                                   Details
                                 </button>
+                                {row.payslip_id && inTransit.has(row.payslip_id) && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-info-100 text-info-700 dark:bg-info-500/15 dark:text-info-500"
+                                    title="Initiated on iNet — paid when the batch is released">
+                                    In transit: {inTransit.get(row.payslip_id)}
+                                  </span>
+                                )}
                                 {/* 0657: hold one guard's payslip; the rest of the client goes ahead. */}
                                 {holdsByEmployee.has(e.id) ? (
                                   <>
@@ -4367,6 +4407,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       disabled={
                         savingId === selectedRow.employee.id ||
                         holdsByEmployee.has(selectedRow.employee.id) ||
+                        !!(selectedRow.payslip_id && inTransit.has(selectedRow.payslip_id)) ||
                         Math.round(selectedRow.amount_paid || 0) >= Math.round(selectedRow.net_salary)
                       }
                       onClick={() => {
@@ -4391,6 +4432,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           setRowError("Choose his fuel card.");
                           return;
                         }
+                        // 0662: on an iNet bank this initiates; it is paid on release.
+                        if (selectedRow.payment_mode === "Bank" && selectedRow.bank_account_id && inetBanks.has(selectedRow.bank_account_id)) {
+                          if (!selectedRow.payslip_id) { setRowError("Save the payslip first."); return; }
+                          setRowError(null);
+                          setInetInit({
+                            bankId: selectedRow.bank_account_id,
+                            items: [{ payslipId: selectedRow.payslip_id, name: selectedRow.employee.full_name, amount: payNow }],
+                            label: `${formatPeriod(selectedPeriod)} salary · ${selectedRow.employee.full_name}`,
+                            reference: "",
+                          });
+                          return;
+                        }
                         setRowError(null);
                         setRowDisburseDate(todayISO());
                         setRowDisburseTarget(selectedRow);
@@ -4400,6 +4453,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         ? "Disbursed"
                         : holdsByEmployee.has(selectedRow.employee.id)
                           ? "On hold"
+                          : selectedRow.payslip_id && inTransit.has(selectedRow.payslip_id)
+                          ? "In transit (iNet)"
+                          : selectedRow.payment_mode === "Bank" && selectedRow.bank_account_id && inetBanks.has(selectedRow.bank_account_id)
+                          ? "Initiate on iNet"
                           : selectedRow.amount_paid > 0
                           ? "Pay balance"
                           : "Disburse"}
@@ -4707,6 +4764,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         )}
       </Modal>
 
+      {inetInit && (
+        <InetInitiateModal
+          bankId={inetInit.bankId}
+          bankName={inetBanks.get(inetInit.bankId) ?? "Bank"}
+          items={inetInit.items}
+          defaultLabel={inetInit.label}
+          defaultReference={inetInit.reference}
+          onClose={() => setInetInit(null)}
+          onDone={(m) => { setInetInit(null); setInetMsg(m); setSelectedEmpIds(new Set()); void loadPeriodData(selectedPeriod); }}
+        />
+      )}
+
       <Modal
         isOpen={isBulkDisburseOpen}
         error={error}
@@ -4720,7 +4789,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           // what handleBulkDisburse actually moves — never the full Net Salary.
           const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
           const candidates = filtered.filter(
-            (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && (!afterNet || selectedEmpIds.has(r.employee.id)),
+            (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && !(r.payslip_id && inTransit.has(r.payslip_id)) && (!afterNet || selectedEmpIds.has(r.employee.id)),
           );
           const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
           // Held payslips are never part of a bulk payment; name them so nobody
@@ -4846,7 +4915,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   disabled={bulkSubmitting || candidates.length === 0}
                 >
                   {bulkSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}…` : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
+                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}…`
+                    : bulkMode === "Bank" && inetBanks.has(bulkBankId) ? `Initiate ${candidates.length} on ${inetBanks.get(bulkBankId)} iNet`
+                    : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
                 </Button>
                 <Button
                   variant="secondary"

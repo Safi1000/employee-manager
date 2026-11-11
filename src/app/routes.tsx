@@ -26,6 +26,7 @@ const AttendanceBoard = lazyPage(() => import("./pages/super-admin/AttendanceBoa
 const PayrollManagement = lazyPage(() => import("./pages/super-admin/PayrollManagement"));
 const PayrollRun = lazyPage(() => import("./pages/super-admin/PayrollRun"));
 const LoansPage = lazyPage(() => import("./pages/super-admin/Loans"));
+const InetReleasesPage = lazyPage(() => import("./pages/super-admin/InetReleases"));
 const ReliefPool = lazyPage(() => import("./pages/super-admin/ReliefPool"));
 const AttendanceRun = lazyPage(() => import("./pages/super-admin/AttendanceRun"));
 const PayrollAdjustments = lazyPage(() => import("./pages/super-admin/PayrollAdjustments"));
@@ -236,6 +237,7 @@ export const router = createBrowserRouter([
       )) },
       { path: "payroll-run", element: guard(["payroll.view", "payroll.edit"], <PayrollRun />) },
       { path: "loans", element: guard(["payroll.view", "payroll.edit"], <LoansPage />) },
+      { path: "inet", element: guard(["bank.inet_initiate", "bank.inet_release"], <InetReleasesPage />) },
       { path: "payroll-runs", element: <Navigate to="/app/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       // Recruitment page deleted — intake is set on the employee form itself.

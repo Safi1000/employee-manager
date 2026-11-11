@@ -398,6 +398,29 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   const [payAmount, setPayAmount] = useState("");
   const [payVia, setPayVia] = useState<"Cash" | "Bank">("Cash");
   const [payBankId, setPayBankId] = useState("");
+  // 0662: iNet banks — a vendor payment from one is initiated, and paid on release.
+  const [inetBanks, setInetBanks] = useState<Map<string, string>>(new Map());
+  const [inetNotice, setInetNotice] = useState<string | null>(null);
+  // Per bank: what is initiated on iNet and not yet released (not in the balance until it is).
+  const [inetTransit, setInetTransit] = useState<Map<string, { amount: number; batches: number }>>(new Map());
+  const loadInet = useCallback(() => {
+    void supabase.rpc("inet_banks").then(({ data, error }) => {
+      if (!error) setInetBanks(new Map(((data ?? []) as { id: string; bank_name: string }[]).map((b) => [b.id, b.bank_name])));
+    });
+    void supabase.from("inet_items").select("amount, batch_id, inet_batches(bank_account_id)").eq("status", "initiated").then(({ data, error }) => {
+      if (error) return;
+      const m = new Map<string, { amount: number; batches: Set<string> }>();
+      for (const r of (data ?? []) as any[]) {
+        const bank = r.inet_batches?.bank_account_id as string | undefined;
+        if (!bank) continue;
+        const e = m.get(bank) ?? { amount: 0, batches: new Set<string>() };
+        e.amount += Number(r.amount) || 0; e.batches.add(r.batch_id);
+        m.set(bank, e);
+      }
+      setInetTransit(new Map([...m].map(([k, v]) => [k, { amount: v.amount, batches: v.batches.size }])));
+    });
+  }, []);
+  useEffect(() => { loadInet(); }, [loadInet]);
   const [payCustodianId, setPayCustodianId] = useState("");
   // Record WHT (0423). Withholding used to be a field on the Record Payment
   // form and nowhere else, so a deduction the client only told you about later
@@ -1708,6 +1731,23 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
         const staff = custodians.find((c) => c.employeeId === payCustodianId);
         if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
       }
+      // 0662: from an iNet bank nothing is paid now — it is initiated and paid
+      // when someone else releases it on Finance ▸ iNet releases.
+      if (payVia === "Bank" && inetBanks.has(payBankId)) {
+        const { error: initErr } = await supabase.rpc("initiate_inet_vendor_payment", {
+          p_bank_account_id: payBankId,
+          p_vendor_id: payTarget.vendorId,
+          p_amount: amount,
+          p_expense_id: payTarget.expenseId,
+          p_label: `Vendor: ${payTarget.vendorName}`,
+        });
+        if (initErr) throw initErr;
+        loadInet();
+        setInetNotice(`PKR ${amount.toLocaleString()} to ${payTarget.vendorName} is in transit on ${inetBanks.get(payBankId)} iNet — key it in iNet; it is paid when released on Finance ▸ iNet releases.`);
+        setPayTarget(null);
+        await loadAll();
+        return;
+      }
       // 0470. One call: the payment, its application to the bills oldest first,
       // each bill's posting, and the money — together or not at all.
       const { error: payErr } = await supabase.rpc("pay_vendor_payables", {
@@ -2580,6 +2620,12 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
 
       <div className={embed ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
         {/* 0640: cash waiting for its custodian, and payments that look entered twice. */}
+        {inetNotice && (
+          <div className="mb-4 flex items-start gap-2 p-3 rounded-lg border border-info-200 bg-info-50 text-info-700 dark:bg-info-500/10 dark:text-info-500 text-sm">
+            <div className="flex-1">{inetNotice}</div>
+            <button type="button" onClick={() => setInetNotice(null)} aria-label="Dismiss">×</button>
+          </div>
+        )}
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -2994,6 +3040,11 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {pendChq > 0 ? <>+ <span className="font-ledger text-warning-700 dark:text-warning-500">{pendChq.toLocaleString()}</span> in pending cheques = <span className="font-ledger text-foreground">{totalBal.toLocaleString()}</span></> : "no cheques in transit"}
                           </p>
+                          {inetTransit.get(bank.id) && (
+                            <a href="/app/inet" className="block text-xs text-info-700 dark:text-info-500 mt-0.5 hover:underline">
+                              Initiated, not yet released: <span className="font-ledger">{Math.round(inetTransit.get(bank.id)!.amount).toLocaleString()}</span> ({inetTransit.get(bank.id)!.batches} batch{inetTransit.get(bank.id)!.batches === 1 ? "" : "es"}) — not in the balance yet
+                            </a>
+                          )}
                         </div>
                         {bank.owner_type === "company" && (
                           <p className={`text-[11px] font-medium inline-flex items-center gap-1 ${!tally ? "text-muted-foreground" : tally.parked ? "text-warning-700 dark:text-warning-500" : tally.enteredSince ? "text-foreground" : "text-success-700 dark:text-success-500"}`}
@@ -5506,7 +5557,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
             )}
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Processing…" : "Confirm Payment"}
+                {submitting ? "Processing…" : payVia === "Bank" && inetBanks.has(payBankId) ? `Initiate on ${inetBanks.get(payBankId)} iNet` : "Confirm Payment"}
               </Button>
               <Button type="button" variant="secondary" size="md" onClick={() => setPayTarget(null)}>
                 Cancel

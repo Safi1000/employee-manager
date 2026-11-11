@@ -85,3 +85,39 @@ Rules Bastion follows for other banks, therefore:
    Column C is the code most often used for that bank in rows that went
    through. A bank id not in this table is refused at initiate with its
    name, so a new bank is added here deliberately, not guessed.
+
+---
+
+# Soneri Trans@ct bulk upload — what Bastion produces for Soneri
+
+From Soneri's own documents (12 Nov 2026): "FT (Sample).xlsx", "IBFT
+(Sample).xlsx", "Bank Code List.xlsx", the 1LINK purpose list, and the user
+guides for bulk upload and single transactions. Upload path in Trans@ct:
+Transaction Input ▸ Bulk Upload ▸ payment nature "Finance Payment" ▸ template
+**Fund Transfer With Purpose** (Soneri → Soneri) or **Inter Bank Fund
+Transfer with Purpose** (other banks) ▸ Process ▸ Verification ▸ Approval
+(P primary / S secondary) ▸ Pay ▸ Club Posting.
+
+| Same bank (sheet `FT`) | Other banks (sheet `IBFT`) |
+|---|---|
+| `ProductTypeCode` | `ProductTypeCode` |
+| `BeneficiaryAccountNo` (Soneri account, text) | `BeneficiaryAccountNo` (IBAN, text) |
+| — | `BeneficiaryBankCode` (Soneri's own numeric list: HBL 11, Allied 10, Askari 13, UBL 8, MCB 9, NBP 38, Meezan 22, Faysal 12, JS 14, Alfalah 19, Bank Al Habib 28, Habib Metro 20, NayaPay 53…) |
+| `Amount` (whole rupees) | `Amount` |
+| `ReferenceField1` = batch reference (e.g. HMC) | same |
+| `ReferenceField2` = payee name | same |
+| `ReferenceField3` = batch name | same |
+| `Purpose of Payment` = 1LINK code: **0501** salary, **0122** vendor payment | same |
+
+No beneficiary name column and no date column: Soneri takes the name from the
+account and the date from processing.
+
+`ProductTypeCode` written: `FTBulk` / `IBFTBulk` (what the bulk-upload guide
+shows after processing; the sample files say `FTSingle` / `IBFTSingle`). One
+constant (`SONERI_PRODUCT` in `src/app/lib/inetFile.ts`) if Soneri wants the
+other.
+
+From Soneri, an Askari payee needs an **IBAN** (Askari staff mostly have only
+an account number in Bastion, so they are refused by name — pay them from
+Askari). RTGS (large single transfers, its own template) is not generated: it
+is keyed by hand as a single instruction.

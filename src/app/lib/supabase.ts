@@ -478,6 +478,9 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "receivables.write_off_approve", label: "Approve bad-debt write-offs (not your own request)" },
       { key: "payables.view", label: "View accounts payable" },
       { key: "accounting.edit", label: "Edit banks, transfers, reconciliation" },
+      // 0662. Online bank payments in two steps, by two people.
+      { key: "bank.inet_initiate", label: "Initiate online bank payments (iNet)" },
+      { key: "bank.inet_release", label: "Release online bank payments (iNet) — never a batch you initiated" },
     ],
   },
   {
