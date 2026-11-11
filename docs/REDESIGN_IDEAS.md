@@ -996,3 +996,36 @@ Bastion somewhere.
 5. **Vetting drive** using the hiring checklist (tables exist).
 6. **Pricing:** contract costing calculator + escalation reminders.
 7. Then the page-level polish in B and C.
+
+## Money on phones — the website is the open door (2026-11-08) — DEFERRED
+
+Bastion Field shows no money. But the website renders on a phone browser, so
+anyone whose role can see money on a computer can see it on a phone too.
+Leaving money out of the app keeps it off the stores and off guards' phones; it
+does not stop a person.
+
+**What actually controls money is the permission, not the device.** RLS and
+`has_perm()` refuse the same on every screen. A device check (user agent,
+screen width) runs in the browser and is beaten by "Request desktop site", so
+it can only ever be a nudge.
+
+Options, cheapest first:
+
+1. **Roles are the wall.** Supervisors and field staff hold Field permissions
+   only, with no `*.view` on money. Check who holds money keys today; that list
+   is the real answer to "who can see money on a phone".
+2. **Tighten sessions on touch devices.** Same 2FA, but a 10-minute idle cut
+   (instead of 30) when the pointer is coarse. A lost or borrowed phone is the
+   actual phone risk. Cheap; lives in `InactivityLogout.tsx`.
+3. **Soft block.** On a phone, money pages say "open on a computer", with a
+   per-person override for the owners. Bypassable — a nudge, not a control.
+4. **Trusted devices (real enforcement).** A new device needs approval before
+   money permissions count on it: a `trusted_devices` row checked by
+   `has_perm()` against the session. Heavy; only if 1–2 are not enough.
+
+Recommendation: 1 + 2 now, 3 only if wanted, 4 not yet.
+If the answer is "nobody sees money on a phone, owners included", that is
+option 4, because 3 cannot promise it.
+
+Also stale: `docs/MOBILE.md` describes a Capacitor wrapper of the website
+(`android/`, `ios/`, `lib/platform.ts`) that no longer exists in the repo.
