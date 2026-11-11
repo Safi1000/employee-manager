@@ -124,3 +124,18 @@ comment on function public.rehire_to_office_staff(uuid, date, uuid) is
   '0648: rehire a separated employee into office staff (no client/posting). Same permanent code. '
   'Refuses archived, not-eligible, blacklisted, and dates on/before the last working day. '
   'DEFERRED: whether the 0629 7-day "that is a move" rule should apply to guard→office.';
+
+-- Tenant guard assertion (scripts/migration-template.sql §2).
+do $$
+declare v_n int; v_who text;
+begin
+  select count(*), string_agg(g.function_name || '.' || g.parameter_name, ', ')
+    into v_n, v_who
+    from public.tenant_guard_gaps() g;
+
+  if v_n <> 0 then
+    raise exception
+      '0648 REFUSED: tenant_guard_gaps() reports % gap(s): %. Every uuid parameter that names a tenant-scoped row needs a guard the detector can see.',
+      v_n, v_who;
+  end if;
+end $$;

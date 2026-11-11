@@ -172,6 +172,54 @@ type PayrollManagementProps = {
   siteGrouped?: boolean;
 };
 
+/** One client's share of a person's pay for the month (0649). */
+type ClientShare = { clientId: string | null; weight: number };
+
+/**
+ * payroll_client_shares() for one month, as employee → shares. Paged, because
+ * it is one row per person per client and PostgREST stops at 1,000 rows — a
+ * silently short map would put the missing people back under today's client.
+ */
+async function loadClientShares(period: string): Promise<Map<string, ClientShare[]>> {
+  const out = new Map<string, ClientShare[]>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .rpc("payroll_client_shares", { p_period: period })
+      .order("employee_id")
+      .order("client_id")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as { employee_id: string; client_id: string | null; weight: number }[];
+    for (const r of rows) {
+      const arr = out.get(r.employee_id) ?? [];
+      arr.push({ clientId: r.client_id, weight: Number(r.weight) });
+      out.set(r.employee_id, arr);
+    }
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Which clients a person's pay for the month belongs to. Only CLIENT guards are
+ * split: relievers and office staff keep their own category group, exactly as
+ * the Payroll Run phases are keyed. No row in the map (no present days) means
+ * the current client at weight 1 — payslip_client_split()'s own fallback.
+ */
+type EmployeeRowLike = { id: string; category?: string | null; client_id?: string | null };
+
+function sharesFor(
+  e: EmployeeRowLike,
+  shares: Map<string, ClientShare[]>,
+): ClientShare[] {
+  if (e.category === "client") {
+    const s = shares.get(e.id);
+    if (s && s.length) return s;
+  }
+  return [{ clientId: e.client_id ?? null, weight: 1 }];
+}
+
 export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, onTotals, onRows, periodOverride, runInline = false, siteGrouped = false }: PayrollManagementProps = {}) {
   // `embedded` = rendered inside the Payroll Run / Payroll Management client list:
   // no page Header, filters, totals cards, or bulk actions — just the scoped
@@ -390,6 +438,14 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   /** guard_id -> site_id of their open posting. The employee row does not carry it. */
   const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
   const [postings, setPostings] = useState<{ guard_id: string; site_id: string; start_date: string; end_date: string | null }[]>([]);
+  /**
+   * 0649: employee → the clients worked for in the pay month and each one's
+   * share, from payroll_client_shares() — the same split the payroll accrual
+   * posts. A client guard's pay sits under the clients he WORKED for that
+   * month, not under the client he is posted to today (Waqas Ahmed, Oct 2026:
+   * all of October at Regent 1, moved on 1 Nov, shown under the new client).
+   */
+  const [clientShares, setClientShares] = useState<Map<string, ClientShare[]>>(new Map());
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = usePageState<"all" | "Cleared" | "Pending">("PayrollManagement.statusFilter", "all");
   const [disbursedFilter, setDisbursedFilter] = usePageState<"all" | "yes" | "no">("PayrollManagement.disbursedFilter", "all");
@@ -414,6 +470,28 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
   const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
+  // 0649: the month's client shares. A failure is shown, not swallowed — an
+  // empty map would quietly put everyone back under today's client.
+  useEffect(() => {
+    if (!selectedPeriod) return;
+    let live = true;
+    setClientShares(new Map());
+    loadClientShares(selectedPeriod.slice(0, 7) + "-01")
+      .then((m) => { if (live) setClientShares(m); })
+      .catch((e: any) => { if (live) setError(`Could not load which clients each person worked for: ${e?.message ?? e}`); });
+    return () => { live = false; };
+  }, [selectedPeriod]);
+  /** This person's share of their month at one client (0 if none). */
+  const shareAt = useCallback(
+    (e: EmployeeRowLike, clientId: string | null) =>
+      sharesFor(e, clientShares).filter((s) => s.clientId === clientId).reduce((n, s) => n + s.weight, 0),
+    [clientShares],
+  );
+  /** The weight a figure carries on THIS screen: its share at the scoped client, else all of it. */
+  const scopeWeight = useCallback(
+    (e: EmployeeRowLike) => (clientScopeId ? shareAt(e, clientScopeId) : 1),
+    [clientScopeId, shareAt],
+  );
   useEffect(() => {
     const start = selectedPeriod.slice(0, 7) + "-01";
     const d = new Date(`${start}T00:00:00`);
@@ -1034,8 +1112,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       )
         return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
-      if (clientScopeId && e.client_id !== clientScopeId) return false;
-      if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      // 0649: by the clients this person WORKED for in the month (with a share),
+      // not the client he is posted to today.
+      if (clientScopeId && shareAt(e, clientScopeId) <= 0) return false;
+      if (clientFilter !== "all" && shareAt(e, clientFilter) <= 0) return false;
       // Site comes from the guard's open posting, not the employee row.
       if (siteFilter !== "all" && siteByGuard.get(e.id) !== siteFilter) return false;
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
@@ -1064,7 +1144,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, clientFilter, clientScopeId, categoryScope, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, clientFilter, clientScopeId, shareAt, categoryScope, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
 
   // Undisbursed on top, disbursed (or net 0 — nothing to pay) sunk to the
   // bottom, so the rows still needing payment are always in view. A stable sort
@@ -1106,7 +1186,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     });
 
   type SiteBucket = { id: string; name: string; rows: RowState[] };
-  type ClientBucket = { id: string; name: string; rows: RowState[]; sites: SiteBucket[] };
+  // weights: employee → this client's share of their month (0649). Absent = 1.
+  type ClientBucket = { id: string; name: string; rows: RowState[]; sites: SiteBucket[]; weights: Map<string, number> };
 
   // A guard stands at ONE site, read off their open posting — the employee row
   // does not carry it. Anyone with no open posting lands in a last bucket that
@@ -1133,6 +1214,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (!cur || d.start_date > cur.start) m.set(d.guard_id, { site: d.site_id, start: d.start_date });
     }
     return new Map([...m].map(([g, v]) => [g, v.site]));
+  }, [postings]);
+  /** guard → the in-month postings that closed, newest first (for a client's own site). */
+  const postingsByGuard = useMemo(() => {
+    const m = new Map<string, { site: string; start: string }[]>();
+    for (const d of postings) {
+      const arr = m.get(d.guard_id) ?? [];
+      arr.push({ site: d.site_id, start: d.start_date });
+      m.set(d.guard_id, arr);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => (a.start < b.start ? 1 : -1));
+    return m;
   }, [postings]);
   const siteNameOf = useCallback((employeeId: string) => {
     const sid = siteByGuard.get(employeeId) ?? lastSiteInPeriod.get(employeeId);
@@ -1163,10 +1255,21 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       return client ? `${client} — ${site.name}` : site.name;
     };
 
-    const bucketSites = (rows: RowState[], noPostingLabel: string): SiteBucket[] => {
+    // 0649: under a client, a person stands at THAT client's site — the open
+    // posting if it is there, else the latest posting there inside the month.
+    // A guard who moved on (Waqas: Regent 1 in Oct, Ms. Yasmin Yousaf now) must
+    // not be filed under the new client's site inside the old client's group.
+    const siteFor = (employeeId: string, clientId: string | null): string => {
+      const open = siteByGuard.get(employeeId);
+      if (!clientId) return open ?? lastSiteInPeriod.get(employeeId) ?? "";
+      if (open && siteById.get(open)?.client_id === clientId) return open;
+      const past = (postingsByGuard.get(employeeId) ?? []).find((p) => siteById.get(p.site)?.client_id === clientId);
+      return past?.site ?? "";
+    };
+    const bucketSites = (rows: RowState[], noPostingLabel: string, clientId: string | null): SiteBucket[] => {
       const byId = new Map<string, SiteBucket>();
       for (const row of rows) {
-        const sid = siteByGuard.get(row.employee.id) ?? lastSiteInPeriod.get(row.employee.id) ?? "";
+        const sid = siteFor(row.employee.id, clientId);
         const b = byId.get(sid) ?? { id: sid, name: sid ? siteLabel(sid) : noPostingLabel, rows: [] };
         b.rows.push(row);
         byId.set(sid, b);
@@ -1189,28 +1292,35 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         id: clientScopeId,
         name: "",
         rows: sortedRows,
-        sites: bucketSites(sortedRows, "Fired / Resigned / Terminated"),
+        sites: bucketSites(sortedRows, "Fired / Resigned / Terminated", clientScopeId),
+        weights: new Map(sortedRows.map((r) => [r.employee.id, shareAt(r.employee, clientScopeId)])),
       }];
     }
 
+    // 0649: a person sits under EVERY client they worked for in the month, with
+    // that client's share — not once, under the client they are posted to today.
     const byClient = new Map<string, ClientBucket>();
     for (const row of sortedRows) {
-      const cid = row.employee.client_id ?? "";
-      const c = byClient.get(cid) ?? {
-        id: cid,
-        name: cid ? clientNameById.get(cid) ?? "(Unknown client)" : "Head office / no client",
-        rows: [],
-        sites: [],
-      };
-      c.rows.push(row);
-      byClient.set(cid, c);
+      for (const sh of sharesFor(row.employee, clientShares)) {
+        const cid = sh.clientId ?? "";
+        const c = byClient.get(cid) ?? {
+          id: cid,
+          name: cid ? clientNameById.get(cid) ?? "(Unknown client)" : "Head office / no client",
+          rows: [],
+          sites: [],
+          weights: new Map<string, number>(),
+        };
+        if (!c.weights.has(row.employee.id)) c.rows.push(row);
+        c.weights.set(row.employee.id, (c.weights.get(row.employee.id) ?? 0) + sh.weight);
+        byClient.set(cid, c);
+      }
     }
 
     for (const c of byClient.values()) {
       // Company-wide the no-posting bucket is office staff and people between
       // postings, NOT leavers — the same words the client-scoped branch uses
       // would announce here that the back office had been sacked.
-      const siteList = bucketSites(c.rows, "No current posting");
+      const siteList = bucketSites(c.rows, "No current posting", c.id || null);
       // One bucket means the site level says nothing the client header does not
       // already say, so it is dropped and the people hang straight off the
       // client — exactly what Assignments does for a client with no sites.
@@ -1219,7 +1329,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
     return [...byClient.values()].sort((a, b) =>
       a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name));
-  }, [siteGrouped, sortedRows, sites, siteByGuard, lastSiteInPeriod, clients, clientScopeId]);
+  }, [siteGrouped, sortedRows, sites, siteByGuard, lastSiteInPeriod, postingsByGuard, clients, clientScopeId, clientShares, shareAt]);
 
   /**
    * What the table body renders: the plain row list, or the client / site /
@@ -1232,16 +1342,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // a client header, 2 under a client AND a site. Carried on the item rather
     // than recomputed at render time, because the renderer sees a flat list and
     // has no way to know which header it last passed.
-    | { kind: "row"; key: string; row: RowState; depth: number };
+    // weight: this client's share of the person's month (0649); 1 = all of it.
+    | { kind: "row"; key: string; row: RowState; depth: number; weight: number };
 
   const bodyItems = useMemo<BodyItem[]>(() => {
-    if (!groups) return sortedRows.map((row) => ({ kind: "row", key: row.employee.id, row, depth: 0 }));
-    const netOf = (rows: RowState[]) => rows.reduce((n, r) => n + Math.round(r.net_salary || 0), 0);
+    if (!groups) return sortedRows.map((row) => ({ kind: "row", key: row.employee.id, row, depth: 0, weight: 1 }));
     const out: BodyItem[] = [];
     // Client-scoped embed: no client header, sites at the top level.
     const scoped = !!clientScopeId;
 
     for (const c of groups) {
+      // A header is the sum of the shares filed under it (0649), each row
+      // rounded as the row shows it, so the header can be checked against them.
+      const wOf = (id: string) => c.weights.get(id) ?? 1;
+      const netOf = (rows: RowState[]) => rows.reduce((n, r) => n + Math.round((r.net_salary || 0) * wOf(r.employee.id)), 0);
       const cOpen = scoped || openClientRows.has(c.id);
       if (!scoped) {
         out.push({
@@ -1258,7 +1372,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (!cOpen) continue;
 
       if (c.sites.length === 0) {
-        for (const row of c.rows) out.push({ kind: "row", key: row.employee.id, row, depth: scoped ? 0 : 1 });
+        for (const row of c.rows) out.push({ kind: "row", key: `${c.id}:${row.employee.id}`, row, depth: scoped ? 0 : 1, weight: wOf(row.employee.id) });
         continue;
       }
       for (const site of c.sites) {
@@ -1283,7 +1397,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           // flat means no site header was drawn, so the row is one level in from
           // whatever is above it rather than two.
           const depth = (scoped ? 0 : 1) + (flat ? 0 : 1);
-          for (const row of site.rows) out.push({ kind: "row", key: row.employee.id, row, depth });
+          for (const row of site.rows) out.push({ kind: "row", key: `${c.id}:${row.employee.id}`, row, depth, weight: wOf(row.employee.id) });
         }
       }
     }
@@ -1368,15 +1482,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     let notDisbursed = 0;
     let advance = 0;
     for (const r of filtered) {
-      advance += r.advance;
+      // 0649: inside one client's scope a person counts for that client's share.
+      const w = scopeWeight(r.employee);
+      advance += Math.round((r.advance || 0) * w);
       // Disbursed = cash actually paid out (Amount Paid); Not Disbursed = what's
       // still owed (Balance). Both hold for partial payments, not just the flag.
-      const paid = Math.round(r.amount_paid || 0);
+      const paid = Math.round((r.amount_paid || 0) * w);
       disbursed += paid;
-      notDisbursed += Math.max(0, Math.round(r.net_salary) - paid);
+      notDisbursed += Math.max(0, Math.round((r.net_salary || 0) * w) - paid);
     }
     return { disbursed, notDisbursed, advance };
-  }, [filtered]);
+  }, [filtered, scopeWeight]);
 
   // Push live totals up to an embedding parent (Payroll Run Review). Ref-held so a
   // fresh inline callback each parent render can't retrigger this effect.
@@ -1397,10 +1513,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   useEffect(() => {
     if (!onRowsRef.current || statutoryRates == null) return;
     onRowsRef.current(
-      filtered.map((r) => ({
+      filtered.map((r) => {
+        // 0649: one client's sheet carries that client's share of the money. The
+        // days stay the person's whole month, so the name says it is a share.
+        const w = scopeWeight(r.employee);
+        const money = (v: number | null | undefined) => Math.round(Number(v ?? 0) * w);
+        return {
         employeeCode: empDisplay(r.employee),
         guardCode: r.employee.guard_code ?? r.employee.employee_code ?? "",
-        name: r.employee.full_name ?? "",
+        name: (r.employee.full_name ?? "") + (w < 1 ? ` (${Math.round(w * 100)}% of month here)` : ""),
         // Every row here HAS figures — computed if not yet persisted. That is the
         // whole point of publishing them: to the exporter they are as real as a
         // saved payslip, because they are what will be saved.
@@ -1411,21 +1532,22 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         payDays: Number(r.effective_present_days ?? 0),
         doubleDuties: Number(r.double_duty_shifts ?? 0),
         baseSalary: Math.round(Number(r.base_salary ?? 0)),
-        allowance: Math.round(Number(r.allowance ?? 0)),
-        bonus: Math.round(Number(r.bonus ?? 0)),
-        finalSalary: Math.round(Number(r.final_salary ?? 0)),
-        advance: Math.round(Number(r.advance ?? 0)),
-        eobi: Math.round(Number(r.eobi ?? 0)),
-        incomeTax: Math.round(Number(r.income_tax ?? 0)),
-        deductions: Math.round(Number(r.deductions ?? 0)),
-        netSalary: Math.round(Number(r.net_salary ?? 0)),
-        amountPaid: Math.round(Number(r.amount_paid ?? 0)),
+        allowance: money(r.allowance),
+        bonus: money(r.bonus),
+        finalSalary: money(r.final_salary),
+        advance: money(r.advance),
+        eobi: money(r.eobi),
+        incomeTax: money(r.income_tax),
+        deductions: money(r.deductions),
+        netSalary: money(r.net_salary),
+        amountPaid: money(r.amount_paid),
         paymentMode: r.payment_mode ?? "",
         status: r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
         site: siteNameOf(r.employee.id),
-      })),
+        };
+      }),
     );
-  }, [filtered, statutoryRates, siteNameOf]);
+  }, [filtered, statutoryRates, siteNameOf, scopeWeight]);
 
   // afterNet = the Payroll Management page for a Finance-Verified client. Persist
   // the payable with a default so it's saved before any payment: create a payslip
@@ -2335,15 +2457,28 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         .match(regionId ? { branch_id: regionId } : {});
       const psRows = (ps ?? []) as any[];
       const empIds = Array.from(new Set(psRows.map((r) => r.employee_id)));
-      const empScope = new Map<string, string>();
+      // 0649: employee → every scope their month belongs to, with its share. A
+      // client guard is carried by the clients he WORKED for that month.
+      const empScope = new Map<string, { key: string; weight: number }[]>();
       const empMeta = new Map<string, { code: string; guardCode: string; name: string }>();
+      let shares = new Map<string, ClientShare[]>();
+      try {
+        shares = await loadClientShares(selectedPeriod.slice(0, 7) + "-01");
+      } catch (e: any) {
+        if (!cancelled) setError(`Could not load which clients each person worked for: ${e?.message ?? e}`);
+        if (!cancelled) setFvLoading(false);
+        return;
+      }
       if (empIds.length) {
         const { data: emps } = await supabase
           .from("employees")
           .select("id, client_id, category, employee_code, guard_code, display_number, full_name")
           .in("id", empIds);
         for (const e of (emps ?? []) as any[]) {
-          empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
+          empScope.set(e.id, sharesFor(e, shares).map((sh) => ({
+            key: sh.clientId ?? `cat:${e.category}`,
+            weight: sh.weight,
+          })));
           empMeta.set(e.id, {
             // Same rule as the table on this page, via the same helper.
             code: guardDisplayCode(e, nameById.has(e.client_id) ? prefixById.get(e.client_id) ?? null : null),
@@ -2354,14 +2489,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       }
       const rowsByScope = new Map<string, PayrollExportRow[]>();
       for (const r of psRows) {
-        const key = empScope.get(r.employee_id);
-        if (!key) continue;
+        for (const { key, weight: w } of empScope.get(r.employee_id) ?? []) {
         const meta = empMeta.get(r.employee_id);
         const arr = rowsByScope.get(key) ?? [];
+        // A sheet carries this scope's share of the money; the days stay the
+        // whole month, so the name says it is a share (0649).
+        const money = (v: unknown) => Math.round(Number(v ?? 0) * w);
         arr.push({
           employeeCode: meta?.code ?? "",
           guardCode: meta?.guardCode ?? "",
-          name: meta?.name ?? "",
+          name: (meta?.name ?? "") + (w < 1 ? ` (${Math.round(w * 100)}% of month here)` : ""),
           // This page lists Finance-Verified clients only, and the rows are built
           // FROM payslips, so every row here has one by construction.
           hasPayslip: true,
@@ -2370,19 +2507,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           leaveDays: Number(r.leave_days ?? 0),
           payDays: payDaysFromSlip(r),
           baseSalary: Math.round(Number(r.base_salary ?? 0)),
-          allowance: Math.round(Number(r.allowance ?? 0)),
-          bonus: Math.round(Number(r.bonus ?? 0)),
-          finalSalary: Math.round(Number(r.final_salary ?? 0)),
-          advance: Math.round(Number(r.advance ?? 0)),
-          eobi: Math.round(Number(r.eobi ?? 0)),
-          incomeTax: Math.round(Number(r.income_tax ?? 0)),
-          deductions: Math.round(Number(r.deductions ?? 0)),
-          netSalary: Math.round(Number(r.net_salary ?? 0)),
-          amountPaid: Math.round(Number(r.amount_paid ?? 0)),
+          allowance: money(r.allowance),
+          bonus: money(r.bonus),
+          finalSalary: money(r.final_salary),
+          advance: money(r.advance),
+          eobi: money(r.eobi),
+          incomeTax: money(r.income_tax),
+          deductions: money(r.deductions),
+          netSalary: money(r.net_salary),
+          amountPaid: money(r.amount_paid),
           paymentMode: r.payment_mode ?? "",
           status: r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
         });
         rowsByScope.set(key, arr);
+        }
       }
       for (const arr of rowsByScope.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
       // What each scope can be found by, besides its own name: every employee on
@@ -2395,18 +2533,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       }
       const totals = new Map<string, ShellTotals>();
       for (const r of psRows) {
-        const key = empScope.get(r.employee_id);
-        if (!key) continue;
+        for (const { key, weight: w } of empScope.get(r.employee_id) ?? []) {
         const cur = totals.get(key) ?? { ...ZERO_SHELL };
-        const paid = Math.round(r.amount_paid || 0);
+        const paid = Math.round((r.amount_paid || 0) * w);
         cur.disbursed += paid;
-        cur.notDisbursed += Math.max(0, Math.round(r.net_salary || 0) - paid);
-        cur.advance += Math.round(r.advance || 0);
+        cur.notDisbursed += Math.max(0, Math.round((r.net_salary || 0) * w) - paid);
+        cur.advance += Math.round((r.advance || 0) * w);
         // A payslip that nets to nothing (a guard who left before earning in
         // the month) has nothing to disburse: count it as settled, or a client
         // whose every rupee is paid reads "112/113 disbursed" for ever.
         if (r.disbursed || Math.round(r.net_salary || 0) <= 0) cur.disbursedCount += 1; else cur.notDisbursedCount += 1;
         totals.set(key, cur);
+        }
       }
       if (cancelled) return;
       setFvScopes(regionId ? scopes.filter((sc) => totals.has(sc.key)) : scopes);
@@ -3172,7 +3310,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         const row = item.row;
                         const e = row.employee;
                         return (
-                          <Fragment key={e.id}>
+                          <Fragment key={item.key}>
                           <tr
                             ref={
                               focusPayslip && row.payslip_id === focusPayslip
@@ -3312,7 +3450,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 : <>PKR {row.base_salary.toLocaleString()}</>}
                             </td>
                             <td className="px-4 py-3 text-sm text-foreground">
-                              PKR {row.net_salary.toLocaleString()}
+                              {item.weight < 1 ? (
+                                // 0649: this client's share of a month worked for
+                                // more than one — the figure its header adds up.
+                                <>
+                                  PKR {Math.round((row.net_salary || 0) * item.weight).toLocaleString()}
+                                  <div className="text-[11px] text-muted-foreground" title="Worked for more than one client this month; this client carries its share of the pay, by days worked.">
+                                    {Math.round(item.weight * 100)}% of PKR {Math.round(row.net_salary || 0).toLocaleString()}
+                                  </div>
+                                </>
+                              ) : (
+                                <>PKR {row.net_salary.toLocaleString()}</>
+                              )}
                               {(() => {
                                 const bal = Math.round(row.net_salary) - Math.round(row.amount_paid || 0);
                                 if (Math.round(row.amount_paid || 0) === 0 || bal === 0) return null;
