@@ -388,6 +388,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
   // 0656: per employee, loan outstanding before the period and the instalment due in it.
   const [loansByEmployee, setLoansByEmployee] = useState<Map<string, { outstanding: number; due: number }>>(new Map());
+  // 0657: payslips on hold this period (employee → hold). No payment can be made against one.
+  const [holdsByEmployee, setHoldsByEmployee] = useState<Map<string, { id: string; reason: string }>>(new Map());
   // Which period the per-period maps (payslips, advances, attendance) were
   // loaded for. Between a period switch and its load finishing, the rows carry
   // the NEW period with the OLD period's data — on 26 Oct 2026 the auto-save
@@ -410,6 +412,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // salary record — so the two screens can never hold different figures. Same
   // keys that function asks for.
   const canEditSalary = hasPermission(profile, "employees.edit") || hasPermission(profile, "assignments.accounts");
+  const canHold = hasPermission(profile, "payroll.edit");
   const custodianLabel = (c: CustodianOption) =>
     canViewBanking ? `${c.fullName} — holds PKR ${Math.round(c.held).toLocaleString()}` : c.fullName;
   const bankLabel = (b: { bank_name: string; account_number: string; balance: number | string }) =>
@@ -628,7 +631,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes, loanRes] = await Promise.all([
+    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes, loanRes, holdRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       // Outstanding advance balance (Σ advances − Σ recovered on prior payslips),
@@ -646,6 +649,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       supabase.rpc("leave_period_summary", { p_period_start: period }),
       // 0656: loan instalments due this month. An error (e.g. no access) means no loans shown, never a crash.
       supabase.rpc("employee_loan_due", { p_period_start: start }),
+      supabase.from("payroll_holds").select("id, employee_id, reason").eq("period_month", period).is("released_at", null),
     ]);
     // A newer load (another period) has started: this one's data is stale.
     if (seq !== loadSeqRef.current) return;
@@ -732,6 +736,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       advMap.set(a.employee_id, Number(a.outstanding) || 0);
     });
     setAdvancesByEmployee(advMap);
+    setHoldsByEmployee(new Map(((holdRes.error ? [] : holdRes.data) ?? []).map((h: any) => [h.employee_id as string, { id: h.id as string, reason: h.reason as string }])));
     setLoansByEmployee(new Map(((loanRes.error ? [] : loanRes.data) ?? []).map((l: any) => [
       l.employee_id as string, { outstanding: Number(l.outstanding) || 0, due: Number(l.instalment_due) || 0 },
     ])));
@@ -1638,6 +1643,27 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [afterNet, loading, selectedPeriod, loadedPeriod, filtered]);
 
+  // 0657: hold / release one payslip. The database refuses any payment against a held payslip.
+  const holdPayslip = async (employeeId: string, name: string) => {
+    const reason = window.prompt(`Why is ${name}'s payslip for ${formatPeriod(selectedPeriod)} on hold?`);
+    if (reason == null) return;
+    if (!reason.trim()) { setError("Say why the payslip is held."); return; }
+    const { error: hErr } = await supabase.rpc("hold_payslip", { p_employee_id: employeeId, p_period_month: selectedPeriod, p_reason: reason.trim() });
+    if (hErr) { setError(friendlyDbError(hErr)); return; }
+    setSelectedEmpIds((prev) => { const n = new Set(prev); n.delete(employeeId); return n; });
+    await loadPeriodData(selectedPeriod);
+  };
+  const releaseHold = async (employeeId: string) => {
+    const h = holdsByEmployee.get(employeeId);
+    if (!h) return;
+    const note = window.prompt(`Release the hold ("${h.reason}")? Say how it was settled:`);
+    if (note == null) return;
+    if (!note.trim()) { setError("Say how the question was settled."); return; }
+    const { error: rErr } = await supabase.rpc("release_payslip_hold", { p_hold_id: h.id, p_note: note.trim() });
+    if (rErr) { setError(friendlyDbError(rErr)); return; }
+    await loadPeriodData(selectedPeriod);
+  };
+
   const updateEdit = (employeeId: string, patch: Partial<RowState>) => {
     setRowEdits((prev) => {
       const next = new Map(prev);
@@ -2181,7 +2207,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
     // In afterNet (Payroll Management), disburse only the checked employees.
     const candidates = filtered.filter(
-      (r) => remainingOf(r) > 0 && (!afterNet || selectedEmpIds.has(r.employee.id)),
+      (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && (!afterNet || selectedEmpIds.has(r.employee.id)),
     );
     if (candidates.length === 0) {
       setError(afterNet ? "Select at least one employee with an unpaid balance." : "No unpaid balances in the current filter to disburse.");
@@ -3235,7 +3261,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   embed has its own `search` state); the sort still applies within
                   the matches. */}
               {runInline && (() => {
-                const selectable = afterNet ? filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0) : [];
+                const selectable = afterNet ? filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0 && !holdsByEmployee.has(r.employee.id)) : [];
                 const allSelected = selectable.length > 0 && selectable.every((r) => selectedEmpIds.has(r.employee.id));
                 return (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
@@ -3440,6 +3466,27 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 >
                                   Details
                                 </button>
+                                {/* 0657: hold one guard's payslip; the rest of the client goes ahead. */}
+                                {holdsByEmployee.has(e.id) ? (
+                                  <>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning-100 text-warning-700 dark:bg-warning-500/15 dark:text-warning-500"
+                                      title={holdsByEmployee.get(e.id)!.reason}>
+                                      On hold: {holdsByEmployee.get(e.id)!.reason}
+                                    </span>
+                                    {canHold && (
+                                      <button type="button" onClick={(ev) => { ev.stopPropagation(); void releaseHold(e.id); }}
+                                        className="inline-flex items-center px-1.5 py-0.5 rounded border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                                        Release
+                                      </button>
+                                    )}
+                                  </>
+                                ) : canHold && !row.disbursed && (
+                                  <button type="button" onClick={(ev) => { ev.stopPropagation(); void holdPayslip(e.id, e.full_name); }}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                                    title="Keep this payslip back; the rest of the client can still be paid">
+                                    Hold
+                                  </button>
+                                )}
                               </div>
                               <div className="text-xs text-muted-foreground font-mono">
                                 {empDisplay(e)}
@@ -4637,7 +4684,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           // what handleBulkDisburse actually moves — never the full Net Salary.
           const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
           const candidates = filtered.filter(
-            (r) => remainingOf(r) > 0 && (!afterNet || selectedEmpIds.has(r.employee.id)),
+            (r) => remainingOf(r) > 0 && !holdsByEmployee.has(r.employee.id) && (!afterNet || selectedEmpIds.has(r.employee.id)),
           );
           const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
           return (
