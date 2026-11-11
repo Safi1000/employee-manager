@@ -147,7 +147,7 @@ export default function Loans() {
           </>}
         </div>
 
-        {err && !mode && <div className="rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</div>}
+        {err && !mode && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
 
         <div className="rounded-2xl border border-border bg-card overflow-hidden">
           {loading ? (
