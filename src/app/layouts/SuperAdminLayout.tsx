@@ -107,6 +107,8 @@ export default function SuperAdminLayout() {
   const ATTENDANCE_RUN: LinkDef = { to: "/app/attendance-run", label: "Attendance Run", icon: ClipboardCheck, perms: ["attendance.run_view", "attendance.ops_verify"] };
   const PAYROLL: LinkDef = { to: "/app/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const PAYROLL_RUN: LinkDef = { to: "/app/payroll-run", label: "Payroll Run", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  // 0656 (Shayan, 11 Nov): loans have their own screen, apart from advances.
+  const LOANS: LinkDef = { to: "/app/loans", label: "Loans", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const PERFORMANCE: LinkDef = { to: "/app/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };
   const RELIEVER_ATT: LinkDef = { to: "/app/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const INVENTORY: LinkDef = { to: "/app/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
@@ -307,6 +309,7 @@ export default function SuperAdminLayout() {
     EXPENSES,
     PAYROLL,
     PAYROLL_RUN,
+    LOANS,
     BANKS,
     FINANCE_REPORT,
     REPORTS,

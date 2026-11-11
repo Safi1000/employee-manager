@@ -57,6 +57,8 @@ type RowState = {
   bonus: number;
   deductions: number;
   advance: number;
+  /** 0656: loan instalment taken from this payslip (employee_loans). */
+  loan_recovery: number;
   income_tax: number;
   eobi: number;
   allowance: number;
@@ -112,6 +114,9 @@ type PayCalc = {
   deductible: number;
   /** Advance outstanding BEFORE this payslip (employee_advance_outstanding). */
   advanceOutstanding: number;
+  /** 0656: loan owed before this payslip, and the instalment due this month. */
+  loanOutstanding: number;
+  loanDue: number;
   /** Earnings came from verified attendance (attendance_payroll) rather than the plain day count. */
   fromAttendancePayroll: boolean;
 };
@@ -381,6 +386,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     new Map()
   );
   const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
+  // 0656: per employee, loan outstanding before the period and the instalment due in it.
+  const [loansByEmployee, setLoansByEmployee] = useState<Map<string, { outstanding: number; due: number }>>(new Map());
   // Which period the per-period maps (payslips, advances, attendance) were
   // loaded for. Between a period switch and its load finishing, the rows carry
   // the NEW period with the OLD period's data — on 26 Oct 2026 the auto-save
@@ -621,7 +628,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes] = await Promise.all([
+    const [attRes, payRes, advRes, apRes, lvRes, carRes, adjRes, lsRes, loanRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       // Outstanding advance balance (Σ advances − Σ recovered on prior payslips),
@@ -637,6 +644,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       supabase.rpc("carried_adjustments_for", { p_period_month: period }),
       supabase.from("payroll_adjustments").select("id, employee_id, amount, reason, settlement, status").eq("original_period_month", period),
       supabase.rpc("leave_period_summary", { p_period_start: period }),
+      // 0656: loan instalments due this month. An error (e.g. no access) means no loans shown, never a crash.
+      supabase.rpc("employee_loan_due", { p_period_start: start }),
     ]);
     // A newer load (another period) has started: this one's data is stale.
     if (seq !== loadSeqRef.current) return;
@@ -723,6 +732,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       advMap.set(a.employee_id, Number(a.outstanding) || 0);
     });
     setAdvancesByEmployee(advMap);
+    setLoansByEmployee(new Map(((loanRes.error ? [] : loanRes.data) ?? []).map((l: any) => [
+      l.employee_id as string, { outstanding: Number(l.outstanding) || 0, due: Number(l.instalment_due) || 0 },
+    ])));
     setRowEdits(new Map());
     setLoadedPeriod(period);
     // Selection is intentionally preserved here (item 1) so switching away and
@@ -997,6 +1009,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         bonus: Number(existing?.bonus ?? 0),
         deductions: Number(existing?.deductions ?? 0),
         advance: computedAdvance,
+        loan_recovery: 0,
         income_tax: 0,
         eobi: 0,
         allowance: Number(existing?.allowance ?? emp.allowance ?? 0),
@@ -1109,12 +1122,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // If the advance swallows the whole pay, net is zero.
       const deductible = Math.max(0, merged.final_salary - merged.income_tax - merged.eobi);
       merged.advance = Math.min(computedAdvance, deductible);
+      // 0656: the loan instalment comes after the advance, from what is left.
+      const loan = loansByEmployee.get(emp.id);
+      merged.loan_recovery = Math.round(Math.min(loan?.due ?? 0, Math.max(0, deductible - merged.advance)));
       // 0437: the carried correction is its own line, named on the slip. It is
       // added to NET and never to final_salary, because its expense was accrued
       // in the period it corrects. A negative one deducts; net cannot go below 0
       // here any more than it can for an advance.
       merged.adjustment_carried = defaults.adjustment_carried;
-      merged.net_salary = Math.max(0, deductible - merged.advance + merged.adjustment_carried);
+      merged.net_salary = Math.max(0, deductible - merged.advance - merged.loan_recovery + merged.adjustment_carried);
       merged.calc = {
         rate: emp.pay_basis === "per_day" ? perDay : rateEff,
         perDay,
@@ -1125,11 +1141,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         earnedSalary,
         deductible,
         advanceOutstanding: computedAdvance,
+        loanOutstanding: loan?.outstanding ?? 0,
+        loanDue: loan?.due ?? 0,
         fromAttendancePayroll: !!ap,
       };
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary, statutoryRates]);
+  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, loansByEmployee, allowedLeavesByEmployee, eobiByEmployee, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary, statutoryRates]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1680,6 +1698,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     bonus: row.bonus,
     deductions: row.deductions,
     advance: row.advance,
+    loan_recovery: row.loan_recovery ?? 0,
     income_tax: row.income_tax,
     eobi: row.eobi,
     allowance: row.allowance,
@@ -2390,6 +2409,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
     if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
     line("Advance", `− PKR ${row.advance.toLocaleString()}`);
+    if (row.loan_recovery > 0) line("Loan instalment", `− PKR ${row.loan_recovery.toLocaleString()}`);
     // 0437: a carried correction is its own line, naming the period it corrects.
     if (row.adjustment_carried && row.adjustment_carried !== 0) {
       line(`Adjustment (${row.adjustment_detail ?? "earlier period"})`,
@@ -3955,6 +3975,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <span className="text-muted-foreground">Advance</span>
                       <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
                     </div>
+                    {selectedRow.loan_recovery > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Loan instalment</span>
+                        <span className="text-danger-700">− PKR {Math.round(selectedRow.loan_recovery).toLocaleString()}</span>
+                      </div>
+                    )}
                     </>)}
                     {selectedRow.adjustment_carried !== 0 && (
                       <div className="flex justify-between">
@@ -5084,6 +5110,7 @@ function PayslipDetailsModal({ row, clientName, onClose }: { row: RowState; clie
   const fineTotal = fines.reduce((n, f) => n + f.amount, 0);
   const otherDeductions = Math.max(0, Math.round(row.deductions) - fineTotal);
   const advanceCarries = c ? Math.max(0, Math.round(c.advanceOutstanding - row.advance)) : 0;
+  const loanLeft = c ? Math.max(0, Math.round(c.loanOutstanding - row.loan_recovery)) : 0;
   const balance = Math.round(row.net_salary) - Math.round(row.amount_paid || 0);
 
   // The short answer: everything that moved this month away from the full rate,
@@ -5100,7 +5127,9 @@ function PayslipDetailsModal({ row, clientName, onClose }: { row: RowState; clie
   if (row.deductions > 0) reasons.push(`${pkr(row.deductions)} deducted${fines.length ? " (fines)" : ""}.`);
   if (row.income_tax > 0) reasons.push(`${pkr(row.income_tax)} income tax.`);
   if (row.eobi > 0) reasons.push(`${pkr(row.eobi)} EOBI (employee share).`);
-  if (row.advance > 0) reasons.push(`${pkr(row.advance)} taken back against an advance${advanceCarries > 0 ? `; ${pkr(advanceCarries)} still to recover next month` : ""}.`);
+  // Shayan 11 Nov: say what was paid, what was taken back, and what carries — not just "net 0".
+  if (row.advance > 0 && c) reasons.push(`Advance of ${pkr(c.advanceOutstanding)} on record; ${pkr(row.advance)} recovered from this salary${advanceCarries > 0 ? `; ${pkr(advanceCarries)} will be adjusted in the next payslip` : ", so it is fully recovered"}.`);
+  if (row.loan_recovery > 0) reasons.push(`${pkr(row.loan_recovery)} loan instalment${loanLeft > 0 ? `; ${pkr(loanLeft)} of the loan still to repay` : "; the loan is fully repaid"}.`);
   if (row.adjustment_carried < 0) reasons.push(`${pkr(-row.adjustment_carried)} correction carried from an earlier month.`);
   if (row.adjustment_carried > 0) reasons.push(`${pkr(row.adjustment_carried)} owed from an earlier month, added.`);
   if (row.double_duty_shifts > 0) reasons.push(`${row.double_duty_shifts} double-duty shift${row.double_duty_shifts === 1 ? "" : "s"} paid on top.`);
@@ -5172,6 +5201,14 @@ function PayslipDetailsModal({ row, clientName, onClose }: { row: RowState; clie
                   label="Advance recovered"
                   sub={`Outstanding before this payslip ${pkr(c.advanceOutstanding)}${advanceCarries > 0 ? ` · ${pkr(advanceCarries)} carries to next month` : ""}`}
                   value={pkr(row.advance)}
+                  tone="minus"
+                />
+              )}
+              {(row.loan_recovery > 0 || (c?.loanDue ?? 0) > 0) && (
+                <DetailLine
+                  label="Loan instalment"
+                  sub={`Loan owed before this payslip ${pkr(c?.loanOutstanding ?? 0)}${loanLeft > 0 ? ` · ${pkr(loanLeft)} left after it` : ""}${(c?.loanDue ?? 0) > row.loan_recovery ? ` · ${pkr((c?.loanDue ?? 0) - row.loan_recovery)} of this month's instalment did not fit in the pay` : ""}`}
+                  value={pkr(row.loan_recovery)}
                   tone="minus"
                 />
               )}

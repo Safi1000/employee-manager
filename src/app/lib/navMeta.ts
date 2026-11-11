@@ -27,6 +27,7 @@ const SECTION_OF: Record<string, string> = {
   "field-activity": "Field App",
   payroll: "Finance",
   "payroll-run": "Finance",
+  loans: "Finance",
   performance: "Workforce",
   relievers: "Workforce",
 

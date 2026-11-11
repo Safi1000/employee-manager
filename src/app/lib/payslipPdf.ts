@@ -24,6 +24,8 @@ export function generatePayslipPdf(p: {
   slip: {
     present_days: number; absent_days: number; leave_days: number;
     base_salary: number; bonus: number; advance: number; deductions: number;
+    /** 0656: loan instalment taken from this payslip. */
+    loan_recovery?: number | null;
     net_salary: number; amount_paid: number; disbursed: boolean; disbursed_at: string | null;
     period_month?: string | null;
     /** The payslip row's own figures (6 Nov 2026). Optional so an older caller still renders. */
@@ -120,6 +122,7 @@ export function generatePayslipPdf(p: {
   if (n(p.slip.bonus)) earnings.push(["Bonus", n(p.slip.bonus)]);
   const deductions: [string, number][] = [];
   if (n(p.slip.advance)) deductions.push(["Advance recovered", n(p.slip.advance)]);
+  if (n(p.slip.loan_recovery)) deductions.push(["Loan instalment", n(p.slip.loan_recovery)]);
   if (n(p.slip.eobi)) deductions.push(["EOBI", n(p.slip.eobi)]);
   if (n(p.slip.income_tax)) deductions.push(["Income tax", n(p.slip.income_tax)]);
   if (n(p.slip.deductions)) deductions.push(["Other deductions", n(p.slip.deductions)]);
