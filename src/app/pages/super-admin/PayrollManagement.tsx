@@ -169,6 +169,9 @@ const isPaidOrZero = (r: { disbursed?: boolean | null; net_salary: number }) =>
 type PaidTotals = { disbursed: number; notDisbursed: number; advance: number };
 const paidOutOf = (t: PaidTotals) => t.disbursed + t.advance;      // bank/cash + advance recovered
 const salaryTotalOf = (t: PaidTotals) => t.disbursed + t.notDisbursed + t.advance;
+// Share of a client's salary paid out, 0..1 — the card's bar AND the card order
+// read this one figure, so the list is sorted by exactly what the bars show.
+const paidShareOf = (t: PaidTotals) => { const tot = salaryTotalOf(t); return tot > 0 ? Math.min(1, paidOutOf(t) / tot) : 1; };
 const clearedByAdvance = (r: { net_salary: number; advance: number; amount_paid?: number | null }) =>
   Math.round(r.net_salary || 0) === 0 && Math.round(r.advance || 0) > 0 && Math.round(r.amount_paid || 0) === 0;
 
@@ -2762,9 +2765,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     const q = fvSearch.trim().toLowerCase();
     // Client name OR any employee on that client, by name or code. One box:
     // "Emaar" and "GGS-00287" are the same question — which card is this on.
+    // 12 Nov 2026 (Shayan): least paid first, by the bar's own figure; fully
+    // disbursed last; ties keep name order (sort is stable).
+    const share = (k: string) => (shellFullyDisbursed(k) ? 2 : paidShareOf(fvTotals.get(k) ?? ZERO_SHELL));
     return [...fvScopes]
       .filter((sc) => !q || sc.name.toLowerCase().includes(q) || (fvIndex.get(sc.key) ?? "").includes(q))
-      .sort((a, b) => Number(shellFullyDisbursed(a.key)) - Number(shellFullyDisbursed(b.key)));
+      .sort((a, b) => share(a.key) - share(b.key));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fvScopes, fvTotals, fvSearch, fvIndex]);
 
@@ -2953,9 +2959,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               counted, and turns green as it closes — 97% should look
                               nearly done, not the same orange as 10%. */}
                           {(() => {
-                            const tt = t ?? ZERO_SHELL;
-                            const tot = salaryTotalOf(tt);
-                            const pct = fullyDisbursed ? 1 : tot > 0 ? Math.min(1, paidOutOf(tt) / tot) : 0;
+                            const pct = fullyDisbursed ? 1 : t ? paidShareOf(t) : 0;
                             const tone = pct >= 1 ? "bg-success-500" : pct >= 0.9 ? "bg-up" : pct >= 0.5 ? "bg-heed" : "bg-brand-500";
                             return <span className={`block h-full rounded-full transition-all ${tone}`} style={{ width: `${pct * 100}%` }} title={`${Math.floor(pct * 100)}% of the salary paid out`} />;
                           })()}
