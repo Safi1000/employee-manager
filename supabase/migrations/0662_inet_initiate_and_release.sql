@@ -776,6 +776,10 @@ begin
   if exists (select 1 from public.permission_key_gaps()) then raise exception '0662 REFUSED: permission_key_gaps() reports a gap.'; end if;
 
   -- Soneri: an HBL payee is an IBFT row with Soneri's own code 11 and its spelling.
+  -- The rolled-back test above leaves request.jwt.claims as '' (not unset),
+  -- which assert_same_company reads as an unparseable identity and refuses
+  -- (fail closed). Run this check as the trusted migration context.
+  perform set_config('request.jwt.claims', '{}', true);
   declare v_e uuid; v_p record;
   begin
     select e.id into v_e from public.employees e
