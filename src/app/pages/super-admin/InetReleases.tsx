@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Download, Send, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Send, Upload, XCircle } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { askReason } from "../../components/askReason";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { supabase, friendlyDbError } from "../../lib/supabase";
-import { downloadInetFile } from "../../lib/inetFile";
+import { downloadInetFile, inetFileName } from "../../lib/inetFile";
+import { matchApproval, readApprovalSheet, type ApprovalMatch } from "../../lib/inetApproval";
 import { FormField, Hint, ModalFooter } from "./_assetsKit";
 
 /**
@@ -280,7 +281,7 @@ export default function InetReleases({ embedded = false }: { embedded?: boolean 
         )}
       </div>
       {releasing && (
-        <ReleaseModal batch={releasing} bankName={bankName(releasing.bank_account_id)} items={(itemsOf.get(releasing.id) ?? []).filter((i) => i.status === "initiated")}
+        <ReleaseModal batch={releasing} bankName={bankName(releasing.bank_account_id)} format={formats.get(releasing.bank_account_id) ?? null} items={(itemsOf.get(releasing.id) ?? []).filter((i) => i.status === "initiated")}
           onClose={() => setReleasing(null)}
           onDone={(m) => { setReleasing(null); setMsg(m); void load(); }} />
       )}
@@ -288,10 +289,28 @@ export default function InetReleases({ embedded = false }: { embedded?: boolean 
   );
 }
 
-function ReleaseModal({ batch, bankName, items, onClose, onDone }: {
-  batch: Batch; bankName: string; items: Item[]; onClose: () => void; onDone: (msg: string) => void;
+function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
+  batch: Batch; bankName: string; format: string | null; items: Item[]; onClose: () => void; onDone: (msg: string) => void;
 }) {
   const [rejected, setRejected] = useState<Set<string>>(new Set());
+  // Askari's approval export (12 Nov 2026): rejected payments are NOT in it, so a
+  // payment missing from the file is proposed as rejected; the total is the
+  // file's matched rows. The person releasing can still change any tick.
+  const [match, setMatch] = useState<ApprovalMatch | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const expectedFile = inetFileName(bankName, batch);
+  const readFile = async (f: File) => {
+    setErr(null);
+    try {
+      const XLSX = await import("xlsx");
+      const rows = readApprovalSheet(XLSX, await f.arrayBuffer());
+      const m = matchApproval(items.map((i) => ({ id: i.id, account_no: i.account_no, amount: i.amount, payee_name: i.payee_name })), rows);
+      setMatch(m); setFileName(f.name);
+      setRejected(new Set(m.missing.map((x) => x.id)));
+      setTotal(m.matchedTotal ? String(m.matchedTotal) : "");
+    } catch (e: any) { setMatch(null); setFileName(null); setErr(e.message ?? String(e)); }
+  };
+  const wrongFile = !!match && match.fileNames.length > 0 && !match.fileNames.some((n) => n.toLowerCase().includes(expectedFile.toLowerCase()));
   const [total, setTotal] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -330,9 +349,48 @@ function ReleaseModal({ batch, bankName, items, onClose, onDone }: {
       }>
       <div className="space-y-4">
         <Hint tone="info">
-          Releasing pays the payments below from {bankName}, dated today, and moves the bank. Tick any row iNet rejected:
-          it goes back to unpaid. A difference up to Rs 100 between iNet's total and the rows is written to Rounding Differences.
+          Releasing pays the payments below from {bankName}, dated today, and moves the bank. Ticked rows were rejected and go
+          back to unpaid. A difference up to Rs 100 between what iNet sent and the rows goes to Rounding Differences.
         </Hint>
+        {format === "askari" && (batch.file_kind === "FT" || batch.file_kind === "IBFT" || batch.file_kind === "single") && (
+          <div className="rounded-lg border border-border p-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm cursor-pointer hover:bg-muted">
+                <Upload className="w-4 h-4" /> {fileName ? "Choose another file" : "Upload iNet approval export"}
+                <input type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void readFile(f); e.target.value = ""; }} />
+              </label>
+              <span className="text-xs text-muted-foreground min-w-0 truncate">{fileName ?? "Ins_Approval_….xlsx from iNet, after the CEO approves — Bastion ticks what is missing and fills the total."}</span>
+            </div>
+            {match && (
+              <div className="space-y-1.5 text-xs">
+                <p className="inline-flex items-center gap-1 text-success-700 dark:text-success-500">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {match.matched.size} of {items.length} found in the file · PKR {pkr(match.matchedTotal)}
+                </p>
+                {match.missing.length > 0 && (
+                  <p className="text-danger-700 dark:text-danger-500">
+                    Not in the file, so ticked as rejected: {match.missing.map((x) => x.payee_name).join(", ")}
+                  </p>
+                )}
+                {match.notApproved.length > 0 && (
+                  <p className="text-warning-700 dark:text-warning-500">
+                    {match.notApproved.length} row{match.notApproved.length === 1 ? " is" : "s are"} not approved yet in this file (status {match.notApproved[0].status}). Export again after the CEO approves.
+                  </p>
+                )}
+                {match.extra.length > 0 && (
+                  <p className="text-warning-700 dark:text-warning-500">
+                    {match.extra.length} row{match.extra.length === 1 ? "" : "s"} in the file {match.extra.length === 1 ? "is" : "are"} not in this batch: {match.extra.slice(0, 5).map((r) => `${r.name || r.account} ${pkr(r.amount)}`).join(", ")}{match.extra.length > 5 ? "…" : ""}
+                  </p>
+                )}
+                {wrongFile && (
+                  <p className="text-danger-700 dark:text-danger-500">
+                    This export is for "{match.fileNames.join(", ")}", not this batch's file "{expectedFile}". Check you chose the right group.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="max-h-72 overflow-y-auto rounded-lg border border-border divide-y divide-border text-sm">
           {items.map((i) => (
             <label key={i.id} className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer ${rejected.has(i.id) ? "opacity-60 line-through" : ""}`}>
