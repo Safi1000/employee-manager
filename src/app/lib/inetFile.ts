@@ -19,6 +19,8 @@ export type InetFileBatch = {
   reference: string | null;
   file_kind: "FT" | "IBFT" | "single" | "manual";
   transaction_date: string; // yyyy-mm-dd
+  /** 0667: join the items paid to the same receiver account into one row (one transfer). */
+  combined?: boolean;
 };
 export type InetFormat = "askari" | "soneri";
 export type InetFileItem = {
@@ -30,6 +32,8 @@ export type InetFileItem = {
   amount: number;
   /** 0663: the guard, when his salary is paid to someone else (payee_name is the receiver). */
   on_behalf_of?: string | null;
+  /** 0667: a joined row — how many guards' salaries it carries. */
+  guards?: number;
 };
 
 const HEADERS = [
@@ -57,11 +61,39 @@ export async function downloadInetFile(bankName: string, format: InetFormat, bat
   await saveBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), inetFileName(bankName, batch));
 }
 
+/**
+ * 0667: the rows the file carries. A combined batch joins the items paid to
+ * the same receiver account (salary paid to someone else) into one row — the
+ * receiver, the total, "Salaries of N guards". Every other item is its own row.
+ * Each payslip keeps its own item in Bastion; only the file is joined.
+ */
+export function inetFileRows(batch: Pick<InetFileBatch, "combined">, items: InetFileItem[]): InetFileItem[] {
+  if (!batch.combined) return items;
+  const out: InetFileItem[] = [];
+  const groups = new Map<string, { row: InetFileItem; n: number }>();
+  for (const it of items) {
+    if (!it.on_behalf_of || !it.account_no) { out.push(it); continue; }
+    const key = it.account_no.toUpperCase().replace(/[^0-9A-Z]/g, "");
+    const g = groups.get(key);
+    if (g) { g.row.amount += Math.round(Number(it.amount)); g.n += 1; continue; }
+    const row = { ...it, amount: Math.round(Number(it.amount)) };
+    groups.set(key, { row, n: 1 });
+    out.push(row);
+  }
+  for (const g of groups.values()) if (g.n > 1) g.row.guards = g.n;
+  return out;
+}
+
+/** The second reference: the guard a salary belongs to, or how many a joined row carries. */
+const behalfRef = (it: InetFileItem) =>
+  it.guards ? `Salaries of ${it.guards} guards` : it.on_behalf_of ? `Salary of ${it.on_behalf_of}`.slice(0, 40) : null;
+
 /** The upload file's bytes — pure, so the same code makes the app's download and any offline test file. */
-export function buildInetFile(XLSX: typeof import("xlsx"), format: InetFormat, batch: InetFileBatch, items: InetFileItem[]): ArrayBuffer {
+export function buildInetFile(XLSX: typeof import("xlsx"), format: InetFormat, batch: InetFileBatch, allItems: InetFileItem[]): ArrayBuffer {
   if (batch.file_kind !== "FT" && batch.file_kind !== "IBFT") {
     throw new Error("This batch is keyed into online banking by hand — there is no upload file for it.");
   }
+  const items = inetFileRows(batch, allItems);
   if (format === "soneri") return soneriFile(XLSX, batch, items);
   const ft = batch.file_kind === "FT";
   const day = excelDay(batch.transaction_date);
@@ -82,7 +114,7 @@ export function buildInetFile(XLSX: typeof import("xlsx"), format: InetFormat, b
       ft ? "FT" : "IBFT1",
       batch.reference ?? "",
       // 0663: a salary paid to someone else names the guard it belongs to.
-      it.on_behalf_of ? `Salary of ${it.on_behalf_of}`.slice(0, 40) : null,
+      behalfRef(it),
       null, null, null,
     ]);
   });
@@ -109,7 +141,7 @@ function soneriFile(XLSX: typeof import("xlsx"), batch: InetFileBatch, items: In
   const rows: (string | number | null)[][] = [headers];
   for (const it of items) {
     const purpose = PURPOSE[it.kind ?? "payslip"];
-    const refs = [batch.reference ?? "", (it.on_behalf_of ? `Salary of ${it.on_behalf_of}` : it.payee_name).slice(0, 40), batch.label.slice(0, 40)];
+    const refs = [batch.reference ?? "", (behalfRef(it) ?? it.payee_name).slice(0, 40), batch.label.slice(0, 40)];
     rows.push(ft
       ? [SONERI_PRODUCT.FT, it.account_no ?? "", Math.round(Number(it.amount)), ...refs, purpose]
       : [SONERI_PRODUCT.IBFT, it.account_no ?? "", it.bank_code != null && it.bank_code !== "" ? Number(it.bank_code) : null, Math.round(Number(it.amount)), ...refs, purpose]);

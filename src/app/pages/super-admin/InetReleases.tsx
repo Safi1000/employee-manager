@@ -6,7 +6,7 @@ import Modal from "../../components/Modal";
 import { askReason } from "../../components/askReason";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { supabase, friendlyDbError } from "../../lib/supabase";
-import { downloadInetFile, inetFileName } from "../../lib/inetFile";
+import { downloadInetFile, inetFileName, inetFileRows } from "../../lib/inetFile";
 import { matchApproval, readApprovalSheet, type ApprovalMatch } from "../../lib/inetApproval";
 import { FormField, Hint, ModalFooter } from "./_assetsKit";
 
@@ -28,6 +28,8 @@ type Batch = {
   file_kind: "FT" | "IBFT" | "single" | "manual"; transaction_date: string; status: "initiated" | "released" | "rejected";
   initiated_by: string | null; initiated_at: string; released_by: string | null; released_at: string | null;
   inet_total: number | null; rounding_difference: number | null; rejected_at: string | null; note: string | null;
+  /** 0667: the file joins the items paid to one receiver account into one row. */
+  combined?: boolean;
 };
 type Item = {
   id: string; batch_id: string; kind: "payslip" | "vendor"; amount: number; payee_name: string;
@@ -152,6 +154,9 @@ export default function InetReleases({ embedded = false }: { embedded?: boolean 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-foreground">{b.label}</span>
                 {statusChip(b)}
+                {b.combined && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">receiver rows joined</span>
+                )}
                 {paidTo > 0 && (
                   <span className="text-xs font-medium px-2 py-0.5 rounded bg-warning-100 text-warning-700 dark:bg-warning-500/15 dark:text-warning-500 whitespace-nowrap">
                     {paidTo} paid to someone else
@@ -293,6 +298,25 @@ function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
   batch: Batch; bankName: string; format: string | null; items: Item[]; onClose: () => void; onDone: (msg: string) => void;
 }) {
   const [rejected, setRejected] = useState<Set<string>>(new Set());
+  // 0667: in a combined batch, the items paid to one receiver account are one
+  // row at the bank — they are matched, ticked and released together.
+  const groupOf = useMemo(() => {
+    const m = new Map<string, string[]>();
+    if (!batch.combined) return m;
+    const byAcct = new Map<string, string[]>();
+    for (const i of items) {
+      if (!i.on_behalf_of || !i.account_no) continue;
+      const k = i.account_no.toUpperCase().replace(/[^0-9A-Z]/g, "");
+      byAcct.set(k, [...(byAcct.get(k) ?? []), i.id]);
+    }
+    for (const ids of byAcct.values()) if (ids.length > 1) for (const id of ids) m.set(id, ids);
+    return m;
+  }, [batch.combined, items]);
+  const toggle = (id: string) => setRejected((s) => {
+    const n = new Set(s); const ids = groupOf.get(id) ?? [id]; const on = !n.has(id);
+    for (const x of ids) { if (on) n.add(x); else n.delete(x); }
+    return n;
+  });
   // Askari's approval export (12 Nov 2026): rejected payments are NOT in it, so a
   // payment missing from the file is proposed as rejected; the total is the
   // file's matched rows. The person releasing can still change any tick.
@@ -304,14 +328,27 @@ function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
     try {
       const XLSX = await import("xlsx");
       const rows = readApprovalSheet(XLSX, await f.arrayBuffer());
-      const m = matchApproval(items.map((i) => ({ id: i.id, account_no: i.account_no, amount: i.amount, payee_name: i.payee_name })), rows);
+      // A combined group is one row at the bank: match it as one, then expand.
+      const seen = new Set<string>();
+      const units = items.flatMap((i) => {
+        const ids = groupOf.get(i.id);
+        if (!ids) return [{ id: i.id, account_no: i.account_no, amount: i.amount, payee_name: i.payee_name }];
+        if (seen.has(ids[0])) return [];
+        seen.add(ids[0]);
+        const members = items.filter((x) => ids.includes(x.id));
+        return [{ id: ids[0], account_no: i.account_no, amount: members.reduce((t, x) => t + x.amount, 0), payee_name: `${i.payee_name} (${ids.length} guards)` }];
+      });
+      const m = matchApproval(units, rows);
       setMatch(m); setFileName(f.name);
-      setRejected(new Set(m.missing.map((x) => x.id)));
+      setRejected(new Set(m.missing.flatMap((x) => groupOf.get(x.id) ?? [x.id])));
+      setCount(String(m.matched.size));
       setTotal(m.matchedTotal ? String(m.matchedTotal) : "");
     } catch (e: any) { setMatch(null); setFileName(null); setErr(e.message ?? String(e)); }
   };
   const wrongFile = !!match && match.fileNames.length > 0 && !match.fileNames.some((n) => n.toLowerCase().includes(expectedFile.toLowerCase()));
   const [total, setTotal] = useState("");
+  // The number of transactions the bank shows (Soneri shows it on screen, no export).
+  const [count, setCount] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -320,6 +357,10 @@ function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
   const sent = Number(total.replace(/,/g, "")) || 0;
   const diff = Math.round((sent - sum) * 100) / 100;
   const allRejected = live.length === 0;
+  const expectedRows = inetFileRows(batch, live.map((i) => ({ ...i, amount: i.amount }))).length;
+  const countN = count.trim() ? Number(count.replace(/\D/g, "")) : null;
+  const countOff = countN != null && countN !== expectedRows;
+  const countRequired = format === "soneri";
 
   const submit = async () => {
     setBusy(true); setErr(null);
@@ -342,7 +383,7 @@ function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
       footer={
         <ModalFooter summary={allRejected ? "All rejected" : <>Items PKR {pkr(sum)}{sent ? <> · difference <span className={Math.abs(diff) > 100 ? "text-danger-700 dark:text-danger-500 font-semibold" : ""}>{diff}</span></> : null}</>}>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={busy || (!allRejected && (!sent || Math.abs(diff) > 100))}>
+          <Button onClick={() => void submit()} disabled={busy || (!allRejected && (!sent || Math.abs(diff) > 100 || countOff || (countRequired && countN == null)))}>
             {busy ? "Releasing…" : allRejected ? "Reject all" : "Release"}
           </Button>
         </ModalFooter>
@@ -394,8 +435,7 @@ function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
         <div className="max-h-72 overflow-y-auto rounded-lg border border-border divide-y divide-border text-sm">
           {items.map((i) => (
             <label key={i.id} className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer ${rejected.has(i.id) ? "opacity-60 line-through" : ""}`}>
-              <input type="checkbox" checked={rejected.has(i.id)}
-                onChange={() => setRejected((s) => { const n = new Set(s); if (n.has(i.id)) n.delete(i.id); else n.add(i.id); return n; })} />
+              <input type="checkbox" checked={rejected.has(i.id)} onChange={() => toggle(i.id)} />
               <span className="flex-1 min-w-0">
                 <span className="block truncate">{i.payee_name}<span className="text-xs text-muted-foreground"> · {i.bank_name}</span></span>
                 {i.on_behalf_of && <span className="block text-xs text-warning-700 dark:text-warning-500">Salary of {i.on_behalf_of} — paid to someone else</span>}
@@ -404,12 +444,24 @@ function ReleaseModal({ batch, bankName, format, items, onClose, onDone }: {
             </label>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">Tick = rejected by iNet.</p>
+        <p className="text-xs text-muted-foreground">Tick = rejected by iNet.{groupOf.size ? " Guards paid to one receiver in one transfer are ticked together." : ""}</p>
         {!allRejected && (
-          <FormField label="Total iNet sent" required hint="From iNet's confirmation for this group.">
-            <input className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-ledger" inputMode="decimal"
-              placeholder={pkr(sum)} value={total} onChange={(e) => setTotal(e.target.value)} />
-          </FormField>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Total the bank sent" required hint={format === "soneri" ? "From Trans@ct's screen for this batch." : "From iNet's confirmation for this group."}>
+              <input className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-ledger" inputMode="decimal"
+                placeholder={pkr(sum)} value={total} onChange={(e) => setTotal(e.target.value)} />
+            </FormField>
+            <FormField label="Transactions the bank shows" required={countRequired}
+              hint={`Bastion expects ${expectedRows} for the rows not ticked.`}>
+              <input className={`w-full px-3 py-2 rounded-lg border bg-background text-sm font-ledger ${countOff ? "border-danger-500" : "border-border"}`} inputMode="numeric"
+                placeholder={String(expectedRows)} value={count} onChange={(e) => setCount(e.target.value)} />
+            </FormField>
+          </div>
+        )}
+        {countOff && (
+          <Hint tone="warning">
+            The bank shows {countN} transaction{countN === 1 ? "" : "s"} but {expectedRows} {expectedRows === 1 ? "row is" : "rows are"} left in this batch. Tick the payments the bank did not send, or check the count.
+          </Hint>
         )}
         <FormField label="Note">
           <input className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm" value={note} onChange={(e) => setNote(e.target.value)} />

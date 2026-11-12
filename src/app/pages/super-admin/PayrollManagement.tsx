@@ -2262,7 +2262,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       setIsBulkDisburseOpen(false);
       setInetInit({
         bankId: bulkBankId,
-        items: candidates.map((r) => ({ payslipId: r.payslip_id as string, name: r.employee.full_name, amount: remainingOf(r) })),
+        items: candidates.map((r) => ({ payslipId: r.payslip_id as string, employeeId: r.employee.id, name: r.employee.full_name, amount: remainingOf(r) })),
         label: `${formatPeriod(selectedPeriod)} salaries`,
         reference: "",
       });
@@ -4438,7 +4438,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           setRowError(null);
                           setInetInit({
                             bankId: selectedRow.bank_account_id,
-                            items: [{ payslipId: selectedRow.payslip_id, name: selectedRow.employee.full_name, amount: payNow }],
+                            items: [{ payslipId: selectedRow.payslip_id, employeeId: selectedRow.employee.id, name: selectedRow.employee.full_name, amount: payNow }],
                             label: `${formatPeriod(selectedPeriod)} salary · ${selectedRow.employee.full_name}`,
                             reference: "",
                           });
