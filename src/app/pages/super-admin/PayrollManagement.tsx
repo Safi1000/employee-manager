@@ -162,6 +162,16 @@ const finesFromNotes = (notes: string | null | undefined) => {
 const isPaidOrZero = (r: { disbursed?: boolean | null; net_salary: number }) =>
   !!r.disbursed || Math.round(r.net_salary || 0) === 0;
 
+// 12 Nov 2026 (Shayan): an advance is salary already paid out, earlier. A
+// payslip cleared by one is paid, not "PKR 0", and a client's total is the
+// salary before advances. ONE definition of "paid out" and "total" for the
+// band, its by-client sheet and every client card, so they cannot disagree.
+type PaidTotals = { disbursed: number; notDisbursed: number; advance: number };
+const paidOutOf = (t: PaidTotals) => t.disbursed + t.advance;      // bank/cash + advance recovered
+const salaryTotalOf = (t: PaidTotals) => t.disbursed + t.notDisbursed + t.advance;
+const clearedByAdvance = (r: { net_salary: number; advance: number; amount_paid?: number | null }) =>
+  Math.round(r.net_salary || 0) === 0 && Math.round(r.advance || 0) > 0 && Math.round(r.amount_paid || 0) === 0;
+
 type PayrollManagementProps = {
   relieversOnly?: boolean;
   // Embed mode for the Payroll Run page: scope the roster to one client, force a
@@ -2786,27 +2796,28 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 // By client, from the same per-client totals the cards below show.
                 const scopes = fvExpanded ? shellScopes.filter((sc) => sc.key === fvExpanded) : shellScopes;
                 const pick = (t: ShellTotals) =>
-                  kind === "total" ? t.disbursed + t.notDisbursed
-                  : kind === "disbursed" ? t.disbursed
+                  kind === "total" ? salaryTotalOf(t)
+                  : kind === "disbursed" ? paidOutOf(t)
                   : kind === "owed" ? t.notDisbursed : t.advance;
                 const rows = scopes
                   .map((sc) => ({ sc, t: fvTotals.get(sc.key) ?? ZERO_SHELL }))
                   .filter(({ t }) => pick(t) !== 0)
                   .sort((a, b) => pick(b.t) - pick(a.t));
                 const sum = rows.reduce((n, r) => n + pick(r.t), 0);
-                const title = { total: "Total salaries", disbursed: "Disbursed", owed: "Still to pay", advance: "Advances recovered" }[kind];
+                const title = { total: "Total salaries", disbursed: "Paid out", owed: "Still to pay", advance: "Cleared by advance" }[kind];
                 setBandSheet({
                   kicker: `Payroll · ${formatPeriod(selectedPeriod)} · by client`,
                   title,
                   big: `PKR ${Math.round(sum).toLocaleString()}`,
                   note: kind === "owed"
                     ? (rows.length ? "Net still owed on each client's payslips. Open the client's card below to pay it." : "Every payslip in view is paid.")
-                    : kind === "advance" ? "Advances taken back from this month's payslips, by client." : undefined,
+                    : kind === "advance" ? "Salary paid earlier as advances and recovered from this month's payslips, by client."
+                    : kind === "disbursed" ? "Paid by bank, cash or cheque this month, plus salary already paid as advances." : undefined,
                   rows: rows.map(({ sc, t }) => ({
                     label: sc.name,
                     value: Math.round(pick(t)).toLocaleString(),
                     hint: kind === "owed" ? `${t.notDisbursedCount} payslip${t.notDisbursedCount === 1 ? "" : "s"} unpaid`
-                      : kind === "disbursed" ? `${t.disbursedCount} payslip${t.disbursedCount === 1 ? "" : "s"} paid`
+                      : kind === "disbursed" ? `${t.disbursedCount} payslip${t.disbursedCount === 1 ? "" : "s"} paid${t.advance ? ` · ${Math.round(t.advance).toLocaleString()} by advance` : ""}`
                       : kind === "total" ? `${t.disbursedCount + t.notDisbursedCount} payslips` : undefined,
                   })),
                 });
@@ -2893,12 +2904,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </span>
                       )}
                       <span className="hidden md:flex flex-col items-end gap-1 w-56">
-                        <span className="font-ledger text-xs text-muted-foreground whitespace-nowrap">PKR {(t?.disbursed ?? 0).toLocaleString()} of {((t?.disbursed ?? 0) + (t?.notDisbursed ?? 0)).toLocaleString()}</span>
+                        <span className="font-ledger text-xs text-muted-foreground whitespace-nowrap"
+                          title={t?.advance ? `PKR ${t.disbursed.toLocaleString()} by bank/cash + PKR ${t.advance.toLocaleString()} cleared by advance` : undefined}>
+                          PKR {paidOutOf(t ?? ZERO_SHELL).toLocaleString()} of {salaryTotalOf(t ?? ZERO_SHELL).toLocaleString()}
+                        </span>
                         <span className="w-full h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden="true">
                           <span className={`block h-full rounded-full ${fullyDisbursed ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${done ? ((t?.disbursedCount ?? 0) / done) * 100 : 0}%` }} />
                         </span>
+                        {!!t?.advance && <span className="text-[11px] text-muted-foreground whitespace-nowrap">incl. PKR {t.advance.toLocaleString()} by advance</span>}
                       </span>
-                      <span className="md:hidden text-xs text-muted-foreground tabular-nums">PKR {(t?.disbursed ?? 0).toLocaleString()} paid</span>
+                      <span className="md:hidden text-xs text-muted-foreground tabular-nums">PKR {paidOutOf(t ?? ZERO_SHELL).toLocaleString()} paid</span>
                     </button>
                     {/* Sits OUTSIDE the expand button: nesting a button inside a
                         button is invalid HTML and the click would toggle the card
@@ -3538,8 +3553,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                   {lifecycleStatusLabel(e)}
                                 </span>
                                 {isPaidOrZero(row) && (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500">
-                                    <Check className="w-3 h-3" strokeWidth={2.5} /> Disbursed
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500"
+                                    title={clearedByAdvance(row) ? `Nothing to pay this month: the whole salary was recovered from an advance of PKR ${Math.round(row.advance).toLocaleString()} paid earlier.` : undefined}>
+                                    <Check className="w-3 h-3" strokeWidth={2.5} /> {clearedByAdvance(row) ? "Cleared by advance" : "Disbursed"}
                                   </span>
                                 )}
                                 {/* Why the pay is what it is — days, rate, leave, advances, deductions. */}
@@ -3571,7 +3587,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                       </button>
                                     )}
                                   </>
-                                ) : canHold && !row.disbursed && (
+                                ) : canHold && !isPaidOrZero(row) && (
                                   <button type="button" onClick={(ev) => { ev.stopPropagation(); void holdPayslip(e.id, e.full_name); }}
                                     className="inline-flex items-center px-1.5 py-0.5 rounded border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                                     title="Keep this payslip back; the rest of the client can still be paid">
@@ -3668,8 +3684,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                     {Math.round(item.weight * 100)}% of PKR {Math.round(row.net_salary || 0).toLocaleString()}
                                   </div>
                                 </>
+                              ) : clearedByAdvance(row) ? (
+                                <span className="text-success-700 dark:text-success-500 font-medium">Cleared by advance</span>
                               ) : (
                                 <>PKR {row.net_salary.toLocaleString()}</>
+                              )}
+                              {Math.round(row.advance || 0) > 0 && (
+                                <div className="text-[11px] text-muted-foreground" title="Paid to the guard earlier as an advance and recovered from this salary.">
+                                  + PKR {Math.round((row.advance || 0) * item.weight).toLocaleString()} advance
+                                </div>
                               )}
                               {(() => {
                                 const bal = Math.round(row.net_salary) - Math.round(row.amount_paid || 0);
@@ -5156,9 +5179,10 @@ function PayrollBand({ totals, clients, clientsDone, period, onOpen }: {
   /** Opens the figure's make-up by client. */
   onOpen?: (kind: "total" | "disbursed" | "owed" | "advance") => void;
 }) {
-  const total = totals.disbursed + totals.notDisbursed;
+  const total = salaryTotalOf(totals);
+  const paidOut = paidOutOf(totals);
   const slips = totals.disbursedCount + totals.notDisbursedCount;
-  const pct = total > 0 ? totals.disbursed / total : 0;
+  const pct = total > 0 ? paidOut / total : 0;
   const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
   return (
     <div className="flex flex-col gap-3">
@@ -5174,10 +5198,10 @@ function PayrollBand({ totals, clients, clientsDone, period, onOpen }: {
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         {[
-          { kind: "total" as const, label: "Total salaries", v: total, sub: `${slips} payslips`, tone: "text-foreground" },
-          { kind: "disbursed" as const, label: "Disbursed", v: totals.disbursed, sub: `${totals.disbursedCount} payslips`, tone: "text-up" },
+          { kind: "total" as const, label: "Total salaries", v: total, sub: `${slips} payslips, before advances`, tone: "text-foreground" },
+          { kind: "disbursed" as const, label: "Paid out", v: paidOut, sub: totals.advance ? `PKR ${Math.round(totals.disbursed).toLocaleString()} bank/cash + advances` : `${totals.disbursedCount} payslips`, tone: "text-up" },
           { kind: "owed" as const, label: "Still to pay", v: totals.notDisbursed, sub: `${totals.notDisbursedCount} payslips`, tone: totals.notDisbursed ? "text-heed" : "text-up" },
-          { kind: "advance" as const, label: "Advances", v: totals.advance, sub: "advances for the month", tone: "text-down" },
+          { kind: "advance" as const, label: "Cleared by advance", v: totals.advance, sub: "paid earlier, recovered this month", tone: "text-foreground" },
         ].map((t) => (
           <button key={t.label} type="button" onClick={() => onOpen?.(t.kind)} disabled={!onOpen}
             className="group text-left rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1 enabled:hover:border-brand-500/60">

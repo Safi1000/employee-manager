@@ -10,13 +10,20 @@
 // The effective date starts empty on purpose: when a raise applies from is a
 // fact to be entered, not "today".
 //
+// Backdated past a move (12 Nov 2026, Shayan; 0668): a guard hired with no
+// salary had one entered after he moved clients, dated back to his first day,
+// at the NEW post's rate — so his month at the old post was paid at the wrong
+// figure. When the effective date falls before a move to another client, the
+// window says so, offers the move date, and will not save until someone ticks
+// that the one rate is right for both posts.
+//
 // Pay basis (0540, DECIDED 2026-10-16): monthly = base ÷ days in month × days
 // worked; per day = his own daily rate × days worked. The rate is the man's,
 // never the client's. set_employee_pay_basis is the one writer. The basis is
 // current, not dated (DEFERRED), so it applies to every payslip not yet
 // generated.
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Modal from "./Modal";
 import Button from "./Button";
@@ -43,12 +50,42 @@ export default function BaseSalaryEditModal({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [postings, setPostings] = useState<{ client_id: string | null; start: string; end: string | null; name: string }[]>([]);
+  const [bothPostsOk, setBothPostsOk] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void supabase.from("deployments")
+      .select("client_id, start_date, end_date, clients(name)")
+      .eq("guard_id", employee.id)
+      .order("start_date")
+      .then(({ data }) => {
+        if (!live) return;
+        setPostings(((data ?? []) as any[]).map((d) => ({
+          client_id: d.client_id ?? null, start: d.start_date, end: d.end_date ?? null,
+          name: d.clients?.name ?? "another post",
+        })));
+      });
+    return () => { live = false; };
+  }, [employee.id]);
+
+  // The post he was at on the effective date, and the first move to a
+  // different client after it. Null when the new salary covers one post only.
+  const backdated = useMemo(() => {
+    if (!effective) return null;
+    const at = postings.find((p) => p.start <= effective && (!p.end || p.end >= effective));
+    if (!at) return null;
+    const moved = postings.find((p) => p.start > effective && p.client_id !== at.client_id);
+    return moved ? { from: at.name, to: moved.name, on: moved.start } : null;
+  }, [effective, postings]);
+  useEffect(() => { setBothPostsOk(false); }, [effective]);
+  const fmtDay = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
   const current = employee.base_salary != null ? Math.round(Number(employee.base_salary)) : null;
   const rateN = Math.round(Number(rate));
   const basisChanged = basis !== currentBasis || (basis === "per_day" && rateN !== currentRate);
   const baseChanged = base !== "";
-  const canSave = !saving && (basisChanged || (baseChanged && !!effective));
+  const canSave = !saving && (basisChanged || (baseChanged && !!effective)) && !(baseChanged && backdated && !bothPostsOk);
 
   const save = async () => {
     setErr(null);
@@ -60,6 +97,7 @@ export default function BaseSalaryEditModal({
       const n = Math.round(Number(base));
       if (!Number.isFinite(n) || n <= 0) { setErr("Enter a base salary above zero."); return; }
       if (!effective) { setErr("Pick the date the new salary takes effect."); return; }
+      if (backdated && !bothPostsOk) { setErr(`This date is before his move to ${backdated.to}. Confirm the rate is right for ${backdated.from} too, or start it on ${fmtDay(backdated.on)}.`); return; }
     }
     setSaving(true);
 
@@ -188,6 +226,24 @@ export default function BaseSalaryEditModal({
               <p className="text-[11px] text-muted-foreground mt-1">
                 Days from this date are paid at the new salary. Unpaid payslips from this month on, including one in payroll Review, take the new figure.
               </p>
+              {backdated && (
+                <div role="alert" className="mt-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-warning-500 space-y-2">
+                  <p>
+                    <span className="font-semibold">This goes back before a move.</span> He was at <span className="font-medium">{backdated.from}</span> on this date and moved to <span className="font-medium">{backdated.to}</span> on {fmtDay(backdated.on)}.
+                    This salary would also pay his days at {backdated.from}.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button type="button" onClick={() => setEffective(backdated.on)}
+                      className="px-2 py-1 rounded-md border border-warning-200 dark:border-warning-500/30 bg-card text-foreground hover:bg-accent">
+                      Start it on {fmtDay(backdated.on)} instead
+                    </button>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs font-normal">
+                      <input type="checkbox" className="rounded border-border" checked={bothPostsOk} onChange={(e) => setBothPostsOk(e.target.checked)} />
+                      The same rate is right at both posts
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
