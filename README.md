@@ -18,7 +18,7 @@ That boundary is a pathless layout route in `src/app/routes.tsx` wrapping those
 four routes with `<PublicAnalytics>`; `/super-admin` and `/super-super-admin`
 sit outside it. **Do not put the gtag snippet in `index.html`** — `vercel.json`
 rewrites every path to `/index.html`, so a tag there would load inside the whole
-CRM and send authenticated URLs to Google on every navigation.
+CRM and send authenticated URLs to Google on every navigation
 
 ### Configuration
 
