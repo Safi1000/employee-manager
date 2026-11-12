@@ -448,6 +448,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // decrements that person's tracked cash and shows in the Cash Custody ledger.
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
   const [cashCustodianId, setCashCustodianId] = useState<string>("");     // drawer (per-row) payment
+  // 12 Nov 2026: a paid payslip says HOW it was paid — each recorded part, its
+  // channel (who held the cash / which bank / which cheque), date and who
+  // recorded it. The pickers below are for the NEXT payment and never showed it.
+  type PaidPart = { amount: number; paid_at: string; payment_mode: string; channel: string; by: string | null };
+  const [paidParts, setPaidParts] = useState<PaidPart[] | null>(null);
   const [bulkCashCustodianId, setBulkCashCustodianId] = useState<string>(""); // bulk disburse
   // 0542: allowance fuel cards — a man's fixed allowance can be paid onto his
   // own card, loaded from a bank. Only active allowance cards are offered.
@@ -1565,6 +1570,40 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setLeaveDraft(existing ? String(existing.allowed) : "");
     setLeaveReason(existing?.reason ?? "");
   }, [selectedId, selectedPeriod, leaveOverrides]);
+
+  const paidPartsKey = selectedRow ? `${selectedRow.payslip_id ?? ""}|${selectedRow.amount_paid ?? 0}` : "";
+  useEffect(() => {
+    const psId = paidPartsKey.split("|")[0];
+    setPaidParts(null);
+    if (!psId) return;
+    let live = true;
+    void (async () => {
+      const { data, error } = await supabase.from("payslip_payments")
+        .select("amount, paid_at, payment_mode, bank_account_id, created_by, cash_locations(name), cheques(cheque_number)")
+        .eq("payslip_id", psId).order("paid_at");
+      if (!live || error) return;
+      const parts = (data ?? []) as any[];
+      const ids = [...new Set(parts.map((x) => x.created_by).filter(Boolean))];
+      const names = new Map<string, string>();
+      if (ids.length) {
+        const { data: pr } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+        for (const x of (pr ?? []) as any[]) names.set(x.id, x.full_name);
+      }
+      if (!live) return;
+      setPaidParts(parts.map((x) => {
+        const bank = banks.find((b) => b.id === x.bank_account_id);
+        const channel =
+          x.payment_mode === "Cash" ? `Cash, handed out by ${x.cash_locations?.name ?? "a custodian"}`
+          : x.payment_mode === "Cheque" ? `Cheque${x.cheques?.cheque_number ? ` #${x.cheques.cheque_number}` : ""}${bank ? ` on ${bank.bank_name}` : ""}`
+          : x.payment_mode === "Card" ? `Fuel card${bank ? `, loaded from ${bank.bank_name}` : ""}`
+          : x.payment_mode === "Bank" ? `Bank transfer${bank ? ` from ${bank.bank_name}${bank.account_number ? ` ··${String(bank.account_number).slice(-4)}` : ""}` : ""}`
+          : String(x.payment_mode);
+        return { amount: Number(x.amount), paid_at: x.paid_at, payment_mode: x.payment_mode, channel, by: x.created_by ? names.get(x.created_by) ?? null : null };
+      }));
+    })();
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paidPartsKey, banks]);
 
   const payrollTotals = useMemo(() => {
     let disbursed = 0;
@@ -4290,6 +4329,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             : "Nothing to pay this month, so payment details are locked."}
                       </p>
                     )}
+                    {afterNet && isPaidOrZero(selectedRow) && !!paidParts?.length && (
+                      <div className="space-y-1">
+                        <p className="lbl">How it was paid</p>
+                        {paidParts.map((pp, i) => (
+                          <div key={i} className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="text-foreground">
+                              {pp.amount < 0 ? "Reversed: " : ""}{pp.channel}
+                              <span className="block text-[11px] text-muted-foreground">
+                                {new Date(pp.paid_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                {pp.by ? ` · recorded by ${pp.by}` : ""}
+                              </span>
+                            </span>
+                            <span className={`tabular-nums shrink-0 ${pp.amount < 0 ? "text-danger-700" : "text-foreground"}`}>PKR {Math.abs(Math.round(pp.amount)).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!(afterNet && isPaidOrZero(selectedRow) && !!paidParts?.length) && (<>
                     <label className="block text-xs text-muted-foreground">Payment Mode</label>
                     <ThemedSelect
                       value={selectedRow.payment_mode}
@@ -4419,6 +4476,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </p>
                       </>
                     )}
+                    </>)}
                   </div>
                   )}
 
