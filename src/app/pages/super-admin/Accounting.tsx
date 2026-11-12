@@ -52,6 +52,7 @@ import VendorCredits from "../../components/VendorCredits";
 import { tallyDate, useReconStatus } from "../../lib/reconStatus";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { CashCustodyPanel } from "./CashCustody";
+import InetReleases from "./InetReleases";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import AmountInWords from "../../components/AmountInWords";
@@ -155,10 +156,10 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks" | "cash-custody">(() => {
+  const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks" | "cash-custody" | "inet">(() => {
     if (embed) return embed;
     const t = searchParams.get("tab");
-    return t === "cash-custody" || t === "receivables" || t === "payables" ? t : "banks";
+    return t === "cash-custody" || t === "inet" || t === "receivables" || t === "payables" ? t : "banks";
   });
   // On its own route this page no longer shows receivables or payables: any
   // request for them (a URL, a focus link, a ledger drill) goes to their home.
@@ -188,8 +189,11 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
   // who may edit banks and reconciliation can already see everything here.
   const canEditAccounting = hasPermission(profile, "accounting.edit");
   const visibleTabs = useMemo(() => {
-    const all = (embed ? [embed] : ["banks", "cash-custody"]) as readonly ("receivables" | "payables" | "banks" | "cash-custody")[];
+    const all = (embed ? [embed] : ["banks", "cash-custody", "inet"]) as readonly ("receivables" | "payables" | "banks" | "cash-custody" | "inet")[];
     return all.filter((t) => {
+      // iNet releases (0662, moved here 12 Nov 2026): open to either iNet key
+      // even without banks.view — the initiator downloads the upload file here.
+      if (t === "inet") return canEditAccounting || hasPermission(profile, "bank.inet_initiate") || hasPermission(profile, "bank.inet_release");
       if (canEditAccounting) return true;
       if (t === "receivables") return hasPermission(profile, "receivables.view");
       if (t === "payables") return hasPermission(profile, "payables.view");
@@ -1732,7 +1736,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
         if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
       }
       // 0662: from an iNet bank nothing is paid now — it is initiated and paid
-      // when someone else releases it on Finance ▸ iNet releases.
+      // when someone else releases it on Bank & Ledgers ▸ iNet releases.
       if (payVia === "Bank" && inetBanks.has(payBankId)) {
         const { error: initErr } = await supabase.rpc("initiate_inet_vendor_payment", {
           p_bank_account_id: payBankId,
@@ -1743,7 +1747,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
         });
         if (initErr) throw initErr;
         loadInet();
-        setInetNotice(`PKR ${amount.toLocaleString()} to ${payTarget.vendorName} is in transit on ${inetBanks.get(payBankId)} iNet — key it in iNet; it is paid when released on Finance ▸ iNet releases.`);
+        setInetNotice(`PKR ${amount.toLocaleString()} to ${payTarget.vendorName} is in transit on ${inetBanks.get(payBankId)} iNet — key it in iNet; it is paid when released on Bank & Ledgers ▸ iNet releases.`);
         setPayTarget(null);
         await loadAll();
         return;
@@ -2415,6 +2419,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
       >
         <div className="flex flex-col gap-3">
           {!embed && <>
+          {canReadBanks && <>
           {/* Net position (2026-10-20): the four ledgers on one line — what we
               hold, what we are owed, what we owe — read from the same totals
               each tab shows below. */}
@@ -2436,10 +2441,11 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
               <span className="font-ledger text-xl font-semibold text-up"><span className="cur">PKR</span>{Math.round(totalAccountBalance + cashBalance + (owedToUs ?? 0) - payableTotals.pending - payableTotals.overdue).toLocaleString()}</span>
             </span>
           </div>
+          </>}
           <Tabs<typeof activeTab>
             value={activeTab}
             onChange={setActiveTab}
-            items={visibleTabs.map((t) => ({ value: t, label: ({ receivables: "Client receivables", payables: "Accounts payable", banks: "Bank accounts", "cash-custody": "Cash custody" } as Record<string, string>)[t] }))}
+            items={visibleTabs.map((t) => ({ value: t, label: ({ receivables: "Client receivables", payables: "Accounts payable", banks: "Bank accounts", "cash-custody": "Cash custody", inet: "iNet releases" } as Record<string, string>)[t] }))}
           />
           </>}
         {activeTab === "banks" && (
@@ -3041,9 +3047,9 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
                             {pendChq > 0 ? <>+ <span className="font-ledger text-warning-700 dark:text-warning-500">{pendChq.toLocaleString()}</span> in pending cheques = <span className="font-ledger text-foreground">{totalBal.toLocaleString()}</span></> : "no cheques in transit"}
                           </p>
                           {inetTransit.get(bank.id) && (
-                            <a href="/app/inet" className="block text-xs text-info-700 dark:text-info-500 mt-0.5 hover:underline">
+                            <button type="button" onClick={() => setActiveTab("inet")} className="block text-left text-xs text-info-700 dark:text-info-500 mt-0.5 hover:underline">
                               Initiated, not yet released: <span className="font-ledger">{Math.round(inetTransit.get(bank.id)!.amount).toLocaleString()}</span> ({inetTransit.get(bank.id)!.batches} batch{inetTransit.get(bank.id)!.batches === 1 ? "" : "es"}) — not in the balance yet
-                            </a>
+                            </button>
                           )}
                         </div>
                         {bank.owner_type === "company" && (
@@ -3500,6 +3506,8 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
             {bankSection === "fuel" && <FuelCards companyId={treasuryCompanyId} banks={banks} canEdit={canEditAccounting} onMoved={() => { void loadAll(); }} />}
             </>
           )}
+
+          {activeTab === "inet" && <InetReleases embedded />}
 
           {activeTab === "cash-custody" && (
             <div>

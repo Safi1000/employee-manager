@@ -26,7 +26,6 @@ const AttendanceBoard = lazyPage(() => import("./pages/super-admin/AttendanceBoa
 const PayrollManagement = lazyPage(() => import("./pages/super-admin/PayrollManagement"));
 const PayrollRun = lazyPage(() => import("./pages/super-admin/PayrollRun"));
 const LoansPage = lazyPage(() => import("./pages/super-admin/Loans"));
-const InetReleasesPage = lazyPage(() => import("./pages/super-admin/InetReleases"));
 const ReliefPool = lazyPage(() => import("./pages/super-admin/ReliefPool"));
 const AttendanceRun = lazyPage(() => import("./pages/super-admin/AttendanceRun"));
 const PayrollAdjustments = lazyPage(() => import("./pages/super-admin/PayrollAdjustments"));
@@ -237,7 +236,8 @@ export const router = createBrowserRouter([
       )) },
       { path: "payroll-run", element: guard(["payroll.view", "payroll.edit"], <PayrollRun />) },
       { path: "loans", element: guard(["payroll.view", "payroll.edit"], <LoansPage />) },
-      { path: "inet", element: guard(["bank.inet_initiate", "bank.inet_release"], <InetReleasesPage />) },
+      // iNet releases moved into Bank & Ledgers as a tab (12 Nov 2026); redirect the old route.
+      { path: "inet", element: <Navigate to="/app/accounting?tab=inet" replace /> },
       { path: "payroll-runs", element: <Navigate to="/app/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       // Recruitment page deleted — intake is set on the employee form itself.
@@ -253,7 +253,7 @@ export const router = createBrowserRouter([
       )) },
       { path: "relievers/attendance", element: <Navigate to="/app/relievers?tab=attendance" replace /> },
       { path: "relievers/payroll", element: <Navigate to="/app/payroll-run" replace /> },
-      { path: "accounting", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Accounting />) },
+      { path: "accounting", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit", "bank.inet_initiate", "bank.inet_release"], <Accounting />) },
       // Financial Reports, rebuilt (Overview, Client profit, Statements,
       // Ledgers, Scenarios). The Partnership Report below is a separate page.
       { path: "reports", element: guard(["reports.view"], <FinancialReports key="reports" />) },

@@ -10,7 +10,9 @@ import { downloadInetFile } from "../../lib/inetFile";
 import { FormField, Hint, ModalFooter } from "./_assetsKit";
 
 /**
- * Finance ▸ iNet releases (0662). Asked by Shayan, 11 Nov 2026.
+ * Bank & Ledgers ▸ iNet releases (0662). Asked by Shayan, 11 Nov 2026; moved
+ * from its own Finance page into Bank & Ledgers as a tab, 12 Nov 2026 (Shayan),
+ * beside the bank balances a release moves. `embedded` drops the page header.
  *
  * Online bank payments go out in two steps by two people. Whoever initiates
  * (Payroll, Banks ▸ Payables) puts the payments in transit and downloads the
@@ -35,7 +37,7 @@ const pkr = (n: number) => Math.round(n).toLocaleString();
 const when = (s: string | null) => (s ? new Date(s).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const kindLabel = (k: Batch["file_kind"]) => (k === "FT" ? "Same-bank file" : k === "IBFT" ? "Other banks file" : k === "single" ? "Single instruction (keyed by hand)" : "Keyed by hand");
 
-export default function InetReleases() {
+export default function InetReleases({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const canRelease = hasPermission(profile, "bank.inet_release");
   const canInitiate = hasPermission(profile, "bank.inet_initiate");
@@ -181,8 +183,9 @@ export default function InetReleases() {
 
   return (
     <>
-      <Header title="iNet releases" subtitle="Online bank payments: initiated, then released by someone else — nothing is paid until released" />
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
+      {!embedded && <Header title="iNet releases" subtitle="Online bank payments: initiated, then released by someone else — nothing is paid until released" />}
+      <div className={embedded ? "space-y-4" : "flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4"}>
+        {embedded && <p className="text-sm text-muted-foreground">Online bank payments: initiated, then released by someone else. Nothing is paid and no bank moves until a batch is released.</p>}
         {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
         {msg && <div className="rounded-lg border border-success-200 bg-success-50 dark:bg-success-500/10 p-3 text-sm text-success-700 dark:text-success-500">{msg}</div>}
         <h2 className="text-sm font-semibold text-foreground">Waiting for release ({pending.length})</h2>

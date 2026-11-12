@@ -6,7 +6,7 @@ import { FormField, Hint, ModalFooter } from "../pages/super-admin/_assetsKit";
 
 /**
  * 0662: put payslips in transit on iNet. Nothing is paid and no bank moves
- * until someone else releases the batch on Banks ▸ iNet releases. Askari
+ * until someone else releases the batch on Bank & Ledgers ▸ iNet releases. Askari
  * payees and other-bank payees become two batches (two upload files)
  * automatically; any payee whose bank details cannot go in the file is listed
  * by the database and nothing is initiated.
@@ -42,7 +42,7 @@ export default function InetInitiateModal({ bankId, bankName, items, defaultLabe
     if (error) { setErr(friendlyDbError(error)); return; }
     const r = data as { items: number; batches: Record<string, string> };
     const kinds = Object.keys(r.batches ?? {}).map((k) => (k === "FT" ? "Askari" : k === "IBFT" ? "other banks" : "keyed by hand"));
-    onDone(`${r.items} payslip${r.items === 1 ? "" : "s"} in transit on ${bankName} (${kinds.join(" + ")}). Download the file${kinds.length > 1 ? "s" : ""} on Banks ▸ iNet releases.`);
+    onDone(`${r.items} payslip${r.items === 1 ? "" : "s"} in transit on ${bankName} (${kinds.join(" + ")}). Download the file${kinds.length > 1 ? "s" : ""} on Bank & Ledgers ▸ iNet releases.`);
   };
 
   return (

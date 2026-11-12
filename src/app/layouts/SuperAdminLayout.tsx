@@ -110,13 +110,12 @@ export default function SuperAdminLayout() {
   // 0656 (Shayan, 11 Nov): loans have their own screen, apart from advances.
   const LOANS: LinkDef = { to: "/app/loans", label: "Loans", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   // 0662 (Shayan, 11 Nov): online bank payments are initiated, then released by someone else.
-  const INET: LinkDef = { to: "/app/inet", label: "iNet releases", icon: DollarSign, perms: ["bank.inet_initiate", "bank.inet_release"] };
   const PERFORMANCE: LinkDef = { to: "/app/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };
   const RELIEVER_ATT: LinkDef = { to: "/app/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const INVENTORY: LinkDef = { to: "/app/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
   const ROSTER: LinkDef = { to: "/app/roster", label: "Deployment Roster", icon: CalendarRange, perms: ["roster.view", "roster.edit"] };
   const INCIDENTS: LinkDef = { to: "/app/incidents", label: "Incidents", icon: Siren, perms: ["incidents.view", "incidents.edit"] };
-  const BANKS: LinkDef = { to: "/app/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["banks.view", "accounting.edit"] };
+  const BANKS: LinkDef = { to: "/app/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["banks.view", "accounting.edit", "bank.inet_initiate", "bank.inet_release"] };
   // Open to everyone (0496): anyone may request an expense. Without expenses.view
   // or .edit the page shows only their own requests (ExpensesEntry).
   const EXPENSES: LinkDef = { to: "/app/expenses", label: "Expenses & Advances", icon: Receipt };
@@ -313,7 +312,6 @@ export default function SuperAdminLayout() {
     PAYROLL_RUN,
     LOANS,
     BANKS,
-    INET,
     FINANCE_REPORT,
     REPORTS,
     ACCOUNTANT,

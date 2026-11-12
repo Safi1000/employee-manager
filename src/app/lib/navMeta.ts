@@ -28,7 +28,6 @@ const SECTION_OF: Record<string, string> = {
   payroll: "Finance",
   "payroll-run": "Finance",
   loans: "Finance",
-  inet: "Finance",
   performance: "Workforce",
   relievers: "Workforce",
 
