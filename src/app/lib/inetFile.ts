@@ -52,11 +52,17 @@ export const SONERI_PRODUCT = { FT: "FTBulk", IBFT: "IBFTBulk" } as const;
 const PURPOSE = { payslip: 501, vendor: 122 } as const;
 
 export async function downloadInetFile(bankName: string, format: InetFormat, batch: InetFileBatch, items: InetFileItem[]): Promise<void> {
+  const XLSX = await import("xlsx");
+  const out = buildInetFile(XLSX, format, batch, items);
+  await saveBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), inetFileName(bankName, batch));
+}
+
+/** The upload file's bytes — pure, so the same code makes the app's download and any offline test file. */
+export function buildInetFile(XLSX: typeof import("xlsx"), format: InetFormat, batch: InetFileBatch, items: InetFileItem[]): ArrayBuffer {
   if (batch.file_kind !== "FT" && batch.file_kind !== "IBFT") {
     throw new Error("This batch is keyed into online banking by hand — there is no upload file for it.");
   }
-  const XLSX = await import("xlsx");
-  if (format === "soneri") return soneriFile(XLSX, bankName, batch, items);
+  if (format === "soneri") return soneriFile(XLSX, batch, items);
   const ft = batch.file_kind === "FT";
   const day = excelDay(batch.transaction_date);
   const rows: (string | number | null)[][] = [HEADERS];
@@ -69,7 +75,9 @@ export async function downloadInetFile(bankName: string, format: InetFormat, bat
       it.payee_name,
       // Askari→Askari: the 13-digit account as a number, as in the accepted files.
       // Other banks: the IBAN as text.
-      ft ? Number(it.account_no) : (it.account_no ?? ""),
+      // A leading 0 is part of the account (0990100587220): a number would drop
+      // it, so such an account is written as text with every digit.
+      ft ? (/^0/.test(it.account_no ?? "") ? String(it.account_no) : Number(it.account_no)) : (it.account_no ?? ""),
       Math.round(Number(it.amount)),
       ft ? "FT" : "IBFT1",
       batch.reference ?? "",
@@ -83,18 +91,17 @@ export async function downloadInetFile(bankName: string, format: InetFormat, bat
     const date = ws[XLSX.utils.encode_cell({ r, c: 1 })];
     if (date) date.z = "m/d/yy";
     const acct = ws[XLSX.utils.encode_cell({ r, c: 5 })];
-    if (acct && ft) acct.z = "0";
+    if (acct && ft) { if (acct.t === "s") acct.z = "@"; else acct.z = "0"; }
     const amt = ws[XLSX.utils.encode_cell({ r, c: 6 })];
     if (amt) amt.z = "0";
   }
   ws["!cols"] = [5, 14, 18, 26, 28, 28, 11, 15, 14, 14, 14, 15, 15].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  await saveBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), inetFileName(bankName, batch));
+  return XLSX.write(wb, { bookType: "xlsx", type: "array" });
 }
 
-async function soneriFile(XLSX: typeof import("xlsx"), bankName: string, batch: InetFileBatch, items: InetFileItem[]) {
+function soneriFile(XLSX: typeof import("xlsx"), batch: InetFileBatch, items: InetFileItem[]): ArrayBuffer {
   const ft = batch.file_kind === "FT";
   const headers = ft
     ? ["ProductTypeCode", "BeneficiaryAccountNo", "Amount", "ReferenceField1", "ReferenceField2", "ReferenceField3", "Purpose of Payment"]
@@ -116,6 +123,5 @@ async function soneriFile(XLSX: typeof import("xlsx"), bankName: string, batch: 
   ws["!cols"] = (ft ? [15, 26, 12, 16, 30, 30, 17] : [15, 28, 18, 12, 16, 30, 30, 17]).map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, ft ? "FT" : "IBFT");
-  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  await saveBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), inetFileName(bankName, batch));
+  return XLSX.write(wb, { bookType: "xlsx", type: "array" });
 }
