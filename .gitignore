@@ -52,3 +52,4 @@ docs/audits/*eobi-deductions*
 *cnic*.csv
 builds/
 test-files/
+private/

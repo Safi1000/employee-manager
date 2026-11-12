@@ -475,3 +475,52 @@ Two settled points that get re-litigated by accident:
 - HO cost is apportioned by **revenue**, never by guard-days (A10). Regional
   
   with no floor (A9).
+
+## Development rules (DECIDED 12 Nov 2026, Shayan)
+
+Fourteen rules from the 12 Nov 2026 audit. They are written to be checked.
+
+### The repo and what goes in it
+
+- **R1 — The repo is private and stays private.** Nobody makes it public,
+  forks it publicly, or pastes its contents into a public place.
+- **R2 — No personal data in the repo.** No names with CNICs, bank accounts,
+  IBANs, phone numbers or salaries in migrations, docs, tests, commit messages
+  or file names. A data fix is applied from a file kept outside git; the
+  migration records *that* it ran and a digest of the data, not the data.
+- **R3 — Files with real data live in `private/` or `test-files/`**, both
+  git-ignored. Never `git add -A` at the repo root; add by path.
+
+### The database
+
+- **R4 — A new table ships with RLS, its policies, and no grant to `anon`.**
+  The migration asserts all three.
+- **R5 — A new function that writes says who may call it** (`require_perm` or
+  an `api_function_gates` row) and asserts company and branch.
+- **R6 — Nothing is deployed that is not in `main`.** Edge functions included.
+  A deployed function with no source in the repo is deleted.
+- **R7 — The named approval for a prod write is quoted in the commit message
+  that records the apply.** (The approval rule itself is above.)
+- **R8 — A migration is dry-run on prod inside a rolled-back transaction before
+  approval is asked for, using the file's exact bytes** — not a condensed copy.
+  0662 passed a dry run of a different text and then failed on apply.
+- **R9 — Temporary things carry an end date.** A temp function, flag or bypass
+  has `-- remove by <date>` and an entry on the open-items list.
+
+### The app
+
+- **R10 — No user or database text through `innerHTML`.**
+- **R11 — A figure shown on two screens has one function.** "Owed to us",
+  "still to pay", "cash in hand", "guards on strength" each come from one
+  database function; a second computation of an existing figure is refused.
+  (This is "Reading versus computing" above, applied across screens.)
+- **R12 — Money paths get a test before a change**: initiate/release,
+  disburse, receive payment, record expense, reverse, period lock.
+- **R13 — Screens are verified in the browser before "done" is said.** If the
+  browser is signed out, the report says "not seen in the browser" in its
+  first lines.
+
+### The work
+
+- **R14 — One open-items list.** Anything deferred is written to it with an
+  owner and a date, the same day.
