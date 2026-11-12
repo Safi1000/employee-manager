@@ -24,9 +24,19 @@ export function isPermissionDeniedError(err: unknown): boolean {
 // Map any error into a user-facing string, replacing raw DB permission errors
 // with PERMISSION_DENIED_MESSAGE and passing everything else through.
 export function friendlyDbError(err: unknown): string {
-  if (isPermissionDeniedError(err)) return PERMISSION_DENIED_MESSAGE;
   const e = err as { message?: string } | null;
+  // A business rule raised by Bastion's own functions already reads as a
+  // sentence ("… Nothing has been recorded.") and says why — even when it
+  // carries a 42501 or 23514 code. Show it as it is.
+  if (isRaisedSentence(e?.message)) return e!.message!;
+  if (isPermissionDeniedError(err)) return PERMISSION_DENIED_MESSAGE;
   return e?.message ?? String(err);
+}
+
+/** Bastion's raised refusals end with this sentence (house convention); they are
+ *  never rewritten into a generic message. */
+function isRaisedSentence(message: string | null | undefined): boolean {
+  return /Nothing has been recorded\.?\s*$/.test(String(message ?? "").trim());
 }
 
 /** A sentence for the database errors people actually meet; null leaves the
@@ -65,6 +75,9 @@ const permissionAwareFetch: typeof fetch = async (input, init) => {
     let body: Record<string, unknown> | null = null;
     try { body = JSON.parse(text); } catch { body = null; }
     if (!body || typeof body !== "object") return res;
+    // Raised refusals already say what happened (12 Nov 2026: an iNet refusal
+    // read "A value is outside what is allowed here…" ahead of its reason).
+    if (isRaisedSentence(String(body.message ?? ""))) return res;
     if (/42501|row-level security|permission denied/i.test(text)) {
       body.message = PERMISSION_DENIED_MESSAGE;
       if ("hint" in body) body.hint = null;
