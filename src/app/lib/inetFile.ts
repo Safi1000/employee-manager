@@ -28,6 +28,8 @@ export type InetFileItem = {
   bank_name: string | null;
   bank_code: string | null;
   amount: number;
+  /** 0663: the guard, when his salary is paid to someone else (payee_name is the receiver). */
+  on_behalf_of?: string | null;
 };
 
 const HEADERS = [
@@ -71,7 +73,9 @@ export async function downloadInetFile(bankName: string, format: InetFormat, bat
       Math.round(Number(it.amount)),
       ft ? "FT" : "IBFT1",
       batch.reference ?? "",
-      null, null, null, null,
+      // 0663: a salary paid to someone else names the guard it belongs to.
+      it.on_behalf_of ? `Salary of ${it.on_behalf_of}`.slice(0, 40) : null,
+      null, null, null,
     ]);
   });
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -98,7 +102,7 @@ async function soneriFile(XLSX: typeof import("xlsx"), bankName: string, batch: 
   const rows: (string | number | null)[][] = [headers];
   for (const it of items) {
     const purpose = PURPOSE[it.kind ?? "payslip"];
-    const refs = [batch.reference ?? "", it.payee_name.slice(0, 40), batch.label.slice(0, 40)];
+    const refs = [batch.reference ?? "", (it.on_behalf_of ? `Salary of ${it.on_behalf_of}` : it.payee_name).slice(0, 40), batch.label.slice(0, 40)];
     rows.push(ft
       ? [SONERI_PRODUCT.FT, it.account_no ?? "", Math.round(Number(it.amount)), ...refs, purpose]
       : [SONERI_PRODUCT.IBFT, it.account_no ?? "", it.bank_code != null && it.bank_code !== "" ? Number(it.bank_code) : null, Math.round(Number(it.amount)), ...refs, purpose]);

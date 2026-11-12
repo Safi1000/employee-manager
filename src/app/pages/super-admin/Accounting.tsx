@@ -2645,7 +2645,7 @@ export default function Accounting({ embed }: { embed?: "receivables" | "payable
         {/* One surface per tab (2026-10-21): receivables and payables are a
             card with a single filter strip; banks and custody are their own
             cards laid straight on the page, not cards inside a card. */}
-        <div className={activeTab === "banks" || activeTab === "cash-custody" ? "mb-6" : "bg-card rounded-2xl border border-border mb-6 overflow-hidden"}>
+        <div className={activeTab === "banks" || activeTab === "cash-custody" || activeTab === "inet" ? "mb-6" : "bg-card rounded-2xl border border-border mb-6 overflow-hidden"}>
           {activeTab === "receivables" && (
           <div className="px-6 py-4 border-b border-border flex flex-wrap items-center gap-3">
 

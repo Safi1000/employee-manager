@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Send, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Download, Send, XCircle } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -31,6 +31,8 @@ type Batch = {
 type Item = {
   id: string; batch_id: string; kind: "payslip" | "vendor"; amount: number; payee_name: string;
   account_no: string | null; bank_name: string | null; bank_code: string | null; status: "initiated" | "released" | "rejected";
+  /** 0663: wallet / iban / account; and the guard, when the salary was paid to someone else (payee_name is then the receiver). */
+  account_kind?: string | null; on_behalf_of?: string | null;
 };
 
 const pkr = (n: number) => Math.round(n).toLocaleString();
@@ -65,7 +67,7 @@ export default function InetReleases({ embedded = false }: { embedded?: boolean 
     setBanks(new Map(((bk.data ?? []) as { id: string; bank_name: string }[]).map((b) => [b.id, b.bank_name])));
     setFormats(new Map(((bk.data ?? []) as { id: string; inet_format: string | null }[]).map((b) => [b.id, b.inet_format])));
     if (bs.length) {
-      const { data: its } = await supabase.from("inet_items").select("id, batch_id, kind, amount, payee_name, account_no, bank_name, bank_code, status")
+      const { data: its } = await supabase.from("inet_items").select("id, batch_id, kind, amount, payee_name, account_no, bank_name, bank_code, status, account_kind, on_behalf_of")
         .in("batch_id", bs.map((b) => b.id)).order("payee_name");
       setItems(((its ?? []) as Item[]).map((i) => ({ ...i, amount: Number(i.amount) })));
       const ids = [...new Set(bs.flatMap((b) => [b.initiated_by, b.released_by]).filter(Boolean) as string[])];
@@ -113,67 +115,114 @@ export default function InetReleases({ embedded = false }: { embedded?: boolean 
     void load();
   };
 
+  const statusChip = (b: Batch) => (
+    <span className={`text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap ${
+      b.status === "initiated" ? "bg-info-100 text-info-700 dark:bg-info-500/15 dark:text-info-500"
+        : b.status === "released" ? "bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500"
+        : "bg-muted text-muted-foreground"}`}>
+      {b.status === "initiated" ? "In transit" : b.status === "released" ? "Released" : "Rejected"}
+    </span>
+  );
+  const payee = (i: Item) => (
+    <>
+      <div className="text-foreground">{i.payee_name}</div>
+      {i.on_behalf_of && (
+        <div className="text-xs text-warning-700 dark:text-warning-500 inline-flex items-center gap-1">
+          <AlertTriangle className="w-3 h-3" /> Salary of {i.on_behalf_of} — paid to someone else
+        </div>
+      )}
+    </>
+  );
+
   const card = (b: Batch) => {
     const its = itemsOf.get(b.id) ?? [];
     const live = its.filter((i) => i.status !== "rejected");
     const total = live.reduce((s, i) => s + i.amount, 0);
+    const paidTo = live.filter((i) => i.on_behalf_of).length;
     const isOpen = open.has(b.id);
     const mine = b.initiated_by && b.initiated_by === profile?.id;
     return (
-      <div key={b.id} className="rounded-xl border border-border bg-card">
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <button type="button" className="flex items-center gap-2 text-left min-w-0 flex-1"
+      <div key={b.id} className="rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-3 p-4">
+          <button type="button" className="flex items-start gap-2 text-left min-w-0 flex-1 basis-64"
             onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })}>
-            {isOpen ? <ChevronDown className="w-4 h-4 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 flex-shrink-0" />}
-            <div className="min-w-0">
-              <div className="font-semibold text-foreground truncate">{b.label}</div>
+            {isOpen ? <ChevronDown className="w-4 h-4 mt-0.5 flex-shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 mt-0.5 flex-shrink-0 text-muted-foreground" />}
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-foreground">{b.label}</span>
+                {statusChip(b)}
+                {paidTo > 0 && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-warning-100 text-warning-700 dark:bg-warning-500/15 dark:text-warning-500 whitespace-nowrap">
+                    {paidTo} paid to someone else
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-muted-foreground">
-                {bankName(b.bank_account_id)} · {kindLabel(b.file_kind)} · {live.length} payment{live.length === 1 ? "" : "s"} · initiated by {who(b.initiated_by)} {when(b.initiated_at)}
-                {b.status === "released" && <> · released by {who(b.released_by)} {when(b.released_at)}{b.rounding_difference ? ` · rounding ${b.rounding_difference}` : ""}</>}
+                {bankName(b.bank_account_id)} · {kindLabel(b.file_kind)}{b.reference ? ` · ref ${b.reference}` : ""} · {live.length} payment{live.length === 1 ? "" : "s"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Initiated by {who(b.initiated_by)}, {when(b.initiated_at)}
+                {b.status === "released" && <> · released by {who(b.released_by)}, {when(b.released_at)}{b.rounding_difference ? ` · rounding ${b.rounding_difference}` : ""}</>}
                 {b.status === "rejected" && <> · rejected {when(b.rejected_at)}{b.note ? ` — ${b.note}` : ""}</>}
               </div>
             </div>
           </button>
-          <div className="font-ledger font-semibold text-foreground">PKR {pkr(b.status === "released" && b.inet_total != null ? b.inet_total : total)}</div>
-          {b.status === "initiated" && (
-            <div className="flex flex-wrap gap-2">
-              {(b.file_kind === "FT" || b.file_kind === "IBFT") && (
-                <Button size="sm" variant="secondary" onClick={() => void download(b)}><Download className="w-4 h-4 mr-1" /> iNet file</Button>
-              )}
-              {(canRelease || canInitiate) && (
-                <Button size="sm" variant="secondary" onClick={() => void rejectAll(b)}><XCircle className="w-4 h-4 mr-1" /> Reject</Button>
-              )}
-              {canRelease && (
-                <Button size="sm" disabled={!!mine} title={mine ? "You initiated this batch — someone else must release it." : undefined}
-                  onClick={() => { setErr(null); setReleasing(b); }}>
-                  <Send className="w-4 h-4 mr-1" /> Release
-                </Button>
-              )}
+          <div className="flex flex-wrap items-center gap-3 ml-auto">
+            <div className="text-right">
+              <div className="lbl">{b.status === "released" ? "Sent" : "Total"}</div>
+              <div className="font-ledger text-lg font-semibold text-foreground whitespace-nowrap"><span className="cur">PKR</span>{pkr(b.status === "released" && b.inet_total != null ? b.inet_total : total)}</div>
             </div>
-          )}
-          {b.status !== "initiated" && (
-            <span className={`text-xs font-medium px-2 py-0.5 rounded ${b.status === "released" ? "bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500" : "bg-muted text-muted-foreground"}`}>
-              {b.status === "released" ? "Released" : "Rejected"}
-            </span>
+            {b.status === "initiated" && (
+              <div className="flex flex-wrap gap-2">
+                {(b.file_kind === "FT" || b.file_kind === "IBFT") && (
+                  <Button size="sm" variant="secondary" onClick={() => void download(b)}><Download className="w-4 h-4 mr-1" /> iNet file</Button>
+                )}
+                {(canRelease || canInitiate) && (
+                  <Button size="sm" variant="secondary" onClick={() => void rejectAll(b)}><XCircle className="w-4 h-4 mr-1" /> Reject</Button>
+                )}
+                {canRelease && (
+                  <Button size="sm" disabled={!!mine} title={mine ? "You initiated this batch — someone else must release it." : undefined}
+                    onClick={() => { setErr(null); setReleasing(b); }}>
+                    <Send className="w-4 h-4 mr-1" /> Release
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+          {b.status === "initiated" && mine && canRelease && (
+            <p className="basis-full text-xs text-muted-foreground">You initiated this batch, so someone else must release it.</p>
           )}
         </div>
         {isOpen && (
           <div className="border-t border-border overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-muted-foreground bg-muted/40">
-                <tr><th className="px-4 py-2">Payee</th><th className="px-4 py-2">Bank</th><th className="px-4 py-2">Account / IBAN</th><th className="px-4 py-2 text-right">Amount</th><th className="px-4 py-2">Status</th></tr>
+                <tr>
+                  <th className="px-4 py-2 font-medium">Payee</th>
+                  <th className="px-4 py-2 font-medium">Bank / wallet</th>
+                  <th className="px-4 py-2 font-medium">Account</th>
+                  <th className="px-4 py-2 font-medium text-right">Amount</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                </tr>
               </thead>
               <tbody>
                 {its.map((i) => (
-                  <tr key={i.id} className="border-t border-border">
-                    <td className="px-4 py-1.5">{i.payee_name}</td>
-                    <td className="px-4 py-1.5 text-muted-foreground">{i.bank_name ?? ""}{i.bank_code ? ` (${i.bank_code})` : ""}</td>
-                    <td className="px-4 py-1.5 font-ledger text-xs">{i.account_no ?? ""}</td>
-                    <td className="px-4 py-1.5 text-right font-ledger">{pkr(i.amount)}</td>
-                    <td className="px-4 py-1.5 text-xs">{i.status === "initiated" ? "In transit" : i.status === "released" ? "Paid" : "Rejected"}</td>
+                  <tr key={i.id} className={`border-t border-border align-top ${i.status === "rejected" ? "opacity-60" : ""}`}>
+                    <td className="px-4 py-2">{payee(i)}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{i.bank_name ?? ""}{i.bank_code ? ` (${i.bank_code})` : ""}</td>
+                    <td className="px-4 py-2 font-ledger text-xs whitespace-nowrap">{i.account_no ?? ""}{i.account_kind === "wallet" ? <span className="text-muted-foreground font-sans"> · wallet</span> : null}</td>
+                    <td className="px-4 py-2 text-right font-ledger whitespace-nowrap">{pkr(i.amount)}</td>
+                    <td className="px-4 py-2 text-xs whitespace-nowrap">{i.status === "initiated" ? "In transit" : i.status === "released" ? "Paid" : "Rejected"}</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t border-border bg-muted/40">
+                  <td className="px-4 py-2 text-xs text-muted-foreground" colSpan={3}>{live.length} payment{live.length === 1 ? "" : "s"}{its.length > live.length ? ` · ${its.length - live.length} rejected` : ""}</td>
+                  <td className="px-4 py-2 text-right font-ledger font-semibold">{pkr(total)}</td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -181,20 +230,51 @@ export default function InetReleases({ embedded = false }: { embedded?: boolean 
     );
   };
 
+  // In transit, per bank — what is waiting to leave each bank.
+  const transitByBank = useMemo(() => {
+    const m = new Map<string, { n: number; amount: number }>();
+    for (const b of pending) {
+      const amt = (itemsOf.get(b.id) ?? []).filter((i) => i.status === "initiated").reduce((s, i) => s + i.amount, 0);
+      const cur = m.get(b.bank_account_id) ?? { n: 0, amount: 0 };
+      m.set(b.bank_account_id, { n: cur.n + 1, amount: cur.amount + amt });
+    }
+    return m;
+  }, [pending, itemsOf]);
+
   return (
     <>
       {!embedded && <Header title="iNet releases" subtitle="Online bank payments: initiated, then released by someone else — nothing is paid until released" />}
       <div className={embedded ? "space-y-4" : "flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4"}>
-        {embedded && <p className="text-sm text-muted-foreground">Online bank payments: initiated, then released by someone else. Nothing is paid and no bank moves until a batch is released.</p>}
+        <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span className="lbl">In transit</span>
+          {transitByBank.size === 0
+            ? <span className="text-sm text-muted-foreground">Nothing waiting for release</span>
+            : [...transitByBank.entries()].map(([id, t]) => (
+              <span key={id} className="flex items-baseline gap-2 text-sm">
+                <span className="text-muted-foreground">{bankName(id)}</span>
+                <span className="font-ledger font-semibold text-foreground">{pkr(t.amount)}</span>
+                <span className="text-xs text-muted-foreground">({t.n} batch{t.n === 1 ? "" : "es"})</span>
+              </span>
+            ))}
+          <span className="ml-auto text-xs text-muted-foreground">Not in any bank balance until released</span>
+        </div>
         {err && <div className="rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-500/10 p-3 text-sm text-danger-700 dark:text-danger-500">{err}</div>}
         {msg && <div className="rounded-lg border border-success-200 bg-success-50 dark:bg-success-500/10 p-3 text-sm text-success-700 dark:text-success-500">{msg}</div>}
-        <h2 className="text-sm font-semibold text-foreground">Waiting for release ({pending.length})</h2>
-        {loading ? <p className="text-sm text-muted-foreground">Loading…</p>
-          : pending.length === 0 ? <p className="text-sm text-muted-foreground">Nothing in transit. Initiate payments from Payroll or Banks ▸ Payables.</p>
-          : pending.map(card)}
+        {loading ? <p className="text-sm text-muted-foreground px-1">Loading…</p>
+          : pending.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border px-4 py-10 text-center">
+              <p className="text-sm font-medium text-foreground">Nothing waiting for release</p>
+              <p className="text-xs text-muted-foreground mt-1">Initiate salaries from Payroll (Disburse on an Askari or Soneri bank), or a vendor payment from Accounts payable. Each batch then appears here with its upload file.</p>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-sm font-semibold text-foreground px-1">Waiting for release ({pending.length})</h2>
+              {pending.map(card)}
+            </>
+          )}
         {done.length > 0 && (
           <>
-            <h2 className="text-sm font-semibold text-foreground pt-4">Last 45 days</h2>
+            <h2 className="text-sm font-semibold text-foreground pt-4 px-1">Last 45 days</h2>
             {done.map(card)}
           </>
         )}
@@ -258,7 +338,10 @@ function ReleaseModal({ batch, bankName, items, onClose, onDone }: {
             <label key={i.id} className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer ${rejected.has(i.id) ? "opacity-60 line-through" : ""}`}>
               <input type="checkbox" checked={rejected.has(i.id)}
                 onChange={() => setRejected((s) => { const n = new Set(s); if (n.has(i.id)) n.delete(i.id); else n.add(i.id); return n; })} />
-              <span className="flex-1 truncate">{i.payee_name}<span className="text-xs text-muted-foreground"> · {i.bank_name}</span></span>
+              <span className="flex-1 min-w-0">
+                <span className="block truncate">{i.payee_name}<span className="text-xs text-muted-foreground"> · {i.bank_name}</span></span>
+                {i.on_behalf_of && <span className="block text-xs text-warning-700 dark:text-warning-500">Salary of {i.on_behalf_of} — paid to someone else</span>}
+              </span>
               <span className="font-ledger">{pkr(i.amount)}</span>
             </label>
           ))}

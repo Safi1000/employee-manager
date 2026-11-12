@@ -16,6 +16,7 @@ import GuardTimeline from "../../components/GuardTimeline";
 import PayrollAdjustmentHistory from "../../components/PayrollAdjustmentHistory";
 import GuardCapBanner from "../../components/GuardCapBanner";
 import CommentsButton from "../../components/CommentsButton";
+import SalaryPaidTo from "../../components/SalaryPaidTo";
 import { useFocusTarget } from "../../lib/focus";
 import ProfileCompletionPanel from "../../components/ProfileCompletionPanel";
 import { formatDate } from "../../lib/date";
@@ -3225,6 +3226,8 @@ export default function EmployeeManagement() {
               </div>
             </div>
             )}
+
+            {viewTab === "profile" && <SalaryPaidTo employeeId={selectedEmployee.id} employeeName={selectedEmployee.full_name} />}
 
             {viewTab === "profile" && <FilledDetails employee={selectedEmployee} />}
 
