@@ -4280,15 +4280,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
                   {!throughNet && (
                   <div className="pt-3 border-t border-border space-y-2">
-                    {afterNet && selectedRow.disbursed && (
+                    {afterNet && isPaidOrZero(selectedRow) && (
                       <p className="text-[11px] text-success-700 bg-success-50 border border-success-200 rounded px-2 py-1 flex items-center gap-1">
-                        <Lock className="w-3 h-3" /> Disbursed — this payslip is paid and locked. Salary and payment details can no longer be changed.
+                        <Lock className="w-3 h-3 shrink-0" />
+                        {selectedRow.disbursed
+                          ? "Disbursed — this payslip is paid and locked. Salary and payment details can no longer be changed."
+                          : clearedByAdvance(selectedRow)
+                            ? `Cleared by advance — the whole salary was recovered from PKR ${Math.round(selectedRow.advance).toLocaleString()} paid earlier as an advance. Nothing to pay, so payment details are locked.`
+                            : "Nothing to pay this month, so payment details are locked."}
                       </p>
                     )}
                     <label className="block text-xs text-muted-foreground">Payment Mode</label>
                     <ThemedSelect
                       value={selectedRow.payment_mode}
-                      disabled={afterNet && selectedRow.disbursed}
+                      disabled={afterNet && isPaidOrZero(selectedRow)}
                       onChange={(e) =>
                         updateEdit(selectedRow.employee.id, {
                           payment_mode: e.target.value as PaymentMode,
@@ -4310,7 +4315,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           <label className="block text-xs text-muted-foreground mb-1">His fuel card *</label>
                           <ThemedSelect
                             value={allowanceCardId}
-                            disabled={afterNet && selectedRow.disbursed}
+                            disabled={afterNet && isPaidOrZero(selectedRow)}
                             onChange={(e) => setAllowanceCardId(e.target.value)}
                             className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                           >
@@ -4324,7 +4329,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           <label className="block text-xs text-muted-foreground mb-1">Loaded from bank *</label>
                           <ThemedSelect
                             value={selectedRow.bank_account_id ?? ""}
-                            disabled={afterNet && selectedRow.disbursed}
+                            disabled={afterNet && isPaidOrZero(selectedRow)}
                             onChange={(e) => updateEdit(selectedRow.employee.id, { bank_account_id: e.target.value || null })}
                             className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                           >
@@ -4345,7 +4350,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         <label className="block text-xs text-muted-foreground mb-1">Paid By (custodian) *</label>
                         <ThemedSelect
                           value={cashCustodianId}
-                          disabled={afterNet && selectedRow.disbursed}
+                          disabled={afterNet && isPaidOrZero(selectedRow)}
                           onChange={(e) => setCashCustodianId(e.target.value)}
                           className="w-full px-2 py-1.5 border border-border rounded text-sm disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed"
                         >
@@ -4364,7 +4369,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     {selectedRow.payment_mode === "Bank" && (
                       <ThemedSelect
                         value={selectedRow.bank_account_id ?? ""}
-                        disabled={afterNet && selectedRow.disbursed}
+                        disabled={afterNet && isPaidOrZero(selectedRow)}
                         onChange={(e) =>
                           updateEdit(selectedRow.employee.id, {
                             bank_account_id: e.target.value || null,
@@ -4384,7 +4389,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <>
                         <ThemedSelect
                           value={selectedRow.cheque_id ?? ""}
-                          disabled={afterNet && selectedRow.disbursed}
+                          disabled={afterNet && isPaidOrZero(selectedRow)}
                           onChange={(e) => {
                             const id = e.target.value || null;
                             const chq = id ? cheques.find((c) => c.id === id) : null;
@@ -4521,7 +4526,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       size="sm"
                       className="flex-1"
                       onClick={() => handleSaveRow(selectedRow)}
-                      disabled={savingId === selectedRow.employee.id || (afterNet && selectedRow.disbursed)}
+                      disabled={savingId === selectedRow.employee.id || (afterNet && isPaidOrZero(selectedRow))}
                     >
                       {savingId === selectedRow.employee.id ? "Saving…" : "Save"}
                     </Button>
