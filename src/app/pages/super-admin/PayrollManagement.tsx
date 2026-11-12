@@ -1414,7 +1414,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
    */
   type BodyItem =
     | { kind: "client"; key: string; id: string; name: string; count: number; net: number; sites: number; open: boolean }
-    | { kind: "site"; key: string; id: string; name: string; count: number; left: number; net: number; open: boolean }
+    | { kind: "site"; key: string; id: string; name: string; count: number; left: number; net: number; open: boolean; empIds: string[] }
     // depth says how far in the person sits: 0 with no grouping at all, 1 under
     // a client header, 2 under a client AND a site. Carried on the item rather
     // than recomputed at render time, because the renderer sees a flat list and
@@ -1468,6 +1468,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             left: site.rows.filter((r) => isSeparatedState(r.employee.lifecycle_state)).length,
             net: netOf(site.rows),
             open: sOpen,
+            // 12 Nov 2026 (Shayan): select one site to initiate it to its own receiver.
+            empIds: site.rows.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0).map((r) => r.employee.id),
           });
         }
         if (sOpen) {
@@ -3429,9 +3431,21 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           );
                         }
                         if (item.kind === "site") {
+                          const siteIds = item.empIds.filter((id) => !holdsByEmployee.has(id));
+                          const siteAll = siteIds.length > 0 && siteIds.every((id) => selectedEmpIds.has(id));
                           return (
                             <tr key={item.key} className="bg-secondary/40 border-b border-border">
                               <td colSpan={bodyColCount} className="p-0">
+                                <div className="flex items-center">
+                                {afterNet && (
+                                  <input type="checkbox" className="rounded border-border ml-4" disabled={siteIds.length === 0}
+                                    checked={siteAll} title="Select this site's payable guards"
+                                    onChange={() => setSelectedEmpIds((prev) => {
+                                      const n = new Set(prev);
+                                      for (const id of siteIds) { if (siteAll) n.delete(id); else n.add(id); }
+                                      return n;
+                                    })} />
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => toggleSiteRow(item.id)}
@@ -3448,6 +3462,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                     {item.count} employee{item.count === 1 ? "" : "s"}{item.left ? ` · ${item.left} left` : ""} · PKR {item.net.toLocaleString()}
                                   </span>
                                 </button>
+                                </div>
                               </td>
                             </tr>
                           );
