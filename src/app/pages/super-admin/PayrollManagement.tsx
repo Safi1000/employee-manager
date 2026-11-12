@@ -1469,7 +1469,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             net: netOf(site.rows),
             open: sOpen,
             // 12 Nov 2026 (Shayan): select one site to initiate it to its own receiver.
-            empIds: site.rows.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0).map((r) => r.employee.id),
+            empIds: site.rows.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0 && !(r.payslip_id && inTransit.has(r.payslip_id))).map((r) => r.employee.id),
           });
         }
         if (sOpen) {
@@ -1481,7 +1481,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       }
     }
     return out;
-  }, [groups, sortedRows, openClientRows, openSiteRows, clientScopeId]);
+  }, [groups, sortedRows, openClientRows, openSiteRows, clientScopeId, inTransit]);
 
   // Columns actually rendered, for the header colSpan. Base four are Employee /
   // Attendance / Base / Net; afterNet adds the select box, and the full
@@ -3432,25 +3432,36 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         }
                         if (item.kind === "site") {
                           const siteIds = item.empIds.filter((id) => !holdsByEmployee.has(id));
-                          const siteAll = siteIds.length > 0 && siteIds.every((id) => selectedEmpIds.has(id));
+                          const siteSel = siteIds.filter((id) => selectedEmpIds.has(id)).length;
+                          const siteAll = siteIds.length > 0 && siteSel === siteIds.length;
+                          const toggleSite = () => setSelectedEmpIds((prev) => {
+                            const n = new Set(prev);
+                            for (const id of siteIds) { if (siteAll) n.delete(id); else n.add(id); }
+                            return n;
+                          });
                           return (
-                            <tr key={item.key} className="bg-secondary/40 border-b border-border">
-                              <td colSpan={bodyColCount} className="p-0">
-                                <div className="flex items-center">
-                                {afterNet && (
-                                  <input type="checkbox" className="rounded border-border ml-4" disabled={siteIds.length === 0}
-                                    checked={siteAll} title="Select this site's payable guards"
-                                    onChange={() => setSelectedEmpIds((prev) => {
-                                      const n = new Set(prev);
-                                      for (const id of siteIds) { if (siteAll) n.delete(id); else n.add(id); }
-                                      return n;
-                                    })} />
-                                )}
+                            <tr key={item.key} className="bg-secondary/40 border-b border-border hover:bg-accent transition-colors">
+                              {/* 12 Nov 2026: a site's own tick box, in the same column as
+                                  the guards' boxes — MIU's sites go to different receivers. */}
+                              {afterNet && (
+                                <td className="px-4 py-2.5 w-10" onClick={(ev) => ev.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    className="rounded border-border"
+                                    disabled={siteIds.length === 0}
+                                    checked={siteAll}
+                                    ref={(el) => { if (el) el.indeterminate = siteSel > 0 && !siteAll; }}
+                                    title={siteIds.length ? `Select ${item.name}'s ${siteIds.length} payable guard${siteIds.length === 1 ? "" : "s"}` : "Nothing left to pay at this site"}
+                                    onChange={toggleSite}
+                                  />
+                                </td>
+                              )}
+                              <td colSpan={afterNet ? bodyColCount - 1 : bodyColCount} className="p-0">
                                 <button
                                   type="button"
                                   onClick={() => toggleSiteRow(item.id)}
                                   aria-expanded={item.open}
-                                  className="w-full flex items-center gap-2 pl-9 pr-4 py-2.5 text-left hover:bg-accent transition-colors"
+                                  className={`w-full flex items-center gap-2 ${afterNet ? "pl-2" : "pl-9"} pr-4 py-2.5 text-left`}
                                 >
                                   <ChevronRight
                                     className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${item.open ? "rotate-90" : ""}`}
@@ -3458,11 +3469,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                   />
                                   <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
                                   <span className="text-sm text-foreground truncate flex-1">{item.name}</span>
+                                  {afterNet && siteSel > 0 && (
+                                    <span className="text-xs text-brand-700 dark:text-brand-500 shrink-0 tabular-nums">{siteSel} selected ·</span>
+                                  )}
                                   <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
                                     {item.count} employee{item.count === 1 ? "" : "s"}{item.left ? ` · ${item.left} left` : ""} · PKR {item.net.toLocaleString()}
                                   </span>
                                 </button>
-                                </div>
                               </td>
                             </tr>
                           );

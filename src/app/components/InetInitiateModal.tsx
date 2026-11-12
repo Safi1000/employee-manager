@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { History, Plus, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, History, Plus, Search, Trash2, Users } from "lucide-react";
 import Modal from "./Modal";
 import Button from "./Button";
 import { supabase, friendlyDbError } from "../lib/supabase";
@@ -22,8 +22,8 @@ import { FormField, Hint, ModalFooter } from "../pages/super-admin/_assetsKit";
 export type InetInitiateItem = { payslipId: string; employeeId: string; name: string; amount: number };
 
 type Check = { problem: string | null };
-type Staff = { id: string; full_name: string; code: string | null; bank_name: string | null; bank_account: string | null; iban: string | null; account_title: string | null };
-type Receiver = { name: string; bank: string; account: string; iban: string };
+type Staff = { id: string; full_name: string; code: string | null; client: string | null; bank_name: string | null; bank_account: string | null; iban: string | null; account_title: string | null };
+type Receiver = { name: string; staffId?: string; bank: string; account: string; iban: string };
 type Past = { employee_id: string; payee_name: string; bank_name: string; account_no: string | null; iban: string | null; set_at: string };
 
 const input = "w-full px-3 py-2 rounded-lg border border-border bg-background text-sm";
@@ -70,10 +70,11 @@ export default function InetInitiateModal({ bankId, bankName, items, defaultLabe
   const [past, setPast] = useState<Past[]>([]);
   useEffect(() => {
     if (!refused.length) return;
-    void supabase.from("employees").select("id, full_name, employee_code, guard_code, bank_name, bank_account, iban, account_title")
+    // The GGS code (employee_code), not the client's own guard code.
+    void supabase.from("employees").select("id, full_name, employee_code, bank_name, bank_account, iban, account_title, clients(name)")
       .eq("status", "Active").order("full_name")
-      .then(({ data }) => setStaff(((data ?? []) as (Staff & { employee_code: string | null; guard_code: string | null })[])
-        .map((e) => ({ ...e, code: e.guard_code ?? e.employee_code }))));
+      .then(({ data }) => setStaff(((data ?? []) as unknown as (Omit<Staff, "code" | "client"> & { employee_code: string | null; clients: { name: string } | null })[])
+        .map((e) => ({ ...e, code: e.employee_code, client: e.clients?.name ?? null }))));
     void supabase.from("salary_payees").select("employee_id, payee_name, bank_name, account_no, iban, set_at")
       .in("employee_id", refused.map((i) => i.employeeId)).order("set_at", { ascending: false })
       .then(({ data }) => setPast((data ?? []) as Past[]));
@@ -100,11 +101,8 @@ export default function InetInitiateModal({ bankId, bankName, items, defaultLabe
   };
 
   const setR = (k: number, patch: Partial<Receiver>) => setReceivers((rs) => rs.map((r, i) => (i === k ? { ...r, ...patch } : r)));
-  const pickStaff = (k: number, typed: string) => {
-    const s = staff.find((x) => `${x.full_name}${x.code ? ` · ${x.code}` : ""}` === typed);
-    if (!s) { setR(k, { name: typed }); return; }
-    setR(k, { name: s.account_title?.trim() || s.full_name, bank: s.bank_name ?? "", account: s.bank_account ?? "", iban: s.iban ?? "" });
-  };
+  const pickStaff = (k: number, s: Staff) =>
+    setR(k, { name: s.account_title?.trim() || s.full_name, staffId: s.id, bank: s.bank_name ?? "", account: s.bank_account ?? "", iban: s.iban ?? "" });
   const removeR = (k: number) => {
     setReceivers((rs) => rs.filter((_, i) => i !== k));
     setAssign((m) => new Map([...m].map(([id, v]) => [id, v === k ? -1 : v > k ? v - 1 : v])));
@@ -212,8 +210,8 @@ export default function InetInitiateModal({ bankId, bankName, items, defaultLabe
                       </button>
                     )}
                   </div>
-                  <input className={input} list="inet-staff" value={r.name} onChange={(e) => pickStaff(k, e.target.value)}
-                    placeholder="Name — pick a staff member to fill in the account, or type anyone's name" />
+                  <ReceiverPicker value={r.name} picked={staff.find((x) => x.id === r.staffId) ?? null} staff={staff}
+                    onType={(v) => setR(k, { name: v, staffId: undefined })} onPick={(s) => pickStaff(k, s)} />
                   <div className="grid grid-cols-3 gap-2">
                     <select className={input} value={r.bank} onChange={(e) => setR(k, { bank: e.target.value })}>
                       <option value="">Bank or wallet…</option>
@@ -229,9 +227,6 @@ export default function InetInitiateModal({ bankId, bankName, items, defaultLabe
                 </div>
               );
             })}
-            <datalist id="inet-staff">
-              {staff.map((s) => <option key={s.id} value={`${s.full_name}${s.code ? ` · ${s.code}` : ""}`} />)}
-            </datalist>
             {receivers.length < 4 && (
               <button type="button" className="inline-flex items-center gap-1 text-sm text-info-700 dark:text-info-500 hover:underline"
                 onClick={() => setReceivers((rs) => [...rs, blank()])}>
@@ -294,5 +289,69 @@ export default function InetInitiateModal({ bankId, bankName, items, defaultLabe
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Receiver name: type anyone's name, or pick a staff member from the list —
+ * name, GGS code, client and bank — which fills in their account.
+ */
+function ReceiverPicker({ value, picked, staff, onType, onPick }: {
+  value: string; picked: Staff | null; staff: Staff[]; onType: (v: string) => void; onPick: (s: Staff) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  const q = value.trim().toLowerCase();
+  const matches = useMemo(() => (q.length < 2 ? [] : staff.filter((s) =>
+    s.full_name.toLowerCase().includes(q) || (s.code ?? "").toLowerCase().includes(q) || (s.client ?? "").toLowerCase().includes(q),
+  ).slice(0, 8)), [q, staff]);
+  const choose = (s: Staff) => { onPick(s); setOpen(false); };
+
+  return (
+    <div ref={box} className="relative">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <input
+        className={`${input} pl-9`}
+        value={value}
+        onChange={(e) => { onType(e.target.value); setOpen(true); setHi(0); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (!open || !matches.length) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, matches.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter") { e.preventDefault(); choose(matches[hi]); }
+          else if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="Receiver's name — type 2 letters to search staff, or any name"
+      />
+      {picked && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          <Check className="inline w-3 h-3 mr-1 text-success-700 dark:text-success-500" />
+          {picked.full_name} · {picked.code ?? "no code"}{picked.client ? ` · ${picked.client}` : ""} — account filled from the profile
+        </p>
+      )}
+      {open && matches.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-card shadow-lg overflow-hidden">
+          {matches.map((s, i) => (
+            <button key={s.id} type="button" onMouseDown={(e) => { e.preventDefault(); choose(s); }} onMouseEnter={() => setHi(i)}
+              className={`w-full text-left px-3 py-2 flex items-center gap-3 ${i === hi ? "bg-accent" : ""}`}>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm text-foreground truncate">{s.full_name}</span>
+                <span className="block text-xs text-muted-foreground truncate">{s.code ?? "no code"}{s.client ? ` · ${s.client}` : ""}</span>
+              </span>
+              <span className={`text-xs shrink-0 ${s.iban || s.bank_account ? "text-muted-foreground" : "text-warning-700 dark:text-warning-500"}`}>
+                {s.iban || s.bank_account ? (s.bank_name ?? "bank on file") : "no bank details"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
