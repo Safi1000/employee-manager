@@ -2929,9 +2929,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 const partiallyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount > 0;
                 return (
                   <div key={s.key} className={`relative rounded-2xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-500/8 border-success-200 dark:border-success-500/30" : "bg-card border-border"}`}>
-                    <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 pr-24 text-left">
+                    <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex flex-wrap md:flex-nowrap items-center gap-x-2 gap-y-2 p-4 md:pr-24 text-left">
                       <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
-                      <span className={`text-sm font-medium truncate flex-1 ${fullyDisbursed ? "text-success-700 dark:text-success-500" : "text-foreground"}`}>{s.name}</span>
+                      <span className={`text-sm font-medium truncate min-w-0 basis-[calc(100%-7.5rem)] md:basis-0 md:flex-1 ${fullyDisbursed ? "text-success-700 dark:text-success-500" : "text-foreground"}`}>{s.name}</span>
                       {fullyDisbursed && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500">
                           <Check className="w-3 h-3" strokeWidth={2.5} /> All disbursed
@@ -2942,17 +2942,26 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           {t!.disbursedCount}/{done} disbursed
                         </span>
                       )}
-                      <span className="hidden md:flex flex-col items-end gap-1 w-56">
+                      {/* Phone: the name keeps its own line; badge, figure and bar wrap beneath it. */}
+                      <span className="flex flex-col items-end gap-1 flex-1 min-w-[10rem] md:flex-none md:w-56">
                         <span className="font-ledger text-xs text-muted-foreground whitespace-nowrap"
                           title={t?.advance ? `PKR ${t.disbursed.toLocaleString()} by bank/cash + PKR ${t.advance.toLocaleString()} cleared by advance` : undefined}>
                           PKR {paidOutOf(t ?? ZERO_SHELL).toLocaleString()} of {salaryTotalOf(t ?? ZERO_SHELL).toLocaleString()}
                         </span>
                         <span className="w-full h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden="true">
-                          <span className={`block h-full rounded-full ${fullyDisbursed ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${done ? ((t?.disbursedCount ?? 0) / done) * 100 : 0}%` }} />
+                          {/* 12 Nov 2026 (Shayan): fills by MONEY paid out, not payslips
+                              counted, and turns green as it closes — 97% should look
+                              nearly done, not the same orange as 10%. */}
+                          {(() => {
+                            const tt = t ?? ZERO_SHELL;
+                            const tot = salaryTotalOf(tt);
+                            const pct = fullyDisbursed ? 1 : tot > 0 ? Math.min(1, paidOutOf(tt) / tot) : 0;
+                            const tone = pct >= 1 ? "bg-success-500" : pct >= 0.9 ? "bg-up" : pct >= 0.5 ? "bg-heed" : "bg-brand-500";
+                            return <span className={`block h-full rounded-full transition-all ${tone}`} style={{ width: `${pct * 100}%` }} title={`${Math.floor(pct * 100)}% of the salary paid out`} />;
+                          })()}
                         </span>
                         {!!t?.advance && <span className="text-[11px] text-muted-foreground whitespace-nowrap">incl. PKR {t.advance.toLocaleString()} by advance</span>}
                       </span>
-                      <span className="md:hidden text-xs text-muted-foreground tabular-nums">PKR {paidOutOf(t ?? ZERO_SHELL).toLocaleString()} paid</span>
                     </button>
                     {/* Sits OUTSIDE the expand button: nesting a button inside a
                         button is invalid HTML and the click would toggle the card
