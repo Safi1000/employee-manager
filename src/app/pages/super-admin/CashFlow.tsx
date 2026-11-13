@@ -138,6 +138,8 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
   // so it comes from the revenue-basis call — the same value Financial Reports
   // shows. Keyed by client so both pages display an identical number.
   const [revOverheadByClient, setRevOverheadByClient] = useState<Map<string, number>>(new Map());
+  type StatutoryPaid = { id: string; scheme: string; period_month: string; amount: number; paid_on: string; paid_via: string; reference: string | null; branch_id: string | null };
+  const [statutory, setStatutory] = useState<StatutoryPaid[]>([]);
   const [loadingStatements, setLoadingStatements] = useState(false);
   const [selectedStatement, setSelectedStatement] = useState<CashStatementRow | null>(null);
 
@@ -158,7 +160,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       setLoading(true);
       setError(null);
       try {
-        const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes, brRes] = await Promise.all([
+        const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes, brRes, stRes] = await Promise.all([
           // Flow sources all carry branch_id, so the global region selector scopes
           // this projection to the region's own inflows/outflows. Client/employee
           // name lookups stay unfiltered — they're just label maps.
@@ -184,9 +186,12 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
           supabase.from("employees").select("id, full_name, branch_id"),
           supabase.from("expense_categories").select("*"),
           supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
+          // 13 Nov 2026: statutory challans (EOBI/PESSI) paid from a bank or cash
+          // are money out too. 'Expense' ones (0548) are already in expenses above.
+          withRegion(supabase.from("statutory_remittances").select("id, scheme, period_month, amount, paid_on, paid_via, reference, branch_id").in("paid_via", ["Bank", "Cash"]), regionId),
         ]);
 
-        for (const r of [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes, brRes]) {
+        for (const r of [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes, brRes, stRes]) {
           if (r.error) throw r.error;
         }
         if (cancelled) return;
@@ -197,6 +202,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         setCheques((chqRes.data ?? []) as Cheque[]);
         setCategories((catRes.data ?? []) as ExpenseCategory[]);
         setBranches((brRes.data ?? []) as Branch[]);
+        setStatutory((stRes.data ?? []) as StatutoryPaid[]);
         setClients((cliRes.data ?? []) as Client[]);
         setClientNames(new Map((cliRes.data ?? []).map((c: any) => [c.id, c.name])));
         setEmployeeNames(new Map((empRes.data ?? []).map((e: any) => [e.id, e.full_name])));
@@ -284,6 +290,19 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       });
     }
 
+    // EOBI / PESSI / IESSI challans paid by bank or cash: the whole challan left,
+    // employee share (deducted from salaries, never in net pay above) included.
+    for (const r of statutory) {
+      const date = isoDay(r.paid_on);
+      if (!date) continue;
+      const label = `Statutory — ${r.scheme === "eobi" ? "EOBI" : r.scheme === "pessi" ? "PESSI" : r.scheme === "iessi" ? "IESSI" : "salary tax"}`;
+      expensesItems.push({
+        date, amount: Number(r.amount ?? 0), group: label,
+        detail: `${label} · ${monthLabel(monthKey(isoDay(r.period_month) ?? date))}${r.reference ? ` · ${r.reference}` : ""}`,
+        branchId: r.branch_id ?? headOfficeId,
+      });
+    }
+
     const advancesItems: CashItem[] = [];
     for (const a of advances) {
       const date =
@@ -294,7 +313,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     }
 
     return { revenue, payroll, expenses: expensesItems, advances: advancesItems };
-  }, [invoicePayments, payslips, expenses, advances, cheques, clientNames, employeeNames, clients, branches, employeeBranch]);
+  }, [invoicePayments, payslips, expenses, advances, cheques, clientNames, employeeNames, clients, branches, employeeBranch, statutory]);
 
   // Payroll cash for the statement month, split across the clients each guard
   // actually worked for. Only this needs a round trip — revenue and expenses

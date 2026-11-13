@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Download, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronRight, Download, Loader2 } from "lucide-react";
 import Button from "./Button";
+import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
-import { supabase, statutoryRateOn, type StatutoryRate } from "../lib/supabase";
+import { supabase, friendlyDbError, statutoryRateOn, type StatutoryRate } from "../lib/supabase";
+import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../lib/custodian";
 import { saveBlob } from "../lib/saveFile";
 import { buildEobiFile, eobiFileName, type EobiFileRow } from "../lib/eobiFile";
 
@@ -29,7 +31,10 @@ type Row = {
   lastDay: string | null; state: string | null; withheld: number;
   /** Nothing withheld this month (office staff, or left) — GGS bears both shares. */
   notDeducted: boolean;
+  /** His own client (the group label above may be the not-deducted group). */
+  realClient: string;
 };
+type Recorded = { id: string; paid_on: string; paid_via: string; bank: string | null; reference: string | null; amount: number; ids: Set<string>; others: string[] };
 
 const LEFT = ["left", "terminated", "fired", "absconded", "archived"];
 const NOT_DEDUCTED = "Not deducted this month — GGS pays both shares";
@@ -55,6 +60,16 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
   const [monthCount, setMonthCount] = useState<Map<string, number>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // 0671: a recorded challan for the month — shown as paid; its people are fixed.
+  const [recorded, setRecorded] = useState<Recorded | null>(null);
+  const [recKey, setRecKey] = useState(0);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payErr, setPayErr] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
+  const [banks, setBanks] = useState<{ id: string; bank_name: string; account_number: string | null }[]>([]);
+  const [custodians, setCustodians] = useState<CustodianOption[]>([]);
+  const [pay, setPay] = useState<{ on: string; via: "Bank" | "Cash"; bank: string; cust: string; ref: string }>(
+    { on: new Date().toISOString().slice(0, 10), via: "Bank", bank: "", cust: "", ref: "" });
 
   // Months that have EOBI withheld, newest first.
   useEffect(() => {
@@ -90,6 +105,7 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
         cnic: e.cnic_number ?? null, eobiNo: (e.eobi_registration_number ?? "").trim() || null, dob: e.date_of_birth ?? null,
         doj: e.eobi_join_date ?? e.join_date ?? null, lastDay: e.last_working_day ?? null, state: e.lifecycle_state ?? null,
         withheld: withheld.get(e.id) ?? 0, notDeducted,
+        realClient: e.clients?.name ?? "Head office",
       });
       const out: Row[] = [];
       for (let i = 0; i < ids.length; i += 200) {
@@ -131,14 +147,74 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
   }, [companyId, month]);
 
   useEffect(() => {
-    if (!rows) return;
+    if (!companyId) return;
+    let live = true;
+    setRecorded(null);
+    void (async () => {
+      const { data: ls } = await supabase.from("statutory_remittance_lines")
+        .select("remittance_id, employee_id, other_name").eq("company_id", companyId).eq("scheme", "eobi").eq("period_month", month);
+      const lines = (ls ?? []) as { remittance_id: string; employee_id: string | null; other_name: string | null }[];
+      if (!live || lines.length === 0) return;
+      const { data: rm } = await supabase.from("statutory_remittances")
+        .select("id, paid_on, paid_via, reference, amount, bank_accounts(bank_name)").in("id", [...new Set(lines.map((l) => l.remittance_id))]);
+      const r = ((rm ?? []) as any[])[0];
+      if (!live || !r) return;
+      setRecorded({
+        id: r.id, paid_on: r.paid_on, paid_via: r.paid_via, bank: r.bank_accounts?.bank_name ?? null, reference: r.reference ?? null,
+        amount: ((rm ?? []) as any[]).reduce((n, x) => n + Number(x.amount), 0),
+        ids: new Set(lines.filter((l) => l.employee_id).map((l) => l.employee_id!)),
+        others: lines.filter((l) => l.other_name).map((l) => l.other_name!),
+      });
+    })();
+    return () => { live = false; };
+  }, [companyId, month, recKey]);
+
+  // A recorded month shows exactly who was paid for.
+  useEffect(() => { if (recorded) setPicked(new Set(recorded.ids)); }, [recorded]);
+
+  useEffect(() => {
+    if (!rows || recorded) return;
     try {
       localStorage.setItem(storeKey(month), JSON.stringify({ picked: [...picked], seen: rows.map((r) => `${r.id}:${r.eobiNo ?? ""}`) }));
     } catch { /* convenience only */ }
   }, [picked, rows, month]);
 
   const rate = statutoryRateOn(rates, "eobi", month);
-  const toggle = (ids: string[], on: boolean) => setPicked((p) => { const n = new Set(p); for (const id of ids) on ? n.add(id) : n.delete(id); return n; });
+  const toggle = (ids: string[], on: boolean) => { if (recorded) return; setPicked((p) => { const n = new Set(p); for (const id of ids) on ? n.add(id) : n.delete(id); return n; }); };
+
+  const openPay = async () => {
+    setPayErr(null); setPayOpen(true);
+    if (!companyId) return;
+    const [{ data: b }, c] = await Promise.all([
+      supabase.from("bank_accounts").select("id, bank_name, account_number, active").eq("company_id", companyId).order("bank_name"),
+      loadCustodianOptions(companyId, false).catch(() => [] as CustodianOption[]),
+    ]);
+    setBanks(((b ?? []) as any[]).filter((x) => x.active !== false));
+    setCustodians(c);
+  };
+  const recordPay = async () => {
+    if (!companyId) return;
+    if (pay.via === "Bank" && !pay.bank) return setPayErr("Choose the bank it was paid from.");
+    if (pay.via === "Cash" && !pay.cust) return setPayErr("Choose who paid it in cash.");
+    setPaying(true); setPayErr(null);
+    try {
+      let loc: string | null = null;
+      if (pay.via === "Cash") {
+        const st = custodians.find((x) => x.employeeId === pay.cust);
+        if (!st) throw new Error("Custodian not found — reload and try again.");
+        loc = st.locationId ?? await ensureCustodianLocation(companyId, st.employeeId, st.fullName, st.kind);
+      }
+      const { error } = await supabase.rpc("record_statutory_challan", {
+        p_company_id: companyId, p_scheme: "eobi", p_period: month, p_paid_via: pay.via,
+        p_bank_account_id: pay.via === "Bank" ? pay.bank : null, p_custodian_location_id: loc,
+        p_paid_on: pay.on, p_reference: pay.ref.trim() || null,
+        p_employee_ids: chosen.map((r) => r.id), p_others: [], p_expected_total: empShare + erShare,
+      });
+      if (error) throw new Error(friendlyDbError(error));
+      setPayOpen(false); setRecKey((k) => k + 1);
+    } catch (e: any) { setPayErr(e?.message ?? String(e)); }
+    setPaying(false);
+  };
 
   const shown = useMemo(() => (rows ?? []).filter((r) => {
     const s = q.trim().toLowerCase();
@@ -167,7 +243,7 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-card overflow-hidden">
+    <section id="eobi-challan" className="rounded-2xl border border-border bg-card overflow-hidden scroll-mt-24">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border">
         <div className="min-w-0 mr-auto">
           <h3 className="text-sm font-semibold text-foreground">EOBI challan · {monthLabel(month)} salaries</h3>
@@ -178,11 +254,26 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
             <option key={m} value={m}>{monthLabel(m)} salaries{monthCount.get(m) ? ` · ${monthCount.get(m)} deducted` : ""}</option>
           ))}
         </ThemedSelect>
-        <Button size="sm" disabled={saving || !rows || chosen.length === 0} onClick={() => void download()}>
+        <Button size="sm" variant="secondary" disabled={saving || !rows || chosen.length === 0} onClick={() => void download()}>
           {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />}
           EOBI file ({chosen.length})
         </Button>
+        {!recorded && (
+          <Button size="sm" disabled={!rows || chosen.length === 0 || !rate} onClick={() => void openPay()}>
+            Record payment · {fmt(empShare + erShare)}
+          </Button>
+        )}
       </div>
+      {recorded && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-border bg-success-50 dark:bg-success-500/10 text-sm text-success-700 dark:text-success-500">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>
+            Paid {new Date(`${recorded.paid_on}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            {" · "}PKR {fmt(recorded.amount)} · {recorded.paid_via === "Bank" ? recorded.bank ?? "bank" : "cash"}
+            {recorded.reference ? ` · voucher ${recorded.reference}` : ""} · {recorded.ids.size + recorded.others.length} insured. The people below are the ones it paid for.
+          </span>
+        </div>
+      )}
 
       {/* What the challan should read — compare with EOBI's payment slip. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border border-b border-border">
@@ -267,6 +358,69 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
           );
         })}
       </div>
+
+      <Modal isOpen={payOpen} onClose={() => !paying && setPayOpen(false)} title={`Record EOBI payment · ${monthLabel(month)}`}
+        error={payErr} onDismissError={() => setPayErr(null)}
+        footer={<>
+          <Button variant="secondary" onClick={() => setPayOpen(false)} disabled={paying}>Cancel</Button>
+          <Button onClick={() => void recordPay()} disabled={paying}>{paying ? "Recording…" : `Record ${fmt(empShare + erShare)} paid`}</Button>
+        </>}>
+        <div className="flex flex-col gap-4 text-sm">
+          <p className="text-muted-foreground">This is the challan you built: who is ticked, and what it comes to. Check it matches EOBI's payment slip, say where it was paid from, and record it.</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[["Insured", String(chosen.length)], ["Employee share", fmt(empShare)], ["Employer share", fmt(erShare)]].map(([l, v]) => (
+              <div key={l} className="rounded-lg border border-border px-3 py-2"><p className="lbl">{l}</p><p className="font-ledger text-base text-foreground">{v}</p></div>
+            ))}
+          </div>
+          {(() => {
+            const emp = rate?.employee_amount ?? 0, head = (rate?.employee_amount ?? 0) + (rate?.employer_amount ?? 0);
+            const settled = chosen.reduce((n, r) => n + Math.min(r.withheld, emp), 0);
+            const byClient = [...chosen.reduce((m, r) => m.set(r.realClient, (m.get(r.realClient) ?? 0) + head - Math.min(r.withheld, emp)), new Map<string, number>())]
+              .sort((a, b) => b[1] - a[1]);
+            return (
+              <div className="rounded-lg border border-border divide-y divide-border">
+                <div className="flex justify-between px-3 py-1.5"><span>Deducted from their salaries — passed on to EOBI</span><span className="font-ledger">{fmt(settled)}</span></div>
+                <div className="px-3 py-1.5">
+                  <div className="flex justify-between"><span>GGS's own cost</span><span className="font-ledger">{fmt(empShare + erShare - settled)}</span></div>
+                  {byClient.map(([c, v]) => <div key={c} className="flex justify-between text-xs text-muted-foreground pl-3"><span>{c}</span><span className="font-ledger">{fmt(v)}</span></div>)}
+                </div>
+                <div className="flex justify-between px-3 py-1.5 font-medium"><span>Paid to EOBI</span><span className="font-ledger">{fmt(empShare + erShare)}</span></div>
+                {leftOwed > 0 && <div className="px-3 py-1.5 text-xs text-muted-foreground">{fmt(leftOwed)} deducted from the {notChosen.filter((r) => r.withheld > 0).length} not paid for stays owed.</div>}
+              </div>
+            );
+          })()}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] text-muted-foreground mb-1">Paid on</label>
+              <input type="date" className="w-full rounded-lg border border-border bg-background px-3 py-2" value={pay.on} max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setPay((x) => ({ ...x, on: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-[11px] text-muted-foreground mb-1">Voucher no. (on EOBI's slip)</label>
+              <input className="w-full rounded-lg border border-border bg-background px-3 py-2" value={pay.ref} placeholder="e.g. 1003270632"
+                onChange={(e) => setPay((x) => ({ ...x, ref: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs w-fit">
+            {(["Bank", "Cash"] as const).map((v) => (
+              <button key={v} type="button" aria-pressed={pay.via === v} onClick={() => setPay((x) => ({ ...x, via: v }))}
+                className={`px-3 py-1 rounded-md ${pay.via === v ? "bg-card text-foreground shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}>{v}</button>
+            ))}
+          </div>
+          {pay.via === "Bank" ? (
+            <ThemedSelect value={pay.bank} onChange={(e) => setPay((x) => ({ ...x, bank: e.target.value }))} aria-label="Paid from bank">
+              <option value="">Paid from which bank…</option>
+              {banks.map((b) => <option key={b.id} value={b.id}>{b.bank_name}{b.account_number ? ` · ${b.account_number}` : ""}</option>)}
+            </ThemedSelect>
+          ) : (
+            <ThemedSelect value={pay.cust} onChange={(e) => setPay((x) => ({ ...x, cust: e.target.value }))} aria-label="Paid in cash by">
+              <option value="">Paid in cash by…</option>
+              {custodians.map((c) => <option key={c.employeeId} value={c.employeeId}>{c.fullName}</option>)}
+            </ThemedSelect>
+          )}
+          <p className="text-[11px] text-muted-foreground">Recording takes {fmt(empShare + erShare)} out of that {pay.via === "Bank" ? "bank" : "person's cash"} in Bastion once. Record a challan only once.</p>
+        </div>
+      </Modal>
     </section>
   );
 }

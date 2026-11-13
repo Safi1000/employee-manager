@@ -262,7 +262,9 @@ function SchemeTable({ sc, dues, remits, bankName, canPay, onPay }: {
           <p className="text-xs text-muted-foreground">{rows[0]?.liability_account ?? ""} · balance <span className="font-ledger text-foreground">{fmt(balance)}</span></p>
         </div>
         {canPay && (
-          <Button size="sm" variant="secondary" className="ml-auto" onClick={() => onPay(sc)}>
+          <Button size="sm" variant="secondary" className="ml-auto"
+            // 13 Nov 2026: EOBI is paid per person — the button takes you to the challan.
+            onClick={() => sc === "eobi" ? document.getElementById("eobi-challan")?.scrollIntoView({ behavior: "smooth" }) : onPay(sc)}>
             <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Pay {STATUTORY_SCHEME_LABEL[sc]}
           </Button>
         )}
