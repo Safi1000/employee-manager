@@ -60,6 +60,8 @@ type MonthView = {
 type ReviewRow = { kind: string; subject: string; subject_id: string | null; amount: number; detail: string };
 type Uninvoiced = { client_id: string; client_code: string; client_name: string; contract_code: string | null; region_name: string | null; reason: string };
 type Deadline = { period_month: string; due_date: string; posted: boolean; days_late: number };
+/** 0672: partnership_readiness — is the month accounted for? */
+type Ready = { seq: number; key: string; status: "ok" | "check" | "block"; title: string; figure: string | null; detail: string | null };
 
 const money = (n: number | null | undefined) => Math.round(Number(n ?? 0)).toLocaleString();
 /** Accounting negatives, because a partner's share can legitimately be one (A9). */
@@ -97,6 +99,9 @@ export default function PartnershipRun() {
   const [review, setReview] = useState<ReviewRow[]>([]);
   const [uninvoiced, setUninvoiced] = useState<Uninvoiced[]>([]);
   const [deadline, setDeadline] = useState<Deadline | null>(null);
+  const [ready, setReady] = useState<Ready[]>([]);
+  // 0672: the reviewer confirms they looked at every "check" before posting.
+  const [ack, setAck] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "draft" | "post" | "reverse">(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,13 +119,16 @@ export default function PartnershipRun() {
     setView(v);
     // The controls, and what they need, are for managers only.
     if (v.viewer.can_manage) {
-      const [blockRes, revRes, uninvRes, dueRes, outRes] = await Promise.all([
+      const [blockRes, revRes, uninvRes, dueRes, outRes, readyRes] = await Promise.all([
         supabase.rpc("partnership_run_blocker", { p_company_id: companyId, p_period: month }),
         supabase.rpc("profit_allocation_review", { p_company_id: companyId, p_period: month }),
         supabase.rpc("partnership_uninvoiced_clients", { p_company_id: companyId, p_period: month }),
         supabase.rpc("partnership_posting_deadline", { p_company_id: companyId, p_period: month }),
         supabase.from("profit_allocation_runs").select("outputs").eq("company_id", companyId).eq("period_month", month).maybeSingle(),
+        supabase.rpc("partnership_readiness", { p_company_id: companyId, p_period: month }),
       ]);
+      setReady(((readyRes.data ?? []) as Ready[]).sort((a, b) => a.seq - b.seq));
+      setAck(false);
       setBlocker((blockRes.data ?? null) as string | null);
       setReview((revRes.data ?? []) as ReviewRow[]);
       setUninvoiced((uninvRes.data ?? []) as Uninvoiced[]);
@@ -200,21 +208,6 @@ export default function PartnershipRun() {
   for (const r of review) reviewByKind.set(r.kind, [...(reviewByKind.get(r.kind) ?? []), r]);
   const checks: Check[] = [
     { key: "draftable", ok: !blocker, title: blocker ? "This month can't be drafted yet" : "The month can be drafted", sub: blocker ?? "Nothing stands in the way." },
-    {
-      key: "billed", ok: uninvoiced.length === 0,
-      title: uninvoiced.length ? `${uninvoiced.length} client${uninvoiced.length === 1 ? "" : "s"} live but never billed` : "Every live client is billed",
-      sub: uninvoiced.length ? "Their cost is in the pool and their revenue is not. Posting will ask you to confirm." : `Every client with a live contract has an invoice for ${monthName(period)}.`,
-      body: uninvoiced.length ? (
-        <ul className="divide-y divide-border text-sm">
-          {uninvoiced.map((u) => (
-            <li key={`${u.client_id}${u.contract_code}`} className="py-1.5 flex flex-wrap gap-x-2">
-              <span className="text-foreground">{u.client_name}</span>
-              <span className="text-xs text-muted-foreground">{u.contract_code ?? ""} · {u.region_name ?? ""} · {u.reason}</span>
-            </li>
-          ))}
-        </ul>
-      ) : undefined,
-    },
     ...[...reviewByKind.entries()].map(([kind, rows]): Check => ({
       key: kind, ok: false, title: `${REVIEW_KINDS[kind]?.title ?? kind} · ${rows.length}`, sub: REVIEW_KINDS[kind]?.note ?? "",
       body: (
@@ -230,6 +223,11 @@ export default function PartnershipRun() {
     })),
   ];
   const openIssues = checks.filter((c) => !c.ok).length;
+  const blocks = ready.filter((r) => r.status === "block");
+  const toConfirm = ready.filter((r) => r.status === "check");
+  const postBlocked = blocks.length > 0 || (toConfirm.length > 0 && !ack);
+  const postWhy = blocks.length > 0 ? `Cannot post yet: ${blocks.map((b) => b.title).join("; ")}`
+    : toConfirm.length > 0 && !ack ? "Tick that you have looked at each item marked Confirm (Before posting, below)" : undefined;
 
   const months = useMemo(() => {
     const m = new Map((view?.months ?? []).map((x) => [x.month.slice(0, 7), x]));
@@ -312,8 +310,8 @@ export default function PartnershipRun() {
                       </Button>
                     )}
                     {run?.status === "DRAFT" && (
-                      <Button variant="primary" disabled={busy !== null || !canPost} onClick={() => void post(false)}
-                        title={canPost ? undefined : "Posting needs the partnership.post permission"}>
+                      <Button variant="primary" disabled={busy !== null || !canPost || postBlocked} onClick={() => void post(ack)}
+                        title={!canPost ? "Posting needs the partnership.post permission" : postWhy}>
                         {busy === "post" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Post
                       </Button>
                     )}
@@ -366,10 +364,55 @@ export default function PartnershipRun() {
             {/* ── Before posting (managers) ───────────────────────────────── */}
             {manage && run?.status !== "POSTED" && (
               <section className="rounded-2xl border border-border bg-card overflow-hidden">
-                <div className="px-5 py-3 border-b border-border flex items-center gap-2">
-                  <h3 className="font-display text-base font-bold tracking-tight text-foreground">Before posting</h3>
-                  <span className={`ml-auto text-xs font-semibold ${openIssues ? "text-heed" : "text-up"}`}>{openIssues ? `${openIssues} to look at` : "all clear"}</span>
+                <div className="px-5 py-3 border-b border-border flex flex-wrap items-center gap-2">
+                  <h3 className="font-display text-base font-bold tracking-tight text-foreground">Before posting — is {monthName(period)} accounted for?</h3>
+                  <span className={`ml-auto text-xs font-semibold ${blocks.length ? "text-down" : toConfirm.length ? "text-heed" : "text-up"}`}>
+                    {blocks.length ? `${blocks.length} must be fixed` : toConfirm.length ? `${toConfirm.length} to confirm` : "everything accounted for"}
+                  </span>
                 </div>
+                {/* 0672: the database's own list; posting enforces the same thing. */}
+                <ul className="divide-y divide-border">
+                  {ready.map((r) => (
+                    <li key={r.key} className="px-5 py-2.5 flex items-start gap-3">
+                      {r.status === "ok" ? <CheckCircle2 className="w-4 h-4 mt-0.5 text-up flex-shrink-0" />
+                        : r.status === "block" ? <AlertTriangle className="w-4 h-4 mt-0.5 text-down flex-shrink-0" />
+                        : <CircleAlert className="w-4 h-4 mt-0.5 text-heed flex-shrink-0" />}
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium text-foreground">
+                          {r.title}
+                          {r.status !== "ok" && (
+                            <span className={`ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${r.status === "block" ? "bg-down/15 text-down" : "bg-heed/15 text-heed"}`}>
+                              {r.status === "block" ? "Block" : "Confirm"}
+                            </span>
+                          )}
+                        </span>
+                        {r.detail && <span className="block text-xs text-muted-foreground">{r.detail}</span>}
+                      </span>
+                      {r.figure && <span className={`font-ledger text-sm shrink-0 ${r.status === "ok" ? "text-muted-foreground" : "text-foreground"}`}>{r.figure}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {run?.status === "DRAFT" && (
+                  <div className="px-5 py-3 border-t border-border bg-muted/30 flex flex-wrap items-center gap-3">
+                    {blocks.length > 0 ? (
+                      <span className="text-sm text-down">Fix the items marked Block, re-draft, then post.</span>
+                    ) : toConfirm.length > 0 ? (
+                      <label className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                        <input type="checkbox" className="accent-brand-600" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                        I have looked at each of the {toConfirm.length} item{toConfirm.length === 1 ? "" : "s"} marked Confirm, and {monthName(period)} is complete.
+                      </label>
+                    ) : (
+                      <span className="text-sm text-up">Everything is accounted for.</span>
+                    )}
+                    <Button className="ml-auto" variant="primary" disabled={busy !== null || !canPost || postBlocked} onClick={() => void post(ack)}
+                      title={!canPost ? "Posting needs the partnership.post permission" : postWhy}>
+                      {busy === "post" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Post {monthName(period)}
+                    </Button>
+                  </div>
+                )}
+                {checks.length > 0 && (
+                  <div className="px-5 pt-3 pb-1 border-t border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">Also worth a look</div>
+                )}
                 <ul className="divide-y divide-border">
                   {checks.map((c) => {
                     const open = openCheck === c.key;
