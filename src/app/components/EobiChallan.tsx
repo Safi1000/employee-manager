@@ -27,9 +27,12 @@ type Row = {
   id: string; code: string; name: string; client: string;
   cnic: string | null; eobiNo: string | null; dob: string | null; doj: string | null;
   lastDay: string | null; state: string | null; withheld: number;
+  /** Nothing withheld this month (office staff, or left) — GGS bears both shares. */
+  notDeducted: boolean;
 };
 
 const LEFT = ["left", "terminated", "fired", "absconded", "archived"];
+const NOT_DEDUCTED = "Not deducted this month — GGS pays both shares";
 const monthLabel = (m: string) => new Date(`${m.slice(0, 7)}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 const fmt = (n: number) => Math.round(n).toLocaleString();
 const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
@@ -70,36 +73,56 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
       if (error) { if (live) setErr(error.message); return; }
       const ids = ((ps ?? []) as { employee_id: string }[]).map((p) => p.employee_id);
       const withheld = new Map(((ps ?? []) as { employee_id: string; eobi: number }[]).map((p) => [p.employee_id, Number(p.eobi)]));
+      const COLS = "id, employee_code, full_name, category, cnic_number, eobi_registration_number, date_of_birth, eobi_join_date, join_date, last_working_day, lifecycle_state, clients(name)";
+      const toRow = (e: any, notDeducted: boolean): Row => ({
+        id: e.id, code: e.employee_code ?? "", name: e.full_name ?? "",
+        client: notDeducted ? NOT_DEDUCTED : e.clients?.name ?? "Head office / office staff",
+        cnic: e.cnic_number ?? null, eobiNo: (e.eobi_registration_number ?? "").trim() || null, dob: e.date_of_birth ?? null,
+        doj: e.eobi_join_date ?? e.join_date ?? null, lastDay: e.last_working_day ?? null, state: e.lifecycle_state ?? null,
+        withheld: withheld.get(e.id) ?? 0, notDeducted,
+      });
       const out: Row[] = [];
       for (let i = 0; i < ids.length; i += 200) {
-        const { data: es, error: e2 } = await supabase.from("employees")
-          .select("id, employee_code, full_name, cnic_number, eobi_registration_number, date_of_birth, eobi_join_date, join_date, last_working_day, lifecycle_state, clients(name)")
-          .in("id", ids.slice(i, i + 200));
+        const { data: es, error: e2 } = await supabase.from("employees").select(COLS).in("id", ids.slice(i, i + 200));
         if (e2) { if (live) setErr(e2.message); return; }
-        for (const e of (es ?? []) as any[]) {
-          out.push({
-            id: e.id, code: e.employee_code ?? "", name: e.full_name ?? "", client: e.clients?.name ?? "Head office / office staff",
-            cnic: e.cnic_number ?? null, eobiNo: (e.eobi_registration_number ?? "").trim() || null, dob: e.date_of_birth ?? null,
-            doj: e.eobi_join_date ?? e.join_date ?? null, lastDay: e.last_working_day ?? null, state: e.lifecycle_state ?? null,
-            withheld: withheld.get(e.id) ?? 0,
-          });
-        }
+        for (const e of (es ?? []) as any[]) out.push(toRow(e, false));
       }
+      // 13 Nov 2026 (Shayan): EOBI is also paid for people nothing was withheld
+      // from — office staff (not on payroll) and guards who have left. Anyone
+      // registered (an EOBI number) who is not already above; GGS bears both shares.
+      const { data: reg2, error: e3 } = await supabase.from("employees").select(COLS)
+        .eq("company_id", companyId).not("eobi_registration_number", "is", null).neq("eobi_registration_number", "");
+      if (e3) { if (live) setErr(e3.message); return; }
+      const have = new Set(ids);
+      for (const e of (reg2 ?? []) as any[]) if (!have.has(e.id)) out.push(toRow(e, true));
       if (!live) return;
-      out.sort((a, b) => a.client.localeCompare(b.client) || a.name.localeCompare(b.name));
+      out.sort((a, b) => Number(a.notDeducted) - Number(b.notDeducted) || a.client.localeCompare(b.client) || a.name.localeCompare(b.name));
       setRows(out);
       // Last choice for this month, else everyone who has an EOBI number.
-      let saved: string[] | null = null;
-      try { saved = JSON.parse(localStorage.getItem(storeKey(month)) ?? "null"); } catch { saved = null; }
+      // Saved: the ticks AND who had been shown, so someone who only became
+      // eligible since (an EOBI number filled in) gets the default, not "unticked".
+      let saved: { picked: string[]; seen: string[] } | null = null;
+      try {
+        const raw = JSON.parse(localStorage.getItem(storeKey(month)) ?? "null");
+        saved = raw && Array.isArray(raw.picked) ? raw : null;
+      } catch { saved = null; }
       const can = new Set(out.filter(fileable).map((r) => r.id));
-      setPicked(new Set(saved ? saved.filter((id) => can.has(id)) : out.filter((r) => fileable(r) && r.eobiNo).map((r) => r.id)));
+      // Default: has an EOBI number; not-deducted people only when working (office staff) — those who left are ticked by hand.
+      const byDefault = (r: Row) => fileable(r) && !!r.eobiNo && (!r.notDeducted || !LEFT.includes(String(r.state ?? "")));
+      const seen = new Set(saved?.seen ?? []);
+      setPicked(new Set([
+        ...(saved?.picked ?? []).filter((id) => can.has(id)),
+        ...out.filter((r) => !seen.has(`${r.id}:${r.eobiNo ?? ""}`) && byDefault(r)).map((r) => r.id),
+      ]));
     })();
     return () => { live = false; };
   }, [companyId, month]);
 
   useEffect(() => {
     if (!rows) return;
-    try { localStorage.setItem(storeKey(month), JSON.stringify([...picked])); } catch { /* convenience only */ }
+    try {
+      localStorage.setItem(storeKey(month), JSON.stringify({ picked: [...picked], seen: rows.map((r) => `${r.id}:${r.eobiNo ?? ""}`) }));
+    } catch { /* convenience only */ }
   }, [picked, rows, month]);
 
   const rate = statutoryRateOn(rates, "eobi", month);
@@ -110,13 +133,14 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
     return !s || r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.client.toLowerCase().includes(s);
   }), [rows, q]);
   const groups = useMemo(() => [...shown.reduce((m, r) => m.set(r.client, [...(m.get(r.client) ?? []), r]), new Map<string, Row[]>())]
-    .sort((a, b) => b[1].length - a[1].length), [shown]);
+    .sort((a, b) => Number(a[0] === NOT_DEDUCTED) - Number(b[0] === NOT_DEDUCTED) || b[1].length - a[1].length), [shown]);
 
   const chosen = (rows ?? []).filter((r) => picked.has(r.id));
   const notChosen = (rows ?? []).filter((r) => !picked.has(r.id));
   const empShare = (rate?.employee_amount ?? 0) * chosen.length;
   const erShare = (rate?.employer_amount ?? 0) * chosen.length;
   const leftOwed = notChosen.reduce((n, r) => n + r.withheld, 0);
+  const chosenNotDeducted = chosen.filter((r) => r.notDeducted).length;
 
   const download = async () => {
     if (!reg) return setErr("The company's EOBI registration number is not set.");
@@ -149,9 +173,9 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
       {/* What the challan should read — compare with EOBI's payment slip. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border border-b border-border">
         {[
-          { l: "Insured persons", v: String(chosen.length), s: `of ${rows?.length ?? 0} deducted` },
+          { l: "Insured persons", v: String(chosen.length), s: chosenNotDeducted ? `${chosen.length - chosenNotDeducted} deducted + ${chosenNotDeducted} not deducted` : `of ${(rows ?? []).filter((r) => !r.notDeducted).length} deducted` },
           { l: "Employee share", v: fmt(empShare), s: rate ? `${fmt(rate.employee_amount)} × ${chosen.length}` : "rate not set" },
-          { l: "Employer share", v: fmt(erShare), s: rate ? `${fmt(rate.employer_amount)} × ${chosen.length} · cost on their clients` : "" },
+          { l: "Employer share", v: fmt(erShare), s: rate ? `${fmt(rate.employer_amount)} × ${chosen.length}${chosenNotDeducted ? ` · GGS also bears ${fmt(rate.employee_amount * chosenNotDeducted)} of employee share` : " · cost on their clients"}` : "" },
           { l: "Challan total", v: fmt(empShare + erShare), s: notChosen.length ? `${notChosen.length} not paid · ${fmt(leftOwed)} stays owed` : "everyone deducted is paid" },
         ].map((t) => (
           <div key={t.l} className="bg-card px-4 py-2.5">

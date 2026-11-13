@@ -7,8 +7,8 @@
  *    (note the space before EMP_SUB_SERIAL_NO — it is in EOBI's own header);
  *  - per row: area code (letters of the registration), serial (its number,
  *    no leading zeros), sub-area " " (one space), sub-serial 0, name, EOBI no,
- *    CNIC 00000-0000000-0, NIC empty, DOB, DOJ, DOE (exit date, empty while
- *    working), days worked, month's first and last day;
+ *    CNIC 00000-0000000-0, NIC empty, DOB, DOJ, DOE (exit date, only when he
+ *    left during the month), days worked, month's first and last day;
  *  - dates DD-Mon-YY (01-Oct-26); lines end CRLF, last line too.
  *
  * Pure: builds the text. The screen (EobiChallan) chooses who goes in.
@@ -58,9 +58,11 @@ export function buildEobiFile(registration: string, month: string, rows: EobiFil
   const lastDay = new Date(y, m, 0).getDate();
   const last = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   const lines = rows.map((r) => {
-    const exit = r.exit && r.exit <= last ? r.exit : null;
-    // Days worked: the whole month, or up to the exit day when he left in it.
-    const days = exit ? (exit < first ? 0 : Number(exit.slice(8, 10))) : lastDay;
+    // DOE only when he left DURING the month. Ticking someone who left earlier
+    // means paying his month in full — EOBI's own October file carries three
+    // such guards with no DOE and the whole month.
+    const exit = r.exit && r.exit >= first && r.exit <= last ? r.exit : null;
+    const days = exit ? Number(exit.slice(8, 10)) : lastDay;
     return [
       reg.area, reg.serial, " ", "0",
       clean(r.name), clean(r.eobiNo).toUpperCase(), eobiCnic(r.cnic), "",
