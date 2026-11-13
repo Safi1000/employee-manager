@@ -36,7 +36,12 @@ const NOT_DEDUCTED = "Not deducted this month — GGS pays both shares";
 const monthLabel = (m: string) => new Date(`${m.slice(0, 7)}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 const fmt = (n: number) => Math.round(n).toLocaleString();
 const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
-const storeKey = (m: string) => `eobiChallan.${m.slice(0, 7)}`;
+// v2: the default changed on 13 Nov 2026, so earlier saved ticks are not reused.
+const storeKey = (m: string) => `eobiChallan.v2.${m.slice(0, 7)}`;
+/** DECIDED 13 Nov 2026 (Shayan): October 2026's EOBI was paid INCLUDING the guards
+ *  who had left, so for that month they start ticked. From November each one who
+ *  has left starts unticked and is confirmed by hand before payment. */
+const PAID_WITH_LEAVERS = new Set(["2026-10"]);
 
 export default function EobiChallan({ companyId, rates }: { companyId: string | null; rates: StatutoryRate[] }) {
   const [month, setMonth] = useState(prevMonth());
@@ -113,7 +118,9 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
       } catch { saved = null; }
       const can = new Set(out.filter(fileable).map((r) => r.id));
       // Default: has an EOBI number; not-deducted people only when working (office staff) — those who left are ticked by hand.
-      const byDefault = (r: Row) => fileable(r) && !!r.eobiNo && (!r.notDeducted || !LEFT.includes(String(r.state ?? "")));
+      const leaversIn = PAID_WITH_LEAVERS.has(month.slice(0, 7));
+      const byDefault = (r: Row) => fileable(r) && !!r.eobiNo
+        && (!r.notDeducted || leaversIn || !LEFT.includes(String(r.state ?? "")));
       const seen = new Set(saved?.seen ?? []);
       setPicked(new Set([
         ...(saved?.picked ?? []).filter((id) => can.has(id)),
@@ -232,6 +239,8 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
                   <span className="text-foreground font-medium">{on}</span> of {list.length} paid
                   {list.length - on > 0 ? ` · ${list.length - on} not` : ""}
                   {flagged ? ` · ${flagged} flagged` : ""}
+                  {(() => { const lv = list.filter((r) => LEFT.includes(String(r.state ?? "")) && !picked.has(r.id)).length;
+                    return lv ? ` · ${lv} who left — confirm each` : ""; })()}
                   {on && perHead ? ` · PKR ${fmt(on * perHead)}` : ""}
                 </span>
               </div>
