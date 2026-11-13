@@ -511,3 +511,17 @@ p.font-ledger.whitespace-nowrap {
 /* Band tile figures follow the same window scale as page tiles. */
 .band .font-ledger.text-2xl { font-size: clamp(1.05rem, 1.45vw, 1.5rem); }
 .band p.font-ledger.whitespace-nowrap { font-size: clamp(0.95rem, 1.2vw, 1.4rem); }
+
+/* READABLE STATUS TEXT IN LIGHT MODE (13 Nov 2026, Shayan: "hardly visible in
+ * light mode … similar colour used all across"). up / down / heed are the
+ * PALE green, rust and amber made for the always-dark surfaces (bands, ink
+ * panels, the sidebar). Used as TEXT on the light page they nearly vanish —
+ * pale amber on cream. In light mode the text utilities take deep shades;
+ * inside a dark surface they stay pale. Fills (bg-up, bg-down/10 tints, the
+ * sidebar badge) are untouched: a fill carries its own contrast. */
+html:not(.dark) .text-up   { color: #2f6b3a; }
+html:not(.dark) .text-down { color: #a3402a; }
+html:not(.dark) .text-heed { color: #855a0f; }
+html:not(.dark) :is(.band, .bg-ink, .on-dark, .bg-sidebar) .text-up   { color: var(--color-up); }
+html:not(.dark) :is(.band, .bg-ink, .on-dark, .bg-sidebar) .text-down { color: var(--color-down); }
+html:not(.dark) :is(.band, .bg-ink, .on-dark, .bg-sidebar) .text-heed { color: var(--color-heed); }
