@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { ChevronRight, Download, Loader2 } from "lucide-react";
 import Button from "./Button";
 import ThemedSelect from "./ThemedSelect";
 import { supabase, statutoryRateOn, type StatutoryRate } from "../lib/supabase";
@@ -45,6 +45,9 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
   const [reg, setReg] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
+  // Clients start collapsed (13 Nov 2026, Shayan: "people in it only if I expand").
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [monthCount, setMonthCount] = useState<Map<string, number>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -54,8 +57,10 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
     void supabase.from("payslips").select("period_month").eq("company_id", companyId).gt("eobi", 0)
       .order("period_month", { ascending: false }).limit(2000)
       .then(({ data }) => {
-        const ms = [...new Set(((data ?? []) as { period_month: string }[]).map((r) => r.period_month.slice(0, 10)))];
+        const all = ((data ?? []) as { period_month: string }[]).map((r) => r.period_month.slice(0, 10));
+        const ms = [...new Set(all)];
         setMonths(ms);
+        setMonthCount(all.reduce((m, k) => m.set(k, (m.get(k) ?? 0) + 1), new Map<string, number>()));
         if (ms.length && !ms.includes(month)) setMonth(ms[0]);
       });
     void supabase.from("companies").select("eobi_registration_no").eq("id", companyId).maybeSingle()
@@ -158,11 +163,13 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
     <section className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border">
         <div className="min-w-0 mr-auto">
-          <h3 className="text-sm font-semibold text-foreground">EOBI challan — whose EOBI is paid</h3>
-          <p className="text-xs text-muted-foreground">From everyone EOBI was deducted from that month. Ticking builds the file for the EOBI website.</p>
+          <h3 className="text-sm font-semibold text-foreground">EOBI challan · {monthLabel(month)} salaries</h3>
+          <p className="text-xs text-muted-foreground">Contribution for {monthLabel(month)}, paid the month after. Tick whose EOBI is paid; the file is what the EOBI website takes.</p>
         </div>
         <ThemedSelect value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Contribution month" className="px-3 py-1.5 border border-border rounded-lg text-sm bg-card">
-          {(months.length ? months : [month]).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+          {(months.length ? months : [month]).map((m) => (
+            <option key={m} value={m}>{monthLabel(m)} salaries{monthCount.get(m) ? ` · ${monthCount.get(m)} deducted` : ""}</option>
+          ))}
         </ThemedSelect>
         <Button size="sm" disabled={saving || !rows || chosen.length === 0} onClick={() => void download()}>
           {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />}
@@ -190,7 +197,15 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
       {!reg && rows && <p className="px-4 pt-3 text-sm text-heed">The company's EOBI registration (e.g. FAA04781) is not set, so the file cannot be built.</p>}
 
       <div className="px-4 py-3 flex flex-col gap-3">
-        <input className="w-64 max-w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm" placeholder="Search a name, code or client" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex flex-wrap items-center gap-3">
+          <input className="w-64 max-w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm" placeholder="Search a name, code or client" value={q} onChange={(e) => setQ(e.target.value)} />
+          {groups.length > 0 && (
+            <button type="button" className="text-xs text-brand-700 dark:text-brand-500 hover:underline"
+              onClick={() => setOpen(open.size >= groups.length ? new Set() : new Set(groups.map(([g]) => g)))}>
+              {open.size >= groups.length ? "Collapse all" : "Expand all"}
+            </button>
+          )}
+        </div>
         {!rows ? (
           <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading {monthLabel(month)}…</p>
         ) : rows.length === 0 ? (
@@ -198,17 +213,29 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
         ) : groups.map(([g, list]) => {
           const can = list.filter(fileable);
           const on = list.filter((r) => picked.has(r.id)).length;
+          const flagged = list.filter((r) => flagsOf(r, month).some((f) => f.hard || f.t !== "no EOBI no.")).length;
+          const isOpen = open.has(g) || !!q.trim();
+          const perHead = (rate?.employee_amount ?? 0) + (rate?.employer_amount ?? 0);
           return (
-            <div key={g} className="rounded-lg border border-border">
-              <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 bg-muted/40 text-sm">
+            <div key={g} className="rounded-lg border border-border overflow-hidden">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 bg-muted/40 text-sm">
                 <input type="checkbox" className="accent-brand-600" aria-label={`Pay EOBI for everyone at ${g}`}
                   checked={can.length > 0 && can.every((r) => picked.has(r.id))}
                   ref={(el) => { if (el) el.indeterminate = on > 0 && on < can.length; }}
                   disabled={can.length === 0} onChange={(e) => toggle(can.map((r) => r.id), e.target.checked)} />
-                <span className="font-medium text-foreground flex-1 min-w-0 truncate">{g}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">{on} of {list.length} paid</span>
+                <button type="button" aria-expanded={isOpen} onClick={() => setOpen((s) => { const n = new Set(s); n.has(g) ? n.delete(g) : n.add(g); return n; })}
+                  className="flex flex-1 min-w-0 items-center gap-2 text-left">
+                  <ChevronRight className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                  <span className="font-medium text-foreground truncate">{g}</span>
+                </button>
+                <span className="text-xs text-muted-foreground tabular-nums basis-full sm:basis-auto pl-7 sm:pl-0">
+                  <span className="text-foreground font-medium">{on}</span> of {list.length} paid
+                  {list.length - on > 0 ? ` · ${list.length - on} not` : ""}
+                  {flagged ? ` · ${flagged} flagged` : ""}
+                  {on && perHead ? ` · PKR ${fmt(on * perHead)}` : ""}
+                </span>
               </div>
-              <ul className="divide-y divide-border text-sm">
+              {isOpen && <ul className="divide-y divide-border text-sm">
                 {list.map((r) => {
                   const fl = flagsOf(r, month);
                   const ok = fileable(r);
@@ -226,7 +253,7 @@ export default function EobiChallan({ companyId, rates }: { companyId: string | 
                     </li>
                   );
                 })}
-              </ul>
+              </ul>}
             </div>
           );
         })}

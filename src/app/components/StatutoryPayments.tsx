@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, CircleAlert, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, CircleAlert, Loader2, Plus } from "lucide-react";
 import Button from "./Button";
 import { supabase, friendlyDbError, statutoryRateOn, STATUTORY_SCHEME_LABEL, type StatutoryRate, type StatutoryScheme } from "../lib/supabase";
 import Modal from "./Modal";
@@ -221,8 +221,9 @@ export default function StatutoryPayments({
 
       {section === "eobi" && (
         <>
-          <PerHeadRates companyId={companyId} rates={rates} canEdit={canPay} canClassify={canClassify} onChanged={() => void load()} schemes={["eobi"]} chooser />
+          {/* 13 Nov 2026 (Shayan): the challan leads; who it is deducted from sits below, collapsed. */}
           <EobiChallan companyId={companyId} rates={rates} />
+          <PerHeadRates companyId={companyId} rates={rates} canEdit={canPay} canClassify={canClassify} onChanged={() => void load()} schemes={["eobi"]} chooser />
           {schemeTable("eobi")}
         </>
       )}
@@ -446,7 +447,10 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged, schem
   const [clientName, setClientName] = useState<Map<string, string>>(new Map());
   const [onlyChosen, setOnlyChosen] = useState(true);
   const [q, setQ] = useState("");
-  const show = chooser;
+  // Clients collapsed by default; the whole list too (13 Nov 2026: "the page is too long for no reason").
+  const [openG, setOpenG] = useState<Set<string>>(new Set());
+  const [listOpen, setListOpen] = useState(false);
+  const show = chooser && listOpen;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -532,9 +536,12 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged, schem
             onClick={() => { setErr(null); setF({ scheme: schemes[0], emp: "", er: "", from: thisMonth(), reason: "" }); setOpen(true); }}>Change a rate</button>
         )}
         {chooser && (
-          <span className="ml-auto text-xs text-muted-foreground">
+          <button type="button" aria-expanded={listOpen} onClick={() => setListOpen((v) => !v)}
+            className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
             Deducted from <span className="font-semibold text-foreground">{chosen.length}</span> employees{flagged ? ` · ${flagged} flagged` : ""}
-          </span>
+            <span className="text-brand-700 dark:text-brand-500 font-medium">{listOpen ? "Hide" : "Show who"}</span>
+            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${listOpen ? "rotate-90" : ""}`} />
+          </button>
         )}
       </div>
       {err && !open && <p className="px-4 pb-2 text-sm text-danger-700 dark:text-danger-500">{err}</p>}
@@ -560,11 +567,17 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged, schem
             <p className="text-sm text-muted-foreground">Nobody here.</p>
           ) : groups.map(([g, list]) => {
             const ticked = list.filter((e) => e.eobi_deduct).length;
+            const gFlagged = list.filter((e) => e.eobi_deduct && flags(e).some((f) => !f.startsWith("age unknown") && f !== "no EOBI no.")).length;
+            const gOpen = openG.has(g) || !!q.trim();
             return (
-              <div key={g} className="rounded-lg border border-border">
-                <div className="flex items-center gap-3 px-3 py-1.5 bg-muted/40 text-sm">
-                  <span className="font-medium text-foreground flex-1">{g}</span>
-                  <span className="text-xs text-muted-foreground">{ticked} of {list.length} ticked</span>
+              <div key={g} className="rounded-lg border border-border overflow-hidden">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 bg-muted/40 text-sm">
+                  <button type="button" aria-expanded={gOpen} onClick={() => setOpenG((s) => { const n = new Set(s); n.has(g) ? n.delete(g) : n.add(g); return n; })}
+                    className="flex flex-1 min-w-0 items-center gap-2 text-left">
+                    <ChevronRight className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${gOpen ? "rotate-90" : ""}`} />
+                    <span className="font-medium text-foreground truncate">{g}</span>
+                  </button>
+                  <span className="text-xs text-muted-foreground tabular-nums basis-full sm:basis-auto pl-7 sm:pl-0">{ticked} of {list.length} ticked{gFlagged ? ` · ${gFlagged} flagged` : ""}</span>
                   {canClassify && (
                     <>
                       <button type="button" disabled={busy} className="text-xs text-brand-700 dark:text-brand-500 hover:underline" onClick={() => void setDeduct(list.filter((e) => !e.eobi_deduct).map((e) => e.id), true)}>Tick all</button>
@@ -572,7 +585,7 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged, schem
                     </>
                   )}
                 </div>
-                <ul className="divide-y divide-border text-sm">
+                {gOpen && <ul className="divide-y divide-border text-sm">
                   {list.map((e) => {
                     const fl = e.eobi_deduct ? flags(e) : [];
                     return (
@@ -586,7 +599,7 @@ function PerHeadRates({ companyId, rates, canEdit, canClassify, onChanged, schem
                       </li>
                     );
                   })}
-                </ul>
+                </ul>}
               </div>
             );
           })}
