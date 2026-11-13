@@ -1475,6 +1475,8 @@ export type Employee = {
   guard_service_licence_expiry: string | null;
   medical_fitness_expiry: string | null;
   eobi_registration_number: string | null;
+  /** 0669: date of joining as registered with EOBI (the bulk upload file's DOJ). */
+  eobi_join_date?: string | null;
   iban: string | null;
   // Phase 4: contract-line assignment (which category slot this employee fills)
   contract_line_id: string | null;

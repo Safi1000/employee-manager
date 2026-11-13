@@ -218,6 +218,7 @@ type FormState = {
   guard_service_licence_expiry: string;
   medical_fitness_expiry: string;
   eobi_registration_number: string;
+  eobi_join_date: string;
   iban: string;
   // §11 Employee Data Form — extended paper-form fields
   photo_url: string;
@@ -366,6 +367,7 @@ const emptyForm: FormState = {
   guard_service_licence_expiry: "",
   medical_fitness_expiry: "",
   eobi_registration_number: "",
+  eobi_join_date: "",
   iban: "",
   ...emptyPaperFormFields,
 };
@@ -1737,6 +1739,7 @@ export default function EmployeeManagement() {
           guard_service_licence_expiry: form.guard_service_licence_expiry || null,
           medical_fitness_expiry: form.medical_fitness_expiry || null,
           eobi_registration_number: form.eobi_registration_number.trim() || null,
+          eobi_join_date: form.eobi_join_date || null,
           iban: form.iban.trim() || null,
           ...paperFormPayload(form),
           // Recruitment intake: create as applicant/waitlisted when chosen; the DB
@@ -1954,6 +1957,7 @@ export default function EmployeeManagement() {
       guard_service_licence_expiry: emp.guard_service_licence_expiry ?? "",
       medical_fitness_expiry: emp.medical_fitness_expiry ?? "",
       eobi_registration_number: emp.eobi_registration_number ?? "",
+      eobi_join_date: emp.eobi_join_date ?? "",
       iban: emp.iban ?? "",
       // §11 extended paper-form fields
       photo_url: (emp as { photo_url?: string | null }).photo_url ?? "",
@@ -2115,6 +2119,7 @@ export default function EmployeeManagement() {
           guard_service_licence_expiry: editForm.guard_service_licence_expiry || null,
           medical_fitness_expiry: editForm.medical_fitness_expiry || null,
           eobi_registration_number: editForm.eobi_registration_number.trim() || null,
+          eobi_join_date: editForm.eobi_join_date || null,
           iban: editForm.iban.trim() || null,
           ...paperFormPayload(editForm),
         })
@@ -5941,6 +5946,8 @@ function EmployeeHrSection({
               {txt("guard_service_licence_expiry", "Guard Service Licence Expiry", { type: "date" })}
               {txt("medical_fitness_expiry", "Medical Fitness Expiry", { type: "date" })}
               {txt("eobi_registration_number", "EOBI Registration #", { placeholder: "Once issued" })}
+              {/* 0669: EOBI's own date of joining — goes on the EOBI bulk upload file. */}
+              {txt("eobi_join_date", "EOBI Date of Joining", { type: "date" })}
             </div>
           </div>
 
@@ -6045,6 +6052,7 @@ function FilledDetails({ employee }: { employee: EmployeeRow }) {
       ["Insurance Provider", employee.insurance_provider],
       ["Insurance No.", employee.insurance_number],
       ["EOBI Registration No.", employee.eobi_registration_number],
+      ["EOBI Date of Joining", employee.eobi_join_date && formatDate(employee.eobi_join_date)],
       ["Interview Date", employee.interview_date && formatDate(employee.interview_date)],
       ["Form Serial No.", employee.form_serial_no],
       ["Remarks", employee.remarks],

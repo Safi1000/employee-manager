@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import ThemedSelect from "./ThemedSelect";
 import { formatDate } from "../lib/date";
 import SalesTaxReturns from "./SalesTaxReturns";
+import EobiChallan from "./EobiChallan";
 import Tabs from "./Tabs";
 import { usePageState } from "../lib/pageState";
 
@@ -221,6 +222,7 @@ export default function StatutoryPayments({
       {section === "eobi" && (
         <>
           <PerHeadRates companyId={companyId} rates={rates} canEdit={canPay} canClassify={canClassify} onChanged={() => void load()} schemes={["eobi"]} chooser />
+          <EobiChallan companyId={companyId} rates={rates} />
           {schemeTable("eobi")}
         </>
       )}
