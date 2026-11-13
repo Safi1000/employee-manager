@@ -560,6 +560,15 @@ export default function FuelCards({
                         <Fuel className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Load (drawing)
                       </Button>
                     )}
+                    {/* 13 Nov 2026: an office-staff allowance card is topped up FROM HIS PAYSLIP
+                        (Payment mode: Card), so the top-up comes out of salary — there is no
+                        separate load here. The button says where to go. */}
+                    {!h?.partner && c.is_active && (
+                      <a href="/app/payroll" title="Open the payslip → Payment mode: Card → this card → amount → Disburse. The rest of the salary is paid separately."
+                        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs text-foreground hover:bg-accent">
+                        <Fuel className="w-3.5 h-3.5" strokeWidth={1.5} /> Top up via payroll
+                      </a>
+                    )}
                     {canEdit && (
                       <>
                         <Button size="sm" variant="ghost" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit</Button>

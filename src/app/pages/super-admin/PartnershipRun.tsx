@@ -102,6 +102,8 @@ export default function PartnershipRun() {
   const [ready, setReady] = useState<Ready[]>([]);
   // 0672: the reviewer confirms they looked at every "check" before posting.
   const [ack, setAck] = useState(false);
+  // A readiness list that failed to load must never read as "all clear".
+  const [readyErr, setReadyErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "draft" | "post" | "reverse">(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +130,7 @@ export default function PartnershipRun() {
         supabase.rpc("partnership_readiness", { p_company_id: companyId, p_period: month }),
       ]);
       setReady(((readyRes.data ?? []) as Ready[]).sort((a, b) => a.seq - b.seq));
+      setReadyErr(readyRes.error ? readyRes.error.message : (readyRes.data ?? []).length === 0 ? "The checks returned nothing." : null);
       setAck(false);
       setBlocker((blockRes.data ?? null) as string | null);
       setReview((revRes.data ?? []) as ReviewRow[]);
@@ -225,8 +228,9 @@ export default function PartnershipRun() {
   const openIssues = checks.filter((c) => !c.ok).length;
   const blocks = ready.filter((r) => r.status === "block");
   const toConfirm = ready.filter((r) => r.status === "check");
-  const postBlocked = blocks.length > 0 || (toConfirm.length > 0 && !ack);
-  const postWhy = blocks.length > 0 ? `Cannot post yet: ${blocks.map((b) => b.title).join("; ")}`
+  const postBlocked = !!readyErr || blocks.length > 0 || (toConfirm.length > 0 && !ack);
+  const postWhy = readyErr ? "The checks could not be run — reload before posting"
+    : blocks.length > 0 ? `Cannot post yet: ${blocks.map((b) => b.title).join("; ")}`
     : toConfirm.length > 0 && !ack ? "Tick that you have looked at each item marked Confirm (Before posting, below)" : undefined;
 
   const months = useMemo(() => {
@@ -366,10 +370,16 @@ export default function PartnershipRun() {
               <section className="rounded-2xl border border-border bg-card overflow-hidden">
                 <div className="px-5 py-3 border-b border-border flex flex-wrap items-center gap-2">
                   <h3 className="font-display text-base font-bold tracking-tight text-foreground">Before posting — is {monthName(period)} accounted for?</h3>
-                  <span className={`ml-auto text-xs font-semibold ${blocks.length ? "text-down" : toConfirm.length ? "text-heed" : "text-up"}`}>
-                    {blocks.length ? `${blocks.length} must be fixed` : toConfirm.length ? `${toConfirm.length} to confirm` : "everything accounted for"}
+                  <span className={`ml-auto text-xs font-semibold ${readyErr || blocks.length ? "text-down" : toConfirm.length ? "text-heed" : "text-up"}`}>
+                    {readyErr ? "checks did not run" : blocks.length ? `${blocks.length} must be fixed` : toConfirm.length ? `${toConfirm.length} to confirm` : "everything accounted for"}
                   </span>
                 </div>
+                {readyErr && (
+                  <div className="px-5 py-3 border-b border-border bg-down/10 text-sm text-down flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>The checks could not be run, so nothing here is confirmed and posting is off. Reload the page; if it keeps failing, tell accounts. <span className="text-xs opacity-80">({readyErr})</span></span>
+                  </div>
+                )}
                 {/* 0672: the database's own list; posting enforces the same thing. */}
                 <ul className="divide-y divide-border">
                   {ready.map((r) => (
@@ -394,7 +404,9 @@ export default function PartnershipRun() {
                 </ul>
                 {run?.status === "DRAFT" && (
                   <div className="px-5 py-3 border-t border-border bg-muted/30 flex flex-wrap items-center gap-3">
-                    {blocks.length > 0 ? (
+                    {readyErr ? (
+                      <span className="text-sm text-down">The checks did not run — posting is off until they do.</span>
+                    ) : blocks.length > 0 ? (
                       <span className="text-sm text-down">Fix the items marked Block, re-draft, then post.</span>
                     ) : toConfirm.length > 0 ? (
                       <label className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
